@@ -182,6 +182,7 @@ struct {
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 int verbosity = 1;
+string format = "opb";
 // currently, the maximum number of variables is hardcoded (variable N), and most arrays are of fixed size.
 int n;
 vector<CRef> clauses, learnts;
@@ -725,6 +726,24 @@ void opb_read(istream & in) {
 	}
 }
 
+void cnf_read(istream & in) {
+	for (string line; getline(in, line);) {
+		if (line.empty() || line[0] == 'c') continue;
+		else if (line[0] == 'p') {
+			istringstream is (line.substr(string("p cnf ").size()));
+			int n;
+			is >> n;
+			init(n);
+		} else {
+			istringstream is (line);
+			vector<int> lits;
+			int l;
+			while (is >> l, l) lits.push_back(l);
+			process_ineq(lits, vector<int>(lits.size(),1), 1);
+		}
+	}
+}
+
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 // We assume in the garbage collection method that reduceDB() is the
@@ -863,6 +882,7 @@ void usage(int argc, char**argv) {
 	printf("Options:\n");
 	printf("  --help           Prints this help message\n");
 	printf("  --verbosity=arg  Set the verbosity of the output (default %d).\n",verbosity);
+	printf("  --format=arg     Set the input file format (opb or cnf; default %s).\n",format.c_str());
 	printf("\n");
 	printf("  --var-decay=arg  Set the VSIDS decay factor (0.5<=arg<1; default %lf).\n",var_decay);
 	printf("  --rinc=arg       Set the base of the Luby restart sequence (floating point number >=1; default %lf).\n",rinc);
@@ -878,7 +898,7 @@ void read_options(int argc, char**argv) {
 			exit(0);
 		}
 	}
-	vector<string> opts = {"verbosity", "var-decay", "rinc", "rfirst"};
+	vector<string> opts = {"verbosity", "var-decay", "rinc", "rfirst", "format"};
 	map<string, string> opt_val;
 	for(int i=1;i<argc;i++){
 		if (string(argv[i]).substr(0,2) != "--") filename = argv[i];
@@ -895,6 +915,10 @@ void read_options(int argc, char**argv) {
 		}
 	}
 	if (opt_val.count("verbosity")) verbosity = atoi(opt_val["verbosity"].c_str());
+	if (opt_val.count("format")) {
+		format = opt_val["format"];
+		if (format != "opb" && format != "cnf") printf("Error: unknown format: %s (choose opb or cnf)\n", format.c_str()), exit(1);
+	}
 	if (opt_val.count("var-decay")) {
 		double v = atof(opt_val["var-decay"].c_str());
 		if (v >= 0.5 && v < 1) var_decay = v;
@@ -923,10 +947,10 @@ int main(int argc, char**argv){
 			printf("Error: Couldn't open file %s\n", filename);
 			exit(1);
 		}
-		opb_read(fin);
+		if (format == "opb") opb_read(fin); else cnf_read(fin);
 	} else {
 		if (verbosity > 0) printf("c No filename given, reading from standard input. Use '--help' for help.\n");
-		opb_read(cin);
+		if (format == "opb") opb_read(cin); else cnf_read(cin);
 	}
 	signal(SIGINT, SIGINT_interrupt);
 	signal(SIGXCPU,SIGINT_interrupt);
