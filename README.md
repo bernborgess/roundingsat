@@ -11,6 +11,8 @@ The solver currently consists of a single file which can be compiled on Linux. I
 
 ## Usage
 
+For the input format, see [here](InputFormats.md).
+
 Download OPB files:
 
     curl http://www.cril.univ-artois.fr/PB12/bench12/PB12-DEC-SMALLINT-LIN.tar | tar xv
