@@ -1,7 +1,6 @@
 # RoundingSat
 
 RoundingSat is a pseudo-boolean SAT solver.
-It reads input in the OPB format.
 
 ## Compilation
 
