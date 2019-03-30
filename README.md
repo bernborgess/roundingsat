@@ -1,15 +1,16 @@
 # RoundingSat
 
 RoundingSat is a pseudo-boolean SAT solver.
-It reads input in the OPB format.
 
 ## Compilation
 
 The solver currently consists of a single file which can be compiled on Linux. It uses some c++11 constructs.
 
-    g++ -o roundingsat roundingsat.cpp
+    g++ -o roundingsat roundingsat.cpp -std=c++11 -O2
 
 ## Usage
+
+For the input format, see [here](InputFormats.md).
 
 Download OPB files:
 
