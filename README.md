@@ -25,3 +25,4 @@ Try on an example instance which is solved quickly:
 - [Dixon et al., 2004] H. E. Dixon, M. L. Ginsberg, and A. J. Parkes. Generalizing Boolean satisfiability I: Background and survey of existing work. *JAIR*, 21:193–243, 2004.
 - [Chai and Kuehlmann, 2005] D. Chai and A. Kuehlmann. A fast pseudo-Boolean constraint solver. *IEEE Trans. Computer-Aided
 Design of Integrated Circuits and Systems*, 24(3):305–317, 2005.
+- [Elffers and Nordström, 2018]: J. Elffers and J. Nordström. Divide and Conquer: Towards Faster Pseudo-Boolean Solving. *IJCAI 2018*, 1291-1299.
