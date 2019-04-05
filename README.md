@@ -19,3 +19,9 @@ Download OPB files:
 Try on an example instance which is solved quickly:
 
     bzcat ./PB12/normalized-PB12/DEC-SMALLINT-LIN/sroussel/ShortestPathBA/normalized-BeauxArts_K76.opb.bz2 | ./plane-sat
+
+## References on PB SAT solving
+
+- [Dixon et al., 2004] H. E. Dixon, M. L. Ginsberg, and A. J. Parkes. Generalizing Boolean satisfiability I: Background and survey of existing work. *JAIR*, 21:193–243, 2004.
+- [Chai and Kuehlmann, 2005] D. Chai and A. Kuehlmann. A fast pseudo-Boolean constraint solver. *IEEE Trans. Computer-Aided
+Design of Integrated Circuits and Systems*, 24(3):305–317, 2005.
