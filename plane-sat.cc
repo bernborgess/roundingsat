@@ -351,6 +351,7 @@ void undoOne(){
  * in the analysis and reset only their coefficients.
  */
 struct ConflictData {
+	long long slack;
 	int cnt_falsified_currentlvl;
 	// here we use int64 because we could get overflow in the following case:
 	// the reason's coefs multiplied by the coef. of the intermediate conflict clause
@@ -366,6 +367,7 @@ struct ConflictData {
 		reset();
 	}
 	void reset(){
+		slack=0;
 		cnt_falsified_currentlvl=0;
 		w=0;
 		for(int x:usedlist)M[x]=M[-x]=0,used[x]=false;
@@ -380,29 +382,40 @@ inline long long ceildiv(long long p,long long q){ return (p+q-1)/q; }
 
 void round_reason(int l0, vector<int>&out_lits,vector<int>&out_coefs,int&out_w) {
 	Clause & C = ca[Reason[l0]];
-	if (C.coefs()[find(C.lits(),C.lits()+C.size(),l0)-C.lits()] == 1) {
-		// keep as is
-		out_lits.assign(C.lits(), C.lits() + C.size());
-		out_coefs.assign(C.coefs(), C.coefs() + C.size());
-		out_w = C.w;
-	} else {
-		// round to clause
-		for(size_t i=0;i<C.size();i++){
-			int l = C.lits()[i];
-			if (~Level[-l] || l == l0) out_lits.push_back(l), out_coefs.push_back(1);
+	int old_coef_l0 = C.coefs()[find(C.lits(),C.lits()+C.size(),l0)-C.lits()];
+	int w = C.w;
+	for(size_t i=0;i<C.size();i++){
+		int l = C.lits()[i];
+		int coef = C.coefs()[i];
+		if (Level[-l] == -1) {
+			if (coef % old_coef_l0 != 0) w -= coef;
+			else out_lits.push_back(l), out_coefs.push_back(coef / old_coef_l0);
+			
+			// partial weakening would instead do:
+			/*w -= coef % old_coef_l0;
+			if (coef >= old_coef_l0) out_lits.push_back(l), out_coefs.push_back(coef / old_coef_l0);*/
+		} else {
+			out_lits.push_back(l), out_coefs.push_back(ceildiv(coef, old_coef_l0));
 		}
-		out_w = 1;
 	}
+	out_w = ceildiv(w, old_coef_l0);
 	assert(slack(out_lits.size(), out_lits, out_coefs, out_w) == 0);
 }
 
-void round_conflict() {
+void round_conflict(long long c) {
 	for(int x:confl_data.usedlist)for(int l=-x;l<=x;l+=2*x)if(confl_data.M[l]){
 		if (Level[-l] == -1) {
-			confl_data.M[l] = 0;
-		} else confl_data.M[l] = 1;
+			if (confl_data.M[l] % c != 0) {
+				confl_data.w -= confl_data.M[l], confl_data.M[l] = 0;
+			} else confl_data.M[l] /= c;
+			
+			// partial weakening would instead do:
+			/*confl_data.w -= confl_data.M[l] % c;
+			confl_data.M[l] /= c;*/
+		} else confl_data.M[l] = ceildiv(confl_data.M[l], c);
 	}
-	confl_data.w = 1;
+	confl_data.w = ceildiv(confl_data.w, c);
+	confl_data.slack = -ceildiv(-confl_data.slack, c);
 }
 
 template<class It1, class It2> void add_to_conflict(size_t size, It1 const&reason_lits,It2 const&reason_coefs,int reason_w){
@@ -432,8 +445,10 @@ template<class It1, class It2> void add_to_conflict(size_t size, It1 const&reaso
 		if (M[l] > (int) 1e9) overflow = true;
 	}
 	if (w > (int) 1e9 || overflow) {
-		// round to clause.
-		round_conflict();
+		// round to cardinality.
+		long long d = 0;
+		for(int x:confl_data.usedlist)for(int l=-x;l<=x;l+=2*x)d=max(d, confl_data.M[l]);
+		round_conflict(d);
 	}
 }
 
@@ -452,6 +467,7 @@ void analyze(CRef confl, vector<int>& out_lits, vector<int>& out_coefs, int& out
 		if (C.lbd > 2) C.lbd = min(C.lbd, computeLBD(confl));
 	}
 	add_to_conflict(C.size(), C.lits(), C.coefs(), C.w);
+	confl_data.slack = slack(C);
 	vector<int> reason_lits; reason_lits.reserve(n);
 	vector<int> reason_coefs; reason_coefs.reserve(n);
 	int reason_w;
@@ -463,7 +479,7 @@ void analyze(CRef confl, vector<int>& out_lits, vector<int>& out_coefs, int& out
 		if(confl_data.M[-l]) {
 			confl_data.M[-l] = min(confl_data.M[-l], confl_data.w); // so that we don't round the conflict if w=1.
 			if (confl_data.M[-l] > 1) {
-				round_conflict();
+				round_conflict(confl_data.M[-l]);
 			}
 			if (confl_data.cnt_falsified_currentlvl == 1) {
 				break;
