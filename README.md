@@ -1,12 +1,12 @@
-# plane-sat
+# roundingsat
 
-plane-sat is a pseudo-boolean SAT solver.
+roundingsat is a pseudo-boolean SAT solver.
 
 ## Compilation
 
 The solver currently consists of a single file which can be compiled on Linux. It uses some c++11 constructs.
 
-    g++ -o plane-sat plane-sat.cc -std=c++11 -O3
+    g++ -o roundingsat roundingsat.cc -std=c++11 -O3
 
 ## Usage
 
