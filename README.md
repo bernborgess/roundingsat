@@ -18,7 +18,7 @@ Download OPB files:
     
 Try on an example instance which is solved quickly:
 
-    bzcat ./PB12/normalized-PB12/DEC-SMALLINT-LIN/sroussel/ShortestPathBA/normalized-BeauxArts_K76.opb.bz2 | ./plane-sat
+    bzcat ./PB12/normalized-PB12/DEC-SMALLINT-LIN/sroussel/ShortestPathBA/normalized-BeauxArts_K76.opb.bz2 | ./roundingsat
 
 ## References on PB SAT solving
 
