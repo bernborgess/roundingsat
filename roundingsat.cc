@@ -663,22 +663,10 @@ int read_number(string s) {
 }
 
 void opb_read(istream & in) {
-	bool header_seen = false;
 	for (string line; getline(in, line);) {
 		if (line.empty()) continue;
-		else if (line[0] == '*') {
-			if (line.substr(0, 13) == "* #variable= ") {
-				istringstream is (line.substr(13));
-				int n;
-				if (!(is >> n)) {
-					printf("Error: Couldn't parse header\n");
-					exit(1);
-				}
-				init(n);
-				header_seen = true;
-			}
-		} else {
-			if (!header_seen) { printf("Error: read non-comment line before header\n"); exit(1); }
+		else if (line[0] == '*') continue;
+		else {
 			string symbol;
 			if (line.find(">=") != string::npos) symbol = ">=";
 			else symbol = "=";
@@ -729,17 +717,33 @@ void opb_read(istream & in) {
 void cnf_read(istream & in) {
 	for (string line; getline(in, line);) {
 		if (line.empty() || line[0] == 'c') continue;
-		else if (line[0] == 'p') {
-			istringstream is (line.substr(string("p cnf ").size()));
-			int n;
-			is >> n;
-			init(n);
-		} else {
+		else {
 			istringstream is (line);
 			vector<int> lits;
 			int l;
 			while (is >> l, l) lits.push_back(l);
 			process_ineq(lits, vector<int>(lits.size(),1), 1);
+		}
+	}
+}
+
+void file_read(istream & in) {
+	for (string line; getline(in, line);) {
+		if (line.empty() || line[0] == 'c') continue;
+		if (line[0] == 'p') {
+			istringstream is (line); is >> line >> line;
+			int n;
+			is >> n;
+			init(n);
+			cnf_read(in);
+			break;
+		} else if (line[0] == '*' && line.substr(0, 13) == "* #variable= ") {
+			istringstream is (line.substr(13));
+			int n;
+			is >> n;
+			init(n);
+			opb_read(in);
+			break;
 		}
 	}
 }
@@ -947,10 +951,10 @@ int main(int argc, char**argv){
 			printf("Error: Couldn't open file %s\n", filename);
 			exit(1);
 		}
-		if (format == "opb") opb_read(fin); else cnf_read(fin);
+		file_read(fin);
 	} else {
 		if (verbosity > 0) printf("c No filename given, reading from standard input. Use '--help' for help.\n");
-		if (format == "opb") opb_read(cin); else cnf_read(cin);
+		file_read(cin);
 	}
 	signal(SIGINT, SIGINT_interrupt);
 	signal(SIGXCPU,SIGINT_interrupt);
