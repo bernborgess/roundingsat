@@ -185,6 +185,9 @@ int verbosity = 1;
 bool carddetect = true;
 // currently, the maximum number of variables is hardcoded (variable N), and most arrays are of fixed size.
 int n;
+bool opt = false;
+int opt_K;
+int opt_normalize_add, opt_coef_sum;
 vector<CRef> clauses, learnts;
 struct Watch {
 	CRef cref;
@@ -218,6 +221,7 @@ struct{
 	int h;
 	void init() {
 		h=0;while((1<<h)<n+1)h++;
+		tree.clear();
 		tree.resize(1<<(h+1),-1);
 	}
 	void percolateUp(int x) {
@@ -729,11 +733,6 @@ int pickBranchLit(){
 	return next == 0 ? 0 : phase[next];
 }
 
-void checksol() {
-	for(int i=1;i<=n;i++)assert(Level[i] != -1 || Level[-i] != -1);
-	for(CRef cr : clauses)assert(slack(ca[cr]) >= 0);
-}
-
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 void init(int nvars){
@@ -765,6 +764,27 @@ void init(int nvars){
 	ca.cap = 0;
 	ca.wasted = 0;
 	ca.capacity(1024*1024);//4MB
+}
+
+void add_opt_vars() {
+	n += opt_K;
+	_adj.resize(2*n+1); adj = _adj.begin() + n;
+	_adj_binary.resize(2*n+1); adj_binary = _adj_binary.begin() + n;
+	_Reason.resize(2*n+1, CRef_Undef); Reason = _Reason.begin() + n;
+	_Level.resize(2*n+1); Level = _Level.begin() + n;
+	_Pos.resize(2*n+1); Pos = _Pos.begin() + n;
+	phase.resize(n+1);
+	activity.resize(n+1);
+	order_heap.init();
+	for(int i=1;i<=n;i++){
+		Level[i]=Level[-i]=-1;
+		Reason[i]=Reason[-i]=CRef_Undef;
+		phase[i]=-i;
+		activity[i]=0;
+		insertVarOrder(i);
+		//adj[i].clear(); adj[-i].clear(); // is already cleared.
+	}
+	confl_data.init();
 }
 
 void reduce_by_toplevel(vector<int>& lits, vector<int>& coefs, int& w){
@@ -821,15 +841,28 @@ int read_number(string s) {
 }
 
 void opb_read(istream & in) {
+	opt_K = 0;
+	opt_coef_sum = 0;
+	opt_normalize_add = 0;
+	bool first_constraint = true;
 	for (string line; getline(in, line);) {
 		if (line.empty()) continue;
 		else if (line[0] == '*') continue;
 		else {
-			string symbol;
-			if (line.find(">=") != string::npos) symbol = ">=";
-			else symbol = "=";
-			assert(line.find(symbol) != string::npos);
-			istringstream is (line.substr(0, line.find(symbol)));
+			for (char & c : line) if (c == ';') c = ' ';
+			bool opt_line = line.substr(0, 4) == "min:";
+			string line0;
+			if (opt_line) line = line.substr(4), assert(first_constraint);
+			else {
+				string symbol;
+				if (line.find(">=") != string::npos) symbol = ">=";
+				else symbol = "=";
+				assert(line.find(symbol) != string::npos);
+				line0 = line;
+				line = line.substr(0, line.find(symbol));
+			}
+			first_constraint = false;
+			istringstream is (line);
 			vector<int> lits;
 			vector<int> coefs;
 			vector<string> tokens;
@@ -860,13 +893,29 @@ void opb_read(istream & in) {
 					coefs.push_back(coef);
 				}
 			}
-			int w = read_number(line.substr(line.find("=") + 1));
-			process_ineq(lits, coefs, w);
-			// Handle equality case with two constraints
-			if (line.find(" = ") != string::npos) {
-				for (int & coef : coefs) coef = -coef;
-				w *= -1;
+			if (opt_line) {
+				opt = true;
+				opt_coef_sum = 0;
+				opt_normalize_add = 0;
+				for(size_t i=0;i<lits.size();i++){
+					if(coefs[i] < 0) lits[i]*=-1,coefs[i]*=-1,opt_normalize_add+=coefs[i];
+					opt_coef_sum+=coefs[i];
+					lits[i]=-lits[i];
+					if (opt_coef_sum > (int) 1e9) { puts("Error: normalization of objective function constraint causes coefficient sum to exceed 10^9."); exit(1); }
+				}
+				opt_K = 0; while ((1<<opt_K)-1 < opt_coef_sum) opt_K++;
+				for(int i=0;i<opt_K;i++)lits.push_back(n+1+i),coefs.push_back(1<<i);
+				add_opt_vars();
+				process_ineq(lits, coefs, opt_coef_sum);
+			} else {
+				int w = read_number(line0.substr(line0.find("=") + 1));
 				process_ineq(lits, coefs, w);
+				// Handle equality case with two constraints
+				if (line0.find(" = ") != string::npos) {
+					for (int & coef : coefs) coef = -coef;
+					w *= -1;
+					process_ineq(lits, coefs, w);
+				}
 			}
 		}
 	}
@@ -883,6 +932,9 @@ void cnf_read(istream & in) {
 			process_ineq(lits, vector<int>(lits.size(),1), 1);
 		}
 	}
+	opt_K = 0;
+	opt_coef_sum = 0;
+	opt_normalize_add = 0;
 }
 
 void file_read(istream & in) {
@@ -1016,14 +1068,11 @@ void print_stats() {
 	printf("d propagations %lld\n", NPROP);
 }
 
+vector<bool> last_sol;
 void exit_SAT() {
-#ifndef NDEBUG
-	checksol();
-	puts("c SATISFIABLE (checked)");
-#endif
 	print_stats();
 	puts("s SATISFIABLE");
-	printf("v");for(int i=1;i<=n;i++)if(Level[i] != -1)printf(" x%d",i);else printf(" -x%d",i);printf("\n");
+	printf("v");for(int i=1;i<=n-opt_K;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
 	exit(10);
 }
 
@@ -1034,9 +1083,12 @@ void exit_UNSAT() {
 }
 
 void exit_INDETERMINATE() {
-	print_stats();
-	puts("s UNKNOWN");
-	exit(0);
+	if (!last_sol.empty()) exit_SAT();
+	else {
+		print_stats();
+		puts("s UNKNOWN");
+		exit(0);
+	}
 }
 
 void usage(int argc, char**argv) {
@@ -1101,28 +1153,12 @@ void read_options(int argc, char**argv) {
 	}
 }
 
-int main(int argc, char**argv){
-	read_options(argc, argv);
-	initial_time = cpuTime();
-	signal(SIGINT, SIGINT_exit);
-	signal(SIGXCPU,SIGINT_exit);
-	if (filename != 0) {
-		ifstream fin (filename);
-		if (!fin) {
-			printf("Error: Couldn't open file %s\n", filename);
-			exit(1);
-		}
-		file_read(fin);
-	} else {
-		if (verbosity > 0) printf("c No filename given, reading from standard input. Use '--help' for help.\n");
-		file_read(cin);
-	}
-	signal(SIGINT, SIGINT_interrupt);
-	signal(SIGXCPU,SIGINT_interrupt);
-	int curr_restarts=0;
-	long long nconfl_to_restart=0;
-	//reduceDB:
-	int cnt_reduceDB=1;
+int curr_restarts=0;
+long long nconfl_to_restart=0;
+//reduceDB:
+int cnt_reduceDB=1;
+
+bool solve(vector<int> aux) {
 	while (true) {
 		CRef confl = propagate();
 		if (confl != CRef_Undef) {
@@ -1183,11 +1219,63 @@ int main(int argc, char**argv){
 				cnt_reduceDB++;
 				nbclausesbeforereduce += incReduceDB;
 			}
-			int next = pickBranchLit();
-			if(next==0)exit_SAT();
+			for (int l : aux) if (~Level[-l]) return false;
+			int next = 0;
+			for (int l : aux) if (Level[l] == Level[-l]) next = l;
+			if (next == 0) next = pickBranchLit();
+			if(next==0)return true;
 			newDecisionLevel();
 			NDECIDE++;
 			uncheckedEnqueue(next,CRef_Undef);
 		}
 	}
+}
+
+int main(int argc, char**argv){
+	read_options(argc, argv);
+	initial_time = cpuTime();
+	signal(SIGINT, SIGINT_exit);
+	signal(SIGTERM,SIGINT_exit);
+	signal(SIGXCPU,SIGINT_exit);
+	if (filename != 0) {
+		ifstream fin (filename);
+		if (!fin) {
+			printf("Error: Couldn't open file %s\n", filename);
+			exit(1);
+		}
+		file_read(fin);
+	} else {
+		if (verbosity > 0) printf("c No filename given, reading from standard input. Use '--help' for help.\n");
+		file_read(cin);
+	}
+	signal(SIGINT, SIGINT_interrupt);
+	signal(SIGTERM,SIGINT_interrupt);
+	signal(SIGXCPU,SIGINT_interrupt);
+	int l = 0, r = opt_coef_sum+1;
+	while (l != r) {
+		int m = (l + r) / 2;
+		vector<int> aux;
+		for (int i = 0; i < opt_K; i++) {
+			if (m & (1 << i)) aux.push_back(  n-opt_K+1 + i);
+			else              aux.push_back(-(n-opt_K+1 + i));
+		}
+		if (solve(aux)) {
+			r = m;
+			// m + sum(coeff[i]*~ell[i]) >= opt_coef_sum possible.
+			// m + opt_coef_sum - sum(coeff[i]*ell[i]) >= opt_coef_sum possible.
+			// sum(coeff[i]*ell[i]) <= m possible.
+			// sum(coeff0[i]*x[i]) + opt_normalize_add <= m possible.
+			// sum(coeff0[i]*x[i]) <= m - opt_normalize_add possible.
+			cout << "o " << m - opt_normalize_add << endl;
+			last_sol.resize(n+1);
+			for (int i=1;i<=n-opt_K;i++)if(~Level[i])last_sol[i]=true;else last_sol[i]=false;
+		} else l = m+1;
+		while (decisionLevel() > 0) undoOne();
+		qhead = (int) trail.size();
+	}
+	if (!opt) exit_SAT();
+	cout << "s OPTIMUM FOUND" << endl;
+	print_stats();
+	printf("v");for(int i=1;i<=n-opt_K;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
+	exit(30);
 }
