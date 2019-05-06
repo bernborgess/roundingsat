@@ -1,6 +1,6 @@
 # roundingsat
 
-roundingsat is a pseudo-boolean SAT solver.
+roundingsat is a pseudo-boolean SAT solver for optimization and decision problems.
 
 ## Compilation
 
