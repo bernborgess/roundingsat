@@ -1273,12 +1273,19 @@ int main(int argc, char**argv){
 			else              aux.push_back(-(n-opt_K+1 + i));
 		}
 		if (solve(aux)) {
-			r = m;
 			// m + sum(coeff[i]*~ell[i]) >= opt_coef_sum possible.
 			// m + opt_coef_sum - sum(coeff[i]*ell[i]) >= opt_coef_sum possible.
 			// sum(coeff[i]*ell[i]) <= m possible.
 			// sum(coeff0[i]*x[i]) + opt_normalize_add <= m possible.
 			// sum(coeff0[i]*x[i]) <= m - opt_normalize_add possible.
+			int s = 0;
+			Clause & C = ca[clauses[0]];
+			for (int i=0; i<(int)C.size(); i++) if (abs(C.lits()[i]) <= n-opt_K) {
+				if (~Level[C.lits()[i]]) s += C.coefs()[i];
+			}
+			assert(opt_coef_sum - s <= m);
+			m = opt_coef_sum - s;
+			r = m;
 			cout << "o " << m - opt_normalize_add << endl;
 			last_sol.resize(n+1);
 			for (int i=1;i<=n-opt_K;i++)if(~Level[i])last_sol[i]=true;else last_sol[i]=false;
