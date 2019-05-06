@@ -1264,9 +1264,7 @@ int main(int argc, char**argv){
 	signal(SIGINT, SIGINT_interrupt);
 	signal(SIGTERM,SIGINT_interrupt);
 	signal(SIGXCPU,SIGINT_interrupt);
-	int l = 0, r = opt_coef_sum+1;
-	while (l != r) {
-		int m = (l + r) / 2;
+	for (int m = opt_coef_sum; m >= 0; m--) {
 		vector<int> aux;
 		for (int i = 0; i < opt_K; i++) {
 			if (m & (1 << i)) aux.push_back(  n-opt_K+1 + i);
@@ -1285,18 +1283,17 @@ int main(int argc, char**argv){
 			}
 			assert(opt_coef_sum - s <= m);
 			m = opt_coef_sum - s;
-			r = m;
 			cout << "o " << m - opt_normalize_add << endl;
 			last_sol.resize(n+1);
 			for (int i=1;i<=n-opt_K;i++)if(~Level[i])last_sol[i]=true;else last_sol[i]=false;
 			last_sol_value = m - opt_normalize_add;
-		} else l = m+1;
+		} else break;
 		while (decisionLevel() > 0) undoOne();
 		qhead = (int) trail.size();
 	}
 	if (!opt) exit_SAT();
 	cout << "s OPTIMUM FOUND" << endl;
-	cout << "c objective function value " << l - opt_normalize_add << endl;
+	cout << "c objective function value " << last_sol_value << endl;
 	print_stats();
 	printf("v");for(int i=1;i<=n-opt_K;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
 	exit(30);
