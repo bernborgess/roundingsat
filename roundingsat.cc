@@ -80,9 +80,10 @@ struct Clause {
 		unsigned size         : 30; } header;
 	// watch data
 	int nwatch;
+	long long sumwatchcoefs;
+	long long minsumwatch;
 	// ordinary data
 	int w;
-	int mxcoef;
 	float act;
 	int lbd;
 	int data[0];
@@ -170,7 +171,6 @@ struct {
 		at += sz_clause(length);
 		clause->header = {0, learnt, (unsigned)length};
 		clause->w = w;
-		clause->mxcoef = *max_element(coefs.begin(), coefs.end());
 		clause->act = 0;
 		for(int i=0;i<length;i++)clause->lits()[i]=lits[i];
 		for(int i=0;i<length;i++)clause->coefs()[i]=coefs[i];
@@ -286,13 +286,6 @@ long long slack(Clause & C){ return slack(C.size(),C.lits(),C.coefs(),C.w); }
 
 void attachClause(CRef cr){
 	Clause & C = ca[cr];
-	vector<int>coefs2(C.coefs(),C.coefs()+C.size());sort(coefs2.begin(),coefs2.end());
-	// determine k, the minimum number of literals such that satisfying any k is enough to satisfy the constraint.
-	int k=0;
-	long long sum=0;
-	for(int c:coefs2){sum+=c;k++;if(sum>=C.w)break;}
-	if (sum < C.w) exit_UNSAT();
-	C.nwatch = min((int) C.size(), k+1);
 	// sort literals by the decision level at which they were falsified, descending order (never falsified = level infinity)
 	vector<pair<int,int>> order;
 	for(int i=0;i<(int)C.size();i++){
@@ -302,13 +295,20 @@ void attachClause(CRef cr){
 	sort(order.begin(),order.end());
 	vector<int>lits_old (C.lits(), C.lits()+C.size());
 	vector<int>coefs_old (C.coefs(), C.coefs()+C.size());
-	// watch the first k literals in this order (we may be watching falsified literals).
-	// it can be proven that this gives a "valid state" for the watches.
 	for(int i=0;i<(int)C.size();i++){
 		C.lits()[i] = lits_old[order[i].second];
 		C.coefs()[i] = coefs_old[order[i].second];
 	}
-	for(int i=0;i<C.nwatch;i++) adj[C.lits()[i]].push_back({cr});
+	C.sumwatchcoefs = 0;
+	C.nwatch = 0;
+	int mxcoef = 0; for(int i=0;i<(int)C.size();i++) if (abs(C.lits()[i]) <= n - opt_K) mxcoef = max(mxcoef, C.coefs()[i]);
+	C.minsumwatch = (long long) C.w + mxcoef;
+	for(int i=0;i<(int)C.size();i++) {
+		C.sumwatchcoefs += C.coefs()[i];
+		C.nwatch++;
+		adj[C.lits()[i]].push_back({cr});
+		if (C.sumwatchcoefs >= C.minsumwatch) break;
+	}
 }
 
 bool locked(CRef cr){
@@ -344,7 +344,7 @@ void add_binary_clause(vector<int> lits) {
 
 void uncheckedEnqueue(int p, CRef from){
 	assert(Level[p]==-1 && Level[-p]==-1);
-	Level[p] = decisionLevel();
+	Level[p] = -2;
 	Pos[p] = (int) trail.size();
 	Reason[p] = from;
 	trail.push_back(p);
@@ -354,7 +354,7 @@ void uncheckedEnqueue(int p, CRef from){
 			int * lits = C.lits();
 			int cntsingular = 0;
 			for (int i=0; i<(int)C.size(); i++) {
-				if (~Level[-lits[i]] && Level[-lits[i]] > 0 && (int) all_dominators[-lits[i]].size() == 1) {
+				if (~Level[-lits[i]] && Level[-lits[i]] != 0 && (int) all_dominators[-lits[i]].size() == 1) {
 					cntsingular++; if (cntsingular > 1) break;
 				}
 			}
@@ -362,7 +362,7 @@ void uncheckedEnqueue(int p, CRef from){
 			if (cntsingular <= 1) {
 				bool fst = true;
 				for (int i=0; i<(int)C.size(); i++) {
-					if (~Level[-lits[i]] && Level[-lits[i]] > 0) {
+					if (~Level[-lits[i]] && Level[-lits[i]] != 0) {
 						if (fst) dominators = all_dominators[-lits[i]], fst = false;
 						else {
 							set<int> se; for (int l : dominators) if (all_dominators[-lits[i]].count(l)) se.insert(l);
@@ -632,6 +632,7 @@ CRef propagate() {
 	CRef confl = CRef_Undef;
 	while(qhead<(int)trail.size()){
 		int p=trail[qhead++];
+		Level[p] = decisionLevel();
 		for (int q : adj_binary[-p]) {
 			if (Level[q] == Level[-q]) {
 				CRef cr = binary_clause_to_cref[{min(-p, q), max(-p, q)}];
@@ -642,6 +643,7 @@ CRef propagate() {
 				assert(cr != CRef_Undef);
 				for (int l : all_dominators[p]) add_binary_clause({-l, q});
 				confl = binary_clause_to_cref[{min(-p, q), max(-p, q)}];
+				while (qhead < (int) trail.size()) Level[trail[qhead++]] = decisionLevel();
 				qhead = trail.size();
 			}
 		}
@@ -653,31 +655,39 @@ CRef propagate() {
 			i++;
 			Clause & C = ca[cr];
 			if(C.header.markedfordel)continue;
-			int nwatch = C.nwatch;
 			int * lits = C.lits();
 			int * coefs = C.coefs();
-			int pos = 0; while (lits[pos] != -p) pos++;
-			// first, try to replace the falsified watch.
-			bool found=false;
-			for(int it=nwatch;it<(int)C.size() && !found;it++)if(Level[-lits[it]]==-1){
-				adj[lits[it]].push_back({cr});
-				swap(lits[it],lits[pos]),swap(coefs[it],coefs[pos]);
-				found=true;
+			bool watchlocked = false;
+			for (int i=0; i<C.nwatch; i++) if (Level[-lits[i]] >= 0 && lits[i] != -p) watchlocked = true;
+			if (!watchlocked) {
+				int pos = 0; while (lits[pos] != -p) pos++;
+				int c = coefs[pos];
+				for(int it=C.nwatch;it<(int)C.size() && C.sumwatchcoefs-c < C.minsumwatch;it++)if(Level[-lits[it]]==-1){
+					adj[lits[it]].push_back({cr});
+					swap(lits[it],lits[C.nwatch]),swap(coefs[it],coefs[C.nwatch]);
+					C.sumwatchcoefs += coefs[C.nwatch];
+					C.nwatch++;
+				}
+				if (C.sumwatchcoefs-c >= C.minsumwatch) {
+					swap(lits[pos],lits[C.nwatch-1]),swap(coefs[pos],coefs[C.nwatch-1]);
+					C.sumwatchcoefs-=coefs[C.nwatch-1];
+					C.nwatch--;
+					continue;
+				}
 			}
-			if(found)continue;
 			*j++ = {cr};
-			long long s = slack(nwatch,lits,coefs,C.w);
+			long long s = slack(C.nwatch,lits,coefs,C.w);
 			if(s<0){
 				if (carddetect) {
 					int p = 0;
 					for (int i=0; i<(int)C.size(); i++) {
-						if (~Level[-lits[i]] && Level[-lits[i]] > 0) {
+						if (~Level[-lits[i]] && Level[-lits[i]] != 0) {
 							if (p == 0 || Pos[-lits[i]] > Pos[-p]) p = lits[i];
 						}
 					}
 					int cntsingular=0;
 					for (int i=0; i<(int)C.size(); i++) {
-						if (~Level[-lits[i]] && Level[-lits[i]] > 0 && lits[i] != p && (int) all_dominators[-lits[i]].size() == 1) {
+						if (~Level[-lits[i]] && Level[-lits[i]] != 0 && lits[i] != p && (int) all_dominators[-lits[i]].size() == 1) {
 							cntsingular++; if (cntsingular > 1) break;
 						}
 					}
@@ -685,7 +695,7 @@ CRef propagate() {
 						set<int> dominators;
 						bool fst = true;
 						for (int i=0; i<(int)C.size(); i++) {
-							if (~Level[-lits[i]] && Level[-lits[i]] > 0 && lits[i] != p) {
+							if (~Level[-lits[i]] && Level[-lits[i]] != 0 && lits[i] != p) {
 								if (fst) dominators = all_dominators[-lits[i]], fst = false;
 								else {
 									set<int> se; for (int l : dominators) if (all_dominators[-lits[i]].count(l)) se.insert(l);
@@ -698,10 +708,10 @@ CRef propagate() {
 				}
 				
 				confl = cr;
-				qhead = trail.size();
+				while (qhead < (int) trail.size()) Level[trail[qhead++]] = decisionLevel();
 				while(i<end)*j++=*i++;
-			}else if (s < C.mxcoef){ // this check is an optimization
-				for(int it=0;it<nwatch;it++)if(Level[-lits[it]]==-1 && coefs[it] > s){
+			}else{
+				for(int it=0;it<C.nwatch;it++)if(Level[-lits[it]]==-1 && coefs[it] > s){
 					NIMPL++;
 					if (Level[lits[it]]==-1) {
 						uncheckedEnqueue(lits[it], cr);
