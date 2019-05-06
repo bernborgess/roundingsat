@@ -42,6 +42,15 @@ and linear inequalities as defined above (using the variables `x1` to `xN`). The
 
 A clause `x1 v ~x2` can be encoded as `1 x1 1 ~x2 >= 1;`.
 
+### Optimization problems
+
+It is possible to add an objective function to the OPB file. Roundingsat will then optimization this function.
+The objective function has to be specified before all constraints. The format is
+
+```
+min: 1 x1 1 -x2 2 ~x3 ;
+```
+
 ## CNF format
 
 All variables are boolean, and all constraints are clauses.
