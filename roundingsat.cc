@@ -711,7 +711,8 @@ CRef propagate() {
 				while (qhead < (int) trail.size()) Level[trail[qhead++]] = decisionLevel();
 				while(i<end)*j++=*i++;
 			}else{
-				for(int it=0;it<C.nwatch;it++)if(Level[-lits[it]]==-1 && coefs[it] > s){
+				int nwatch = C.nwatch;
+				for(int it=0;it<nwatch;it++)if(Level[-lits[it]]==-1 && coefs[it] > s){
 					NIMPL++;
 					if (Level[lits[it]]==-1) {
 						uncheckedEnqueue(lits[it], cr);
@@ -1078,10 +1079,12 @@ void print_stats() {
 	printf("d propagations %lld\n", NPROP);
 }
 
+int last_sol_value;
 vector<bool> last_sol;
 void exit_SAT() {
 	print_stats();
 	puts("s SATISFIABLE");
+	cout << "c objective function value " << last_sol_value << endl;
 	printf("v");for(int i=1;i<=n-opt_K;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
 	exit(10);
 }
@@ -1279,12 +1282,14 @@ int main(int argc, char**argv){
 			cout << "o " << m - opt_normalize_add << endl;
 			last_sol.resize(n+1);
 			for (int i=1;i<=n-opt_K;i++)if(~Level[i])last_sol[i]=true;else last_sol[i]=false;
+			last_sol_value = m - opt_normalize_add;
 		} else l = m+1;
 		while (decisionLevel() > 0) undoOne();
 		qhead = (int) trail.size();
 	}
 	if (!opt) exit_SAT();
 	cout << "s OPTIMUM FOUND" << endl;
+	cout << "c objective function value " << l - opt_normalize_add << endl;
 	print_stats();
 	printf("v");for(int i=1;i<=n-opt_K;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
 	exit(30);
