@@ -1264,6 +1264,7 @@ int main(int argc, char**argv){
 	signal(SIGINT, SIGINT_interrupt);
 	signal(SIGTERM,SIGINT_interrupt);
 	signal(SIGXCPU,SIGINT_interrupt);
+	for (CRef cr : clauses) if (ca[cr].size() == 2) add_binary_clause(vector<int> (ca[cr].lits(), ca[cr].lits() + ca[cr].size()));
 	for (int m = opt_coef_sum; m >= 0; m--) {
 		vector<int> aux;
 		for (int i = 0; i < opt_K; i++) {
