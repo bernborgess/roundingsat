@@ -182,7 +182,6 @@ struct {
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 int verbosity = 1;
-bool carddetect = true;
 // currently, the maximum number of variables is hardcoded (variable N), and most arrays are of fixed size.
 int n;
 bool opt = false;
@@ -193,12 +192,9 @@ struct Watch {
 	CRef cref;
 };
 vector<vector<Watch>> _adj; vector<vector<Watch>>::iterator adj;
-vector<vector<int>> _adj_binary; vector<vector<int>>::iterator adj_binary;
-map<vector<int>, CRef> binary_clause_to_cref;
 vector<CRef> _Reason; vector<CRef>::iterator Reason;
 vector<int> trail;
 vector<int> _Level; vector<int>::iterator Level;
-vector<int> _Pos; vector<int>::iterator Pos;
 vector<int> trail_lim;
 int qhead; // for unit propagation
 vector<int> phase;
@@ -329,61 +325,18 @@ void removeClause(CRef cr){
 
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
-map<int, set<int>> all_dominators;
-vector<vector<int>> to_attach;
-
-void add_binary_clause(vector<int> lits) {
-	sort(lits.begin(), lits.end());
-	if (binary_clause_to_cref.count(lits)) return;
-	vector<int> coefs = {1, 1};
-	CRef cr = ca.alloc(lits, coefs, 1, true);
-	binary_clause_to_cref[lits] = cr;
-	to_attach.push_back(lits);
-	learnts.push_back(cr);
-}
-
 void uncheckedEnqueue(int p, CRef from){
 	assert(Level[p]==-1 && Level[-p]==-1);
 	Level[p] = -2;
-	Pos[p] = (int) trail.size();
 	Reason[p] = from;
 	trail.push_back(p);
-	if (carddetect) {
-		if (from != CRef_Undef && decisionLevel() > 0) {
-			Clause & C = ca[Reason[p]];
-			int * lits = C.lits();
-			int cntsingular = 0;
-			for (int i=0; i<(int)C.size(); i++) {
-				if (~Level[-lits[i]] && Level[-lits[i]] != 0 && (int) all_dominators[-lits[i]].size() == 1) {
-					cntsingular++; if (cntsingular > 1) break;
-				}
-			}
-			set<int> & dominators = all_dominators[p];
-			if (cntsingular <= 1) {
-				bool fst = true;
-				for (int i=0; i<(int)C.size(); i++) {
-					if (~Level[-lits[i]] && Level[-lits[i]] != 0) {
-						if (fst) dominators = all_dominators[-lits[i]], fst = false;
-						else {
-							set<int> se; for (int l : dominators) if (all_dominators[-lits[i]].count(l)) se.insert(l);
-							dominators = se;
-						}
-					}
-				}
-				for (int l : dominators) add_binary_clause({-l, p});
-			}
-		}
-		all_dominators[p].insert(p);
-	}
 }
 
 void undoOne(){
 	assert(!trail.empty());
 	int l = trail.back();
 	trail.pop_back();
-	all_dominators.erase(l);
 	Level[l] = -1;
-	Pos[l] = -1;
 	phase[abs(l)]=l;
 	if(!trail_lim.empty() && trail_lim.back() == (int)trail.size())trail_lim.pop_back();
 	Reason[l] = CRef_Undef;
@@ -510,71 +463,13 @@ int computeLBD(CRef cr) {
 	return (int) levels.size();
 }
 
-bool extends(vector<int> lits, int l, int & steps) {
-	for (int i = 0; i < (int)lits.size(); i++) {
-		steps++;
-		if (!binary_clause_to_cref.count({min(lits[i], l), max(lits[i], l)})) return false;
-	}
-	return true;
-}
-
-map<vector<int>, vector<int>> onthefly_cache;
-map<vector<int>, int> credit;
-void onthefly(vector<int> & lits, vector<int> & coefs, int & w) {
-	if (w > 1 || (int) lits.size() > 2) return;
-	sort(lits.begin(), lits.end());
-	vector<int> key = lits;
-	if (onthefly_cache.count(key)) {
-		lits = onthefly_cache[key];
-		w += (int) lits.size() - (int) key.size();
-		coefs.resize(lits.size(), 1);
-		credit[key] -= (int) lits.size();
-		if (credit[key] < 0) onthefly_cache.erase(key), credit[key] = 0;
-	} else {
-		credit[key] = 0;
-		set<int> seen; for (int l : lits) seen.insert(l), seen.insert(-l);
-		vector<int> cand = adj_binary[lits[0]];
-		sort(cand.begin(), cand.end(), [](int l,int l2) { return activity[abs(l)] < activity[abs(l2)]; });
-		while (1) {
-			int who = 0;
-			while (!cand.empty()) {
-				int l = cand.back();
-				cand.pop_back();
-				if (seen.count(l)) continue;
-				seen.insert(l);
-				if (extends(lits, l, credit[key])) {
-					seen.insert(-l);
-					who = l;
-					break;
-				}
-			}
-			if (who != 0) {
-				lits.push_back(who);
-				coefs.push_back(1);
-				w++;
-			} else break;
-		}
-		onthefly_cache[key] = lits;
-	}
-}
-
 void analyze(CRef confl, vector<int>& out_lits, vector<int>& out_coefs, int& out_w){
 	Clause & C = ca[confl];
 	if (C.learnt()) {
 		claBumpActivity(C);
 		if (C.lbd > 2) C.lbd = min(C.lbd, computeLBD(confl));
 	}
-	{
-		vector<int> lits (C.lits(), C.lits()+C.size());
-		vector<int> coefs (C.coefs(), C.coefs()+C.size());
-		int w = C.w;
-		if (carddetect) {
-			if (lits.size() == 2 && *max_element(coefs.begin(),coefs.end()) == 1) {
-				onthefly(lits, coefs, w);
-			}
-		}
-		add_to_conflict(lits.size(), lits, coefs, w);
-	}
+	add_to_conflict(C.size(), C.lits(), C.coefs(), C.w);
 	confl_data.slack = slack(C);
 	vector<int> reason_lits; reason_lits.reserve(n);
 	vector<int> reason_coefs; reason_coefs.reserve(n);
@@ -599,11 +494,6 @@ void analyze(CRef confl, vector<int>& out_lits, vector<int>& out_coefs, int& out
 				reason_lits.clear();
 				reason_coefs.clear();
 				round_reason(l, reason_lits, reason_coefs, reason_w);
-				if (carddetect) {
-					if (reason_lits.size() == 2 && *max_element(reason_coefs.begin(),reason_coefs.end()) == 1) {
-						onthefly(reason_lits, reason_coefs, reason_w);
-					}
-				}
 				add_to_conflict(reason_lits.size(), reason_lits, reason_coefs, reason_w);
 			}
 		}
@@ -633,21 +523,6 @@ CRef propagate() {
 	while(qhead<(int)trail.size()){
 		int p=trail[qhead++];
 		Level[p] = decisionLevel();
-		for (int q : adj_binary[-p]) {
-			if (Level[q] == Level[-q]) {
-				CRef cr = binary_clause_to_cref[{min(-p, q), max(-p, q)}];
-				assert(cr != CRef_Undef);
-				uncheckedEnqueue(q, binary_clause_to_cref[{min(-p, q), max(-p, q)}]);
-			} else if (~Level[-q]) {
-				CRef cr = binary_clause_to_cref[{min(-p, q), max(-p, q)}];
-				assert(cr != CRef_Undef);
-				for (int l : all_dominators[p]) add_binary_clause({-l, q});
-				confl = binary_clause_to_cref[{min(-p, q), max(-p, q)}];
-				while (qhead < (int) trail.size()) Level[trail[qhead++]] = decisionLevel();
-				qhead = trail.size();
-			}
-		}
-		if (confl != CRef_Undef) break;
 		vector<Watch> & ws = adj[-p];
 		vector<Watch>::iterator i, j, end;
 		for(i = j = ws.begin(), end = ws.end(); i != end;){
@@ -678,46 +553,14 @@ CRef propagate() {
 			*j++ = {cr};
 			long long s = slack(C.nwatch,lits,coefs,C.w);
 			if(s<0){
-				if (carddetect) {
-					int p = 0;
-					for (int i=0; i<(int)C.size(); i++) {
-						if (~Level[-lits[i]] && Level[-lits[i]] != 0) {
-							if (p == 0 || Pos[-lits[i]] > Pos[-p]) p = lits[i];
-						}
-					}
-					int cntsingular=0;
-					for (int i=0; i<(int)C.size(); i++) {
-						if (~Level[-lits[i]] && Level[-lits[i]] != 0 && lits[i] != p && (int) all_dominators[-lits[i]].size() == 1) {
-							cntsingular++; if (cntsingular > 1) break;
-						}
-					}
-					if (cntsingular <= 1) {
-						set<int> dominators;
-						bool fst = true;
-						for (int i=0; i<(int)C.size(); i++) {
-							if (~Level[-lits[i]] && Level[-lits[i]] != 0 && lits[i] != p) {
-								if (fst) dominators = all_dominators[-lits[i]], fst = false;
-								else {
-									set<int> se; for (int l : dominators) if (all_dominators[-lits[i]].count(l)) se.insert(l);
-									dominators = se;
-								}
-							}
-						}
-						for (int l : dominators) add_binary_clause({-l, p});
-					}
-				}
-				
 				confl = cr;
 				while (qhead < (int) trail.size()) Level[trail[qhead++]] = decisionLevel();
 				while(i<end)*j++=*i++;
 			}else{
-				int nwatch = C.nwatch;
-				for(int it=0;it<nwatch;it++)if(Level[-lits[it]]==-1 && coefs[it] > s){
+				for(int it=0;it<C.nwatch;it++)if(Level[-lits[it]]==-1 && coefs[it] > s){
 					NIMPL++;
 					if (Level[lits[it]]==-1) {
 						uncheckedEnqueue(lits[it], cr);
-						lits = ca[cr].lits();
-						coefs = ca[cr].coefs();
 						NPROP++;
 					}
 				}
@@ -725,8 +568,6 @@ CRef propagate() {
 		}
 		ws.erase(j, end);
 	}
-	for (vector<int> v : to_attach) adj_binary[v[0]].push_back(v[1]), adj_binary[v[1]].push_back(v[0]);
-	to_attach.clear();
 	return confl;
 }
 
@@ -754,10 +595,8 @@ void init(int nvars){
 	n = nvars;
 	qhead=0;
 	_adj.resize(2*n+1); adj = _adj.begin() + n;
-	_adj_binary.resize(2*n+1); adj_binary = _adj_binary.begin() + n;
 	_Reason.resize(2*n+1, CRef_Undef); Reason = _Reason.begin() + n;
 	_Level.resize(2*n+1); Level = _Level.begin() + n;
-	_Pos.resize(2*n+1); Pos = _Pos.begin() + n;
 	phase.resize(n+1);
 	activity.resize(n+1);
 	order_heap.init();
@@ -780,10 +619,8 @@ void init(int nvars){
 void add_opt_vars() {
 	n += opt_K;
 	_adj.resize(2*n+1); adj = _adj.begin() + n;
-	_adj_binary.resize(2*n+1); adj_binary = _adj_binary.begin() + n;
 	_Reason.resize(2*n+1, CRef_Undef); Reason = _Reason.begin() + n;
 	_Level.resize(2*n+1); Level = _Level.begin() + n;
-	_Pos.resize(2*n+1); Pos = _Pos.begin() + n;
 	phase.resize(n+1);
 	activity.resize(n+1);
 	order_heap.init();
@@ -998,7 +835,6 @@ void garbage_collect(){
 	#define update_ptr(cr) if(cr.ofs>=ofs_learnts)cr=learnts[lower_bound(learnts_old.begin(), learnts_old.end(), cr)-learnts_old.begin()]
 	for(int l=-n; l<=n; l++)for(size_t i=0;i<adj[l].size();i++)update_ptr(adj[l][i].cref);
 	for(int l=-n;l<=n;l++)if(Reason[l]!=CRef_Undef)update_ptr(Reason[l]);
-	for(auto&p:binary_clause_to_cref)update_ptr(p.second);
 	#undef update_ptr
 }
 
@@ -1114,7 +950,6 @@ void usage(int argc, char**argv) {
 	printf("  --var-decay=arg  Set the VSIDS decay factor (0.5<=arg<1; default %lf).\n",var_decay);
 	printf("  --rinc=arg       Set the base of the Luby restart sequence (floating point number >=1; default %lf).\n",rinc);
 	printf("  --rfirst=arg     Set the interval of the Luby restart sequence (integer >=1; default %d).\n",rfirst);
-	printf("  --carddetect=arg Set at-most-one detection (true or false; default %s).\n",carddetect?"true":"false");
 }
 
 char * filename = 0;
@@ -1126,7 +961,7 @@ void read_options(int argc, char**argv) {
 			exit(0);
 		}
 	}
-	vector<string> opts = {"verbosity", "var-decay", "rinc", "rfirst", "carddetect"};
+	vector<string> opts = {"verbosity", "var-decay", "rinc", "rfirst"};
 	map<string, string> opt_val;
 	for(int i=1;i<argc;i++){
 		if (string(argv[i]).substr(0,2) != "--") filename = argv[i];
@@ -1158,11 +993,6 @@ void read_options(int argc, char**argv) {
 		int v = atoi(opt_val["rfirst"].c_str());
 		if (v >= 1) rfirst = v;
 		else printf("Error: invalid value for rfirst: %s (should be integer >=1)\n",opt_val["rfirst"].c_str()), exit(1);
-	}
-	if (opt_val.count("carddetect")) {
-		if (opt_val["carddetect"] == "true") carddetect = true; else
-		if (opt_val["carddetect"] == "false") carddetect = false; else
-		printf("Error: invalid value for carddetect: %s (should be true or false)\n", opt_val["carddetect"].c_str()), exit(1);
 	}
 }
 
@@ -1264,7 +1094,6 @@ int main(int argc, char**argv){
 	signal(SIGINT, SIGINT_interrupt);
 	signal(SIGTERM,SIGINT_interrupt);
 	signal(SIGXCPU,SIGINT_interrupt);
-	for (CRef cr : clauses) if (ca[cr].size() == 2) add_binary_clause(vector<int> (ca[cr].lits(), ca[cr].lits() + ca[cr].size()));
 	for (int m = opt_coef_sum; m >= 0; m--) {
 		vector<int> aux;
 		for (int i = 0; i < opt_K; i++) {
