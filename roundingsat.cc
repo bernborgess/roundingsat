@@ -211,32 +211,30 @@ vector<double> activity;
 struct{
 	// segment tree (fast implementation of priority queue).
 	vector<int> tree;
-	int h;
 	void init() {
-		h=0;while((1<<h)<n+1)h++;
 		tree.clear();
-		tree.resize(1<<(h+1),-1);
+		tree.resize(2*(n+1), -1);
 	}
 	void percolateUp(int x) {
-		for(int at=x|(1<<h); at>1; at>>=1){
+		for(int at=x+n+1; at>1; at>>=1){
 			if(tree[at^1]==-1 || activity[x]>activity[tree[at^1]])tree[at>>1]=x;else break;
 		}
 	}
 	bool empty() { return tree[1] == -1; }
 	void insert(int x) {
-		tree[x | (1 << h)] = x;
+		tree[x+n+1] = x;
 		percolateUp(x);
 	}
 	int removeMax() {
 		int x = tree[1];
 		assert(x != -1);
-		tree[x|(1<<h)] = -1;
-		for(int at=x|(1<<h); at>1; at>>=1){
+		tree[x+n+1] = -1;
+		for(int at=x+n+1; at>1; at>>=1){
 			if(tree[at^1] != -1 && (tree[at]==-1 || activity[tree[at^1]]>activity[tree[at]]))tree[at>>1]=tree[at^1];else tree[at>>1]=tree[at];
 		}
 		return x;
 	}
-	bool inHeap(int v) { return tree[v | (1 << h)] != -1; }
+	bool inHeap(int v) { return tree[v+n+1] != -1; }
 } order_heap;
 void insertVarOrder(int x) {
 	if (!order_heap.inHeap(x)) order_heap.insert(x); }
