@@ -1030,7 +1030,6 @@ bool solve(vector<int> aux) {
 			assert(lvl < decisionLevel());
 			CRef cr = ca.alloc(lits,coefs,w, true);
 			Clause & C = ca[cr];
-			cout << C << endl;
 			C.lbd = computeLBD(cr);
 			while(decisionLevel()>lvl)undoOne();
 			qhead=trail.size();
