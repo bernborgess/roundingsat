@@ -100,18 +100,15 @@ struct Clause {
 struct lit{int l;lit(int l):l(l){}};
 ostream&operator<<(ostream&o,lit const&l){if(l.l<0)o<<"~";o<<"x"<<abs(l.l);return o;}
 ostream & operator<<(ostream & o, Clause & C) {
-	map<int,int> M;for(size_t i=0;i<C.size();i++)M[C.lits()[i]]=C.coefs()[i];
-	int i=0;
-	for(auto p:M){
-		int l=p.first;
-		int coef=p.second;
-		if(i!=0)o<<" + ";
-		if(coef!=1)o<<coef<<" ";
-		o<<lit(l);
-		i++;
+	vector<int> order;
+	for (int i = 0; i < (int) C.size(); i++) order.push_back(i);
+	sort(order.begin(), order.end(), [&C](int i, int j) { return abs(C.lits()[i]) < abs(C.lits()[j]); });
+	for (int i = 0; i < (int) C.size(); i++) {
+		int l = C.lits()[order[i]];
+		int coef = C.coefs()[order[i]];
+		o << coef << " " << lit(l) << " ";
 	}
-	o<<" >= "<<C.w;
-	o<<" (#watches="<<C.nwatch<<")";
+	o << ">= " << C.w << ";";
 	return o;
 }
 
@@ -1033,6 +1030,7 @@ bool solve(vector<int> aux) {
 			assert(lvl < decisionLevel());
 			CRef cr = ca.alloc(lits,coefs,w, true);
 			Clause & C = ca[cr];
+			cout << C << endl;
 			C.lbd = computeLBD(cr);
 			while(decisionLevel()>lvl)undoOne();
 			qhead=trail.size();
