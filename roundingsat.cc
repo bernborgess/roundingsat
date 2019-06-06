@@ -376,7 +376,8 @@ struct ConflictData {
 	}
 } confl_data;
 
-inline long long ceildiv(long long p,long long q){ return (p+q-1)/q; }
+template <class T>
+inline T ceildiv(const T& p,const T& q){ return (p+q-1)/q; }
 
 void round_reason(int l0, vector<int>&out_lits,vector<int>&out_coefs,int&out_w) {
 	Clause & C = ca[Reason[l0]];
@@ -396,7 +397,7 @@ void round_reason(int l0, vector<int>&out_lits,vector<int>&out_coefs,int&out_w) 
 			out_lits.push_back(l), out_coefs.push_back(ceildiv(coef, old_coef_l0));
 		}
 	}
-	out_w = ceildiv(w, old_coef_l0);
+	out_w = ceildiv<long long>(w, old_coef_l0);
 	assert(slack(out_lits.size(), out_lits, out_coefs, out_w) == 0);
 }
 
@@ -580,6 +581,11 @@ int pickBranchLit(){
 	return next == 0 ? 0 : phase[next];
 }
 
+// TODO: checking the solution in debug mode was removed?
+void checksol() {
+	for(CRef cr : clauses)assert(slack(ca[cr]) >= 0);
+}
+
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 void init(int nvars){
@@ -644,6 +650,27 @@ void reduce_by_toplevel(vector<int>& lits, vector<int>& coefs, int& w){
 	coefs.erase(coefs.begin()+j,coefs.end());
 }
 
+// UTIL ----------------------------------------------------------------
+inline void saturate(vector<int>& coefs, int& w){
+	for (auto it = coefs.begin(); it != coefs.end(); ++it) if (it [0] > w) it [0] = w;
+}
+
+bool simplify_constraint(vector<int> &lits, vector<int> &coefs, int &w){
+	reduce_by_toplevel(lits,coefs,w);
+	if(w<=0) return true; // trivially satisfied constraint
+	saturate(coefs,w); // as reduce_by_toplevel could have reduced w
+	return false;
+}
+
+CRef learnConstraint(vector<int>& lits,vector<int>& coefs, int w){
+	CRef cr = ca.alloc(lits,coefs,w, true);
+	Clause & C = ca[cr];
+	C.lbd = computeLBD(cr);
+	attachClause(cr);
+	learnts.push_back(cr);
+	return cr;
+}
+
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 // Parsers
@@ -652,16 +679,16 @@ void process_ineq(vector<int> lits, vector<int> coefs, int w){
 		if(coefs[i] < 0) lits[i]*=-1,coefs[i]*=-1,w+=coefs[i];
 		if (w > (int) 1e9) { puts("Error: normalization of an input constraint causes degree to exceed 10^9."); exit(1); }
 	}
-	reduce_by_toplevel(lits,coefs,w);
-	if(w <= 0)return;//already satisfied.
+	bool trivial = simplify_constraint(lits,coefs,w);
+	if(trivial)return;//already satisfied.
 	long long som = 0;for(int c:coefs)som+=c;
 	if(som < w)puts("c UNSAT trivially inconsistent constraint"),exit_UNSAT();
 	for(size_t i=0;i<lits.size();i++)if(som-coefs[i] < w){
 		//printf("propagate %d\n",lits[i]);
 		uncheckedEnqueue(lits[i],CRef_Undef);
 	}
-	reduce_by_toplevel(lits,coefs,w);
-	if(w <= 0)return;//already satisfied.
+	trivial = simplify_constraint(lits,coefs,w);
+	if(trivial)return;//already satisfied.
 	CRef cr = ca.alloc(lits, coefs, w, false);
 	attachClause(cr);
 	clauses.push_back(cr);
@@ -913,6 +940,10 @@ void print_stats() {
 int last_sol_value;
 vector<bool> last_sol;
 void exit_SAT() {
+#ifndef NDEBUG
+	checksol();
+	puts("c SATISFIABLE (checked)");
+#endif
 	print_stats();
 	puts("s SATISFIABLE");
 	if (opt) cout << "c objective function value " << last_sol_value << endl;
@@ -953,7 +984,7 @@ void read_options(int argc, char**argv) {
 	for(int i=1;i<argc;i++){
 		if (!strcmp(argv[i], "--help")) {
 			usage(argc, argv);
-			exit(0);
+			exit(1);
 		}
 	}
 	vector<string> opts = {"verbosity", "var-decay", "rinc", "rfirst"};
@@ -1018,7 +1049,8 @@ bool solve(vector<int> aux) {
 			}
 			vector<int>lits;vector<int>coefs;int w;
 			analyze(confl, lits, coefs, w);
-			reduce_by_toplevel(lits,coefs,w);
+			bool trivial = simplify_constraint(lits,coefs,w);
+			assert(!trivial);
 			// compute an assertion level
 			// it may be possible to backjump further, but we don't do this
 			int lvl = 0;
@@ -1026,14 +1058,10 @@ bool solve(vector<int> aux) {
 				if (Level[-lits[i]] < decisionLevel())
 					lvl = max(lvl, Level[-lits[i]]);
 			assert(lvl < decisionLevel());
-			CRef cr = ca.alloc(lits,coefs,w, true);
-			Clause & C = ca[cr];
-			C.lbd = computeLBD(cr);
 			while(decisionLevel()>lvl)undoOne();
 			qhead=trail.size();
-			learnts.push_back(cr);
-			attachClause(cr);
-			if (::slack(C) == 0) {
+			CRef cr = learnConstraint(lits,coefs,w);
+			if (::slack(ca[cr]) == 0) {
 				for (int i=0; i<(int)lits.size(); i++)
 					if (Level[-lits[i]] == -1 && Level[lits[i]] == -1)
 						uncheckedEnqueue(lits[i], cr);
