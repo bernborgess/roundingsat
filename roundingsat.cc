@@ -588,28 +588,9 @@ void checksol() {
 
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
-void init(int nvars){
-	if (nvars < 0){
-		printf("Error: The number of variables is negative.\n");
-		exit(1);
-	}
-	n = nvars;
-	qhead=0;
-	_adj.resize(2*n+1); adj = _adj.begin() + n;
-	_Reason.resize(2*n+1, CRef_Undef); Reason = _Reason.begin() + n;
-	_Level.resize(2*n+1); Level = _Level.begin() + n;
-	phase.resize(n+1);
-	activity.resize(n+1);
-	order_heap.init();
-	for(int i=1;i<=n;i++){
-		Level[i]=Level[-i]=-1;
-		Reason[i]=Reason[-i]=CRef_Undef;
-		phase[i]=-i;
-		activity[i]=0;
-		insertVarOrder(i);
-		//adj[i].clear(); adj[-i].clear(); // is already cleared.
-	}
-	confl_data.init();
+// Initialization
+void init(){
+	qhead = 0;
 	ca.memory = NULL;
 	ca.at = 0;
 	ca.cap = 0;
@@ -617,8 +598,12 @@ void init(int nvars){
 	ca.capacity(1024*1024);//4MB
 }
 
-void add_opt_vars() {
-	n += opt_K;
+void setNbVariables(int nvars){
+	if (nvars < 0){
+		printf("Error: The number of variables is negative.\n");
+		exit(1);
+	}
+	n = nvars;
 	_adj.resize(2*n+1); adj = _adj.begin() + n;
 	_Reason.resize(2*n+1, CRef_Undef); Reason = _Reason.begin() + n;
 	_Level.resize(2*n+1); Level = _Level.begin() + n;
@@ -636,6 +621,9 @@ void add_opt_vars() {
 	confl_data.init();
 }
 
+// ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// Proto-constraint handling
 void reduce_by_toplevel(vector<int>& lits, vector<int>& coefs, int& w){
 	size_t i,j;
 	for(i=j=0; i<lits.size(); i++){
@@ -650,7 +638,6 @@ void reduce_by_toplevel(vector<int>& lits, vector<int>& coefs, int& w){
 	coefs.erase(coefs.begin()+j,coefs.end());
 }
 
-// UTIL ----------------------------------------------------------------
 inline void saturate(vector<int>& coefs, int& w){
 	for (auto it = coefs.begin(); it != coefs.end(); ++it) if (it [0] > w) it [0] = w;
 }
@@ -775,7 +762,7 @@ void opb_read(istream & in) {
 				}
 				opt_K = 0; while ((1<<opt_K)-1 < opt_coef_sum) opt_K++;
 				for(int i=0;i<opt_K;i++)lits.push_back(n+1+i),coefs.push_back(1<<i);
-				add_opt_vars();
+				setNbVariables(n+opt_K);
 				process_ineq(lits, coefs, opt_coef_sum);
 			} else {
 				int w = read_number(line0.substr(line0.find("=") + 1));
@@ -814,14 +801,14 @@ void file_read(istream & in) {
 			istringstream is (line); is >> line >> line;
 			int n;
 			is >> n;
-			init(n);
+			setNbVariables(n);
 			cnf_read(in);
 			break;
 		} else if (line[0] == '*' && line.substr(0, 13) == "* #variable= ") {
 			istringstream is (line.substr(13));
 			int n;
 			is >> n;
-			init(n);
+			setNbVariables(n);
 			opb_read(in);
 			break;
 		}
@@ -1100,6 +1087,7 @@ bool solve(vector<int> aux) {
 int main(int argc, char**argv){
 	read_options(argc, argv);
 	initial_time = cpuTime();
+	init();
 	signal(SIGINT, SIGINT_exit);
 	signal(SIGTERM,SIGINT_exit);
 	signal(SIGXCPU,SIGINT_exit);
