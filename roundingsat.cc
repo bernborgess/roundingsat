@@ -62,7 +62,7 @@ using namespace std;
 #include <map>
 #include <set>
 
-void exit_SAT(),exit_UNSAT(),exit_INDETERMINATE();
+void exit_SAT(),exit_UNSAT(),exit_INDETERMINATE(),exit_OPT();
 
 // Minisat cpuTime function
 #include <sys/time.h>
@@ -584,6 +584,7 @@ int pickBranchLit(){
 // TODO: checking the solution in debug mode was removed?
 void checksol() {
 	for(CRef cr : clauses)assert(slack(ca[cr]) >= 0);
+	puts("c SATISFIABLE (checked)");
 }
 
 // ---------------------------------------------------------------------
@@ -929,11 +930,9 @@ vector<bool> last_sol;
 void exit_SAT() {
 #ifndef NDEBUG
 	checksol();
-	puts("c SATISFIABLE (checked)");
 #endif
 	print_stats();
 	puts("s SATISFIABLE");
-	if (opt) cout << "c objective function value " << last_sol_value << endl;
 	printf("v");for(int i=1;i<=n-opt_K;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
 	exit(10);
 }
@@ -951,6 +950,17 @@ void exit_INDETERMINATE() {
 		puts("s UNKNOWN");
 		exit(0);
 	}
+}
+
+void exit_OPT() {
+#ifndef NDEBUG
+	checksol();
+#endif
+	print_stats();
+	cout << "s OPTIMUM FOUND" << endl;
+	cout << "c objective function value " << last_sol_value << endl;
+	printf("v");for(int i=1;i<=n-opt_K;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
+	exit(30);
 }
 
 void usage(int argc, char**argv) {
@@ -1135,9 +1145,5 @@ int main(int argc, char**argv){
 		qhead = (int) trail.size();
 	}
 	if (!opt) exit_SAT();
-	cout << "s OPTIMUM FOUND" << endl;
-	cout << "c objective function value " << last_sol_value << endl;
-	print_stats();
-	printf("v");for(int i=1;i<=n-opt_K;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
-	exit(30);
+	else exit_OPT();
 }
