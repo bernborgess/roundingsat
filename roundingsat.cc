@@ -639,7 +639,7 @@ void reduce_by_toplevel(vector<int>& lits, vector<int>& coefs, int& w){
 }
 
 inline void saturate(vector<int>& coefs, int& w){
-	for (auto it = coefs.begin(); it != coefs.end(); ++it) if (it [0] > w) it [0] = w;
+	for (int i = 0; i < (int) coefs.size(); i++) coefs[i] = min(coefs[i], w);
 }
 
 bool simplify_constraint(vector<int> &lits, vector<int> &coefs, int &w){
