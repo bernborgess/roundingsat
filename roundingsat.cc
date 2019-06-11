@@ -62,6 +62,8 @@ using namespace std;
 #include <map>
 #include <set>
 
+#define _unused(x) ((void)(x)) // marks variables unused in release mode
+
 void exit_SAT(),exit_UNSAT(),exit_INDETERMINATE(),exit_OPT();
 
 // Minisat cpuTime function
@@ -583,7 +585,10 @@ int pickBranchLit(){
 
 // TODO: checking the solution in debug mode was removed?
 void checksol() {
-	for(CRef cr : clauses)assert(slack(ca[cr]) >= 0);
+	for(CRef cr : clauses){
+		_unused(cr);
+		assert(slack(ca[cr]) >= 0);
+	}
 	puts("c SATISFIABLE (checked)");
 }
 
@@ -703,6 +708,7 @@ void opb_read(istream & in) {
 	opt_coef_sum = 0;
 	opt_normalize_add = 0;
 	bool first_constraint = true;
+	_unused(first_constraint);
 	for (string line; getline(in, line);) {
 		if (line.empty()) continue;
 		else if (line[0] == '*') continue;
@@ -1047,6 +1053,7 @@ bool solve(vector<int> aux) {
 			vector<int>lits;vector<int>coefs;int w;
 			analyze(confl, lits, coefs, w);
 			bool trivial = simplify_constraint(lits,coefs,w);
+			_unused(trivial);
 			assert(!trivial);
 			// compute an assertion level
 			// it may be possible to backjump further, but we don't do this
