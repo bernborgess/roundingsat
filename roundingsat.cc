@@ -340,6 +340,11 @@ void undoOne(){
 	insertVarOrder(abs(l));
 }
 
+void backjumpTo(int level){
+	while(decisionLevel()>level) undoOne();
+	qhead = trail.size();
+}
+
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 /**
@@ -379,7 +384,13 @@ struct ConflictData {
 } confl_data;
 
 template <class T>
-inline T ceildiv(const T& p,const T& q){ return (p+q-1)/q; }
+inline T ceildiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return (p+q-1)/q; }
+template <class T>
+inline T floordiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return p/q; }
+template <class T>
+inline T ceildiv_safe(const T& p,const T& q){ assert(q>0); return (p<0?-floordiv(-p,q):ceildiv(p,q)); }
+template <class T>
+inline T floordiv_safe(const T& p,const T& q){ assert(q>0); return (p<0?-ceildiv(-p,q):floordiv(p,q)); }
 
 void round_reason(int l0, vector<int>&out_lits,vector<int>&out_coefs,int&out_w) {
 	Clause & C = ca[Reason[l0]];
@@ -583,15 +594,6 @@ int pickBranchLit(){
 	return next == 0 ? 0 : phase[next];
 }
 
-// TODO: checking the solution in debug mode was removed?
-void checksol() {
-	for(CRef cr : clauses){
-		_unused(cr);
-		assert(slack(ca[cr]) >= 0);
-	}
-	puts("c SATISFIABLE (checked)");
-}
-
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 // Initialization
@@ -656,6 +658,7 @@ bool simplify_constraint(vector<int> &lits, vector<int> &coefs, int &w){
 }
 
 CRef learnConstraint(vector<int>& lits,vector<int>& coefs, int w){
+	assert(lits.size()>0);
 	CRef cr = ca.alloc(lits,coefs,w, true);
 	Clause & C = ca[cr];
 	C.lbd = computeLBD(cr);
@@ -704,9 +707,6 @@ int read_number(string s) {
 }
 
 void opb_read(istream & in) {
-	opt_K = 0;
-	opt_coef_sum = 0;
-	opt_normalize_add = 0;
 	bool first_constraint = true;
 	_unused(first_constraint);
 	for (string line; getline(in, line);) {
@@ -933,10 +933,23 @@ void print_stats() {
 
 int last_sol_value;
 vector<bool> last_sol;
+
+bool checksol() {
+	for(size_t i=(opt?1:0); i<clauses.size(); ++i){
+		Clause& C = ca[clauses[i]];
+		long long slack=-C.w;
+		for(size_t j=0; j<C.size(); ++j){
+			int l = C.lits()[j];
+			slack+=((l>0)==last_sol[abs(l)])*C.coefs()[j];
+		}
+		if(slack<0) return false;
+	}
+	puts("c SATISFIABLE (checked)");
+	return true;
+}
+
 void exit_SAT() {
-#ifndef NDEBUG
-	checksol();
-#endif
+	assert(checksol());
 	print_stats();
 	puts("s SATISFIABLE");
 	printf("v");for(int i=1;i<=n-opt_K;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
@@ -944,6 +957,7 @@ void exit_SAT() {
 }
 
 void exit_UNSAT() {
+	if(!last_sol.empty()) exit_OPT();
 	print_stats();
 	puts("s UNSATISFIABLE");
 	exit(20);
@@ -951,17 +965,13 @@ void exit_UNSAT() {
 
 void exit_INDETERMINATE() {
 	if (!last_sol.empty()) exit_SAT();
-	else {
-		print_stats();
-		puts("s UNKNOWN");
-		exit(0);
-	}
+	print_stats();
+	puts("s UNKNOWN");
+	exit(0);
 }
 
 void exit_OPT() {
-#ifndef NDEBUG
-	checksol();
-#endif
+	assert(checksol());
 	print_stats();
 	cout << "s OPTIMUM FOUND" << endl;
 	cout << "c objective function value " << last_sol_value << endl;
@@ -1044,10 +1054,12 @@ bool solve(vector<int> aux) {
 			if(NCONFL%1000==0){
 				if (verbosity > 0) {
 					printf("c #Conflicts: %10d | #Learnt: %10d\n",NCONFL,(int)learnts.size());
-					// memory usage
-					cout<<"c total clause space: "<<ca.cap*4/1024./1024.<<"MB"<<endl;
-					cout<<"c total #watches: ";{int cnt=0;for(int l=-n;l<=n;l++)cnt+=(int)adj[l].size();cout<<cnt<<endl;}
-					printf("c total #propagations: %lld / total #impl: %lld (eff. %.3lf)\n",NPROP,NIMPL,(double)NPROP/(double)NIMPL);
+					if(verbosity>2){
+						// memory usage
+						cout<<"c total clause space: "<<ca.cap*4/1024./1024.<<"MB"<<endl;
+						cout<<"c total #watches: ";{int cnt=0;for(int l=-n;l<=n;l++)cnt+=(int)adj[l].size();cout<<cnt<<endl;}
+						printf("c total #propagations: %lld / total #impl: %lld (eff. %.3lf)\n",NPROP,NIMPL,(double)NPROP/(double)NIMPL);
+					}
 				}
 			}
 			vector<int>lits;vector<int>coefs;int w;
@@ -1062,9 +1074,9 @@ bool solve(vector<int> aux) {
 				if (Level[-lits[i]] < decisionLevel())
 					lvl = max(lvl, Level[-lits[i]]);
 			assert(lvl < decisionLevel());
-			while(decisionLevel()>lvl)undoOne();
-			qhead=trail.size();
+			backjumpTo(lvl);
 			CRef cr = learnConstraint(lits,coefs,w);
+
 			if (::slack(ca[cr]) == 0) {
 				for (int i=0; i<(int)lits.size(); i++)
 					if (Level[-lits[i]] == -1 && Level[lits[i]] == -1)
@@ -1078,8 +1090,7 @@ bool solve(vector<int> aux) {
 		} else {
 			if(asynch_interrupt)exit_INDETERMINATE();
 			if(nconfl_to_restart <= 0){
-				while(decisionLevel()>0)undoOne();
-				qhead = trail.size();
+				backjumpTo(0);
 				double rest_base = luby(rinc, curr_restarts++);
 				nconfl_to_restart = (long long) rest_base * rfirst;
 			}
@@ -1129,7 +1140,7 @@ int main(int argc, char**argv){
 			else              aux.push_back(-(n-opt_K+1 + i));
 		}
 		if (solve(aux)) {
-			last_sol.resize(n+1);
+			last_sol.resize(n+1-opt_K);
 			for (int i=1;i<=n-opt_K;i++)if(~Level[i])last_sol[i]=true;else last_sol[i]=false;
 			if (opt) {
 				// m + sum(coeff[i]*~ell[i]) >= opt_coef_sum possible.
@@ -1144,12 +1155,11 @@ int main(int argc, char**argv){
 				}
 				assert(opt_coef_sum - s <= m);
 				m = opt_coef_sum - s;
-				cout << "o " << m - opt_normalize_add << endl;
 				last_sol_value = m - opt_normalize_add;
+				cout << "o " << last_sol_value << endl;
 			}
 		} else break;
-		while (decisionLevel() > 0) undoOne();
-		qhead = (int) trail.size();
+		backjumpTo(0);
 	}
 	if (!opt) exit_SAT();
 	else exit_OPT();
