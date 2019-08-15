@@ -182,10 +182,12 @@ struct {
 // ---------------------------------------------------------------------
 int verbosity = 1;
 // currently, the maximum number of variables is hardcoded (variable N), and most arrays are of fixed size.
-int n;
+int n = 0;
 bool opt = false;
-int opt_K;
-int opt_normalize_add, opt_coef_sum;
+int opt_K = 0;
+int opt_normalize_add = 0, opt_coef_sum = 0;
+int nbWcnfAuxVars = 0;
+inline int getNbOrigVars(){ return n-opt_K-nbWcnfAuxVars; }
 vector<CRef> clauses, learnts;
 struct Watch {
 	CRef cref;
@@ -701,6 +703,30 @@ int read_number(const string & s) {
 	return answer;
 }
 
+// NOTE: extends lits and coefs
+void addObjective(std::vector<int>& lits, std::vector<int>& coefs) {
+	assert(clauses.size()==0);
+	opt = true;
+	opt_coef_sum = 0;
+	opt_normalize_add = 0;
+	for(size_t i=0;i<lits.size();i++){
+		if(coefs[i] < 0) lits[i]*=-1,coefs[i]*=-1,opt_normalize_add+=coefs[i];
+		opt_coef_sum+=coefs[i];
+		lits[i]=-lits[i];
+		if (opt_coef_sum > (int) 1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
+	}
+	opt_K = 0; while ((1<<opt_K)-1 < opt_coef_sum) opt_K++;
+	for(int i=0;i<opt_K;i++)lits.push_back(n+1+i),coefs.push_back(1<<i);
+	setNbVariables(n+opt_K);
+	process_ineq(lits, coefs, opt_coef_sum);
+	if(clauses.size()==0) { // Trivial objective function.
+		// Add dummy objective, as it is assumed the objective function is stored as first constraint.
+		CRef cr = ca.alloc({0, 0}, {0, 0}, 0, false);
+		attachClause(cr);
+		clauses.push_back(cr);
+	}
+}
+
 void opb_read(istream & in) {
 	bool first_constraint = true;
 	_unused(first_constraint);
@@ -748,27 +774,8 @@ void opb_read(istream & in) {
 					coefs.push_back(coef);
 				}
 			}
-			if (opt_line) {
-				opt = true;
-				opt_coef_sum = 0;
-				opt_normalize_add = 0;
-				for(size_t i=0;i<lits.size();i++){
-					if(coefs[i] < 0) lits[i]*=-1,coefs[i]*=-1,opt_normalize_add+=coefs[i];
-					opt_coef_sum+=coefs[i];
-					lits[i]=-lits[i];
-					if (opt_coef_sum > (int) 1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
-				}
-				opt_K = 0; while ((1<<opt_K)-1 < opt_coef_sum) opt_K++;
-				for(int i=0;i<opt_K;i++)lits.push_back(n+1+i),coefs.push_back(1<<i);
-				setNbVariables(n+opt_K);
-				process_ineq(lits, coefs, opt_coef_sum);
-				if(clauses.size()==0){ // Trivial objective function.
-				  // Add dummy objective, as it is assumed the objective function is stored as first constraint.
-				  CRef cr = ca.alloc({0,0}, {0,0}, 0, false);
-				  attachClause(cr);
-				  clauses.push_back(cr);
-				}
-			} else {
+			if (opt_line) addObjective(lits,coefs);
+			else {
 				int w = read_number(line0.substr(line0.find("=") + 1));
 				process_ineq(lits, coefs, w);
 				// Handle equality case with two constraints
@@ -778,6 +785,46 @@ void opb_read(istream & in) {
 					process_ineq(lits, coefs, w);
 				}
 			}
+		}
+	}
+}
+
+void wcnf_read_objective(istream & in, long long top) {
+	std::vector<int> weights;
+	for (string line; getline(in, line);) {
+		if (line.empty() || line[0] == 'c') continue;
+		else {
+			istringstream is (line);
+			long long weight; is >> weight;
+			if(weight>=top) continue; // hard clause
+			if(weight>1e9) exit_ERROR({"Clause weight exceeds 1e9: ",std::to_string(weight)});
+			weights.push_back(weight);
+		}
+	}
+	nbWcnfAuxVars = weights.size();
+	std::vector<int> lits(nbWcnfAuxVars);
+	for(int i=0; i<nbWcnfAuxVars; ++i){
+		lits[i]=n+1+i;
+	}
+	setNbVariables(n+nbWcnfAuxVars);
+	addObjective(lits,weights);
+}
+
+void wcnf_read(istream & in, long long top) {
+	int auxvar = getNbOrigVars();
+	for (string line; getline(in, line);) {
+		if (line.empty() || line[0] == 'c') continue;
+		else {
+			istringstream is (line);
+			long long weight; is >> weight;
+			vector<int> lits;
+			int l;
+			while (is >> l, l) lits.push_back(l);
+			if(weight<top){ // soft clause
+				++auxvar;
+				lits.push_back(auxvar);
+			} // else{ //hard clause
+			process_ineq(lits, vector<int>(lits.size(), 1), 1);
 		}
 	}
 }
@@ -793,9 +840,6 @@ void cnf_read(istream & in) {
 			process_ineq(lits, vector<int>(lits.size(),1), 1);
 		}
 	}
-	opt_K = 0;
-	opt_coef_sum = 0;
-	opt_normalize_add = 0;
 }
 
 void file_read(istream & in) {
@@ -811,7 +855,16 @@ void file_read(istream & in) {
 			  cnf_read(in);
 			  return;
 			}else if(type == "wcnf"){
-			  // TODO
+				is >> line; // skip nbConstraints
+				long long top; is >> top;
+				// NOTE: keeping formula in memory because I need a dual pass to first extract the auxiliary variables,
+				// and later extract the (potentially soft) constraints
+				std::string formula{ std::istreambuf_iterator<char>(in),
+				                     std::istreambuf_iterator<char>() };
+				istringstream in2(formula);
+			  wcnf_read_objective(in2,top);
+			  istringstream in3(formula);
+			  wcnf_read(in3,top);
 			  return;
 			}
 		} else if (line[0] == '*' && line.substr(0, 13) == "* #variable= ") {
@@ -823,7 +876,7 @@ void file_read(istream & in) {
 			return;
 		}
 	}
-	exit_ERROR({"No supported format [opb, cnf] detected."});
+	exit_ERROR({"No supported format [opb, cnf, wcnf] detected."});
 }
 
 // ---------------------------------------------------------------------
@@ -956,7 +1009,7 @@ void exit_SAT() {
 	assert(checksol());
 	print_stats();
 	puts("s SATISFIABLE");
-	printf("v");for(int i=1;i<=n-opt_K;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
+	printf("v");for(int i=1;i<=getNbOrigVars();i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
 	exit(10);
 }
 
@@ -979,7 +1032,7 @@ void exit_OPT() {
 	print_stats();
 	cout << "s OPTIMUM FOUND" << endl;
 	cout << "c objective function value " << last_sol_value << endl;
-	printf("v");for(int i=1;i<=n-opt_K;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
+	printf("v");for(int i=1;i<=getNbOrigVars();i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
 	exit(30);
 }
 
@@ -991,7 +1044,7 @@ void exit_ERROR(const std::initializer_list<std::string>& messages){
 }
 
 void usage(int argc, char**argv) {
-	printf("Usage: %s [OPTION] instance.(opb|cnf)\n", argv[0]);
+	printf("Usage: %s [OPTION] instance.(opb|cnf|wcnf)\n", argv[0]);
 	printf("\n");
 	printf("Options:\n");
 	printf("  --help           Prints this help message\n");
@@ -1137,7 +1190,7 @@ int main(int argc, char**argv){
 	signal(SIGINT, SIGINT_interrupt);
 	signal(SIGTERM,SIGINT_interrupt);
 	signal(SIGXCPU,SIGINT_interrupt);
-	std::cout << "c #variables=" << n-opt_K << " #constraints=" << clauses.size()-(opt?1:0) << std::endl;
+	std::cout << "c #variables=" << getNbOrigVars() << " #constraints=" << clauses.size()-(opt?1:0) << std::endl;
 	for (int m = opt_coef_sum; m >= 0; m--) {
 		vector<int> aux;
 		for (int i = 0; i < opt_K; i++) {
