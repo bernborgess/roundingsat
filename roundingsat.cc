@@ -771,6 +771,12 @@ void opb_read(istream & in) {
 				for(int i=0;i<opt_K;i++)lits.push_back(n+1+i),coefs.push_back(1<<i);
 				setNbVariables(n+opt_K);
 				process_ineq(lits, coefs, opt_coef_sum);
+				if(clauses.size()==0){ // Trivial objective function.
+				  // Add dummy objective, as it is assumed the objective function is stored as first constraint.
+				  CRef cr = ca.alloc({0,0}, {0,0}, 0, false);
+				  attachClause(cr);
+				  clauses.push_back(cr);
+				}
 			} else {
 				int w = read_number(line0.substr(line0.find("=") + 1));
 				process_ineq(lits, coefs, w);
