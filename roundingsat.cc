@@ -64,7 +64,7 @@ using namespace std;
 
 #define _unused(x) ((void)(x)) // marks variables unused in release mode
 
-void exit_SAT(),exit_UNSAT(),exit_INDETERMINATE(),exit_OPT();
+void exit_SAT(),exit_UNSAT(),exit_INDETERMINATE(),exit_OPT(),exit_ERROR(const std::initializer_list<std::string>&);
 
 // Minisat cpuTime function
 #include <sys/time.h>
@@ -182,10 +182,12 @@ struct {
 // ---------------------------------------------------------------------
 int verbosity = 1;
 // currently, the maximum number of variables is hardcoded (variable N), and most arrays are of fixed size.
-int n;
+int n = 0;
 bool opt = false;
-int opt_K;
-int opt_normalize_add, opt_coef_sum;
+int opt_K = 0;
+int opt_normalize_add = 0, opt_coef_sum = 0;
+int nbWcnfAuxVars = 0;
+inline int getNbOrigVars(){ return n-opt_K-nbWcnfAuxVars; }
 vector<CRef> clauses, learnts;
 struct Watch {
 	CRef cref;
@@ -607,10 +609,7 @@ void init(){
 }
 
 void setNbVariables(int nvars){
-	if (nvars < 0){
-		printf("Error: The number of variables is negative.\n");
-		exit(1);
-	}
+	if (nvars < 0) exit_ERROR({"Number of variables must be positive."});
 	n = nvars;
 	_adj.resize(2*n+1); adj = _adj.begin() + n;
 	_Reason.resize(2*n+1, CRef_Undef); Reason = _Reason.begin() + n;
@@ -673,7 +672,7 @@ CRef learnConstraint(vector<int>& lits,vector<int>& coefs, int w){
 void process_ineq(vector<int> lits, vector<int> coefs, int w){
 	for(size_t i=0;i<lits.size();i++){
 		if(coefs[i] < 0) lits[i]*=-1,coefs[i]*=-1,w+=coefs[i];
-		if (w > (int) 1e9) { puts("Error: normalization of an input constraint causes degree to exceed 10^9."); exit(1); }
+		if (w > (int) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
 	}
 	bool trivial = simplify_constraint(lits,coefs,w);
 	if(trivial)return;//already satisfied.
@@ -694,16 +693,38 @@ void process_ineq(vector<int> lits, vector<int> coefs, int w){
 /*
  * The OPB parser does not support nonlinear constraints like "+1 x1 x2 +1 x3 x4 >= 1;"
  */
-int read_number(string s) {
+int read_number(const string & s) {
 	long long answer = 0;
 	for (char c : s) if ('0' <= c && c <= '9') {
 		answer *= 10, answer += c - '0';
-		if (answer > (int) 1e9) {
-			printf("Error: number with absolute value larger than 10^9 encountered in the input: %s\n", s.c_str()); exit(1);
-		}
+		if (answer > (int) 1e9) exit_ERROR({"Input formula contains absolute value larger than 10^9: ",s});
 	}
 	for (char c : s) if (c == '-') answer = -answer;
 	return answer;
+}
+
+// NOTE: extends lits and coefs
+void addObjective(std::vector<int>& lits, std::vector<int>& coefs) {
+	assert(clauses.size()==0);
+	opt = true;
+	opt_coef_sum = 0;
+	opt_normalize_add = 0;
+	for(size_t i=0;i<lits.size();i++){
+		if(coefs[i] < 0) lits[i]*=-1,coefs[i]*=-1,opt_normalize_add+=coefs[i];
+		opt_coef_sum+=coefs[i];
+		lits[i]=-lits[i];
+		if (opt_coef_sum > (int) 1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
+	}
+	opt_K = 0; while ((1<<opt_K)-1 < opt_coef_sum) opt_K++;
+	for(int i=0;i<opt_K;i++)lits.push_back(n+1+i),coefs.push_back(1<<i);
+	setNbVariables(n+opt_K);
+	process_ineq(lits, coefs, opt_coef_sum);
+	if(clauses.size()==0) { // Trivial objective function.
+		// Add dummy objective, as it is assumed the objective function is stored as first constraint.
+		CRef cr = ca.alloc({0, 0}, {0, 0}, 0, false);
+		attachClause(cr);
+		clauses.push_back(cr);
+	}
 }
 
 void opb_read(istream & in) {
@@ -731,8 +752,8 @@ void opb_read(istream & in) {
 			vector<int> coefs;
 			vector<string> tokens;
 			{ string tmp; while (is >> tmp) tokens.push_back(tmp); }
-			if (tokens.size() % 2 != 0) { printf("Error: non-linear constraints not supported\n"); exit(1); }
-			for (int i=0; i<(int)tokens.size(); i+=2) if (find(tokens[i].begin(),tokens[i].end(),'x')!=tokens[i].end()) { printf("Error: non-linear constraints not supported\n"); exit(1); }
+			if (tokens.size() % 2 != 0) exit_ERROR({"No support for non-linear constraints."});
+			for (int i=0; i<(int)tokens.size(); i+=2) if (find(tokens[i].begin(),tokens[i].end(),'x')!=tokens[i].end()) exit_ERROR({"No support for non-linear constraints."});
 			for (int i=0; i<(int)tokens.size(); i+=2) {
 				string scoef = tokens[i];
 				string var = tokens[i+1];
@@ -743,41 +764,18 @@ void opb_read(istream & in) {
 					negated = true;
 					var = var.substr(1);
 				}
-				if (var.empty() || var[0] != 'x') {
-					printf("Error: invalid literal token: %s\n", origvar.c_str()); exit(1);
-				}
+				if (var.empty() || var[0] != 'x') exit_ERROR({"Invalid literal token: ",origvar});
 				var = var.substr(1);
 				int l = atoi(var.c_str());
-				if (!(1 <= l && l <= n)) {
-					printf("Error: literal token out of variable range: %s\n", origvar.c_str()); exit(1);
-				}
+				if (!(1 <= l && l <= n)) exit_ERROR({"Literal token out of variable range: ",origvar});
 				if (negated) l = -l;
 				if (coef != 0) {
 					lits.push_back(l);
 					coefs.push_back(coef);
 				}
 			}
-			if (opt_line) {
-				opt = true;
-				opt_coef_sum = 0;
-				opt_normalize_add = 0;
-				for(size_t i=0;i<lits.size();i++){
-					if(coefs[i] < 0) lits[i]*=-1,coefs[i]*=-1,opt_normalize_add+=coefs[i];
-					opt_coef_sum+=coefs[i];
-					lits[i]=-lits[i];
-					if (opt_coef_sum > (int) 1e9) { puts("Error: normalization of objective function constraint causes coefficient sum to exceed 10^9."); exit(1); }
-				}
-				opt_K = 0; while ((1<<opt_K)-1 < opt_coef_sum) opt_K++;
-				for(int i=0;i<opt_K;i++)lits.push_back(n+1+i),coefs.push_back(1<<i);
-				setNbVariables(n+opt_K);
-				process_ineq(lits, coefs, opt_coef_sum);
-				if(clauses.size()==0){ // Trivial objective function.
-				  // Add dummy objective, as it is assumed the objective function is stored as first constraint.
-				  CRef cr = ca.alloc({0,0}, {0,0}, 0, false);
-				  attachClause(cr);
-				  clauses.push_back(cr);
-				}
-			} else {
+			if (opt_line) addObjective(lits,coefs);
+			else {
 				int w = read_number(line0.substr(line0.find("=") + 1));
 				process_ineq(lits, coefs, w);
 				// Handle equality case with two constraints
@@ -787,6 +785,46 @@ void opb_read(istream & in) {
 					process_ineq(lits, coefs, w);
 				}
 			}
+		}
+	}
+}
+
+void wcnf_read_objective(istream & in, long long top) {
+	std::vector<int> weights;
+	for (string line; getline(in, line);) {
+		if (line.empty() || line[0] == 'c') continue;
+		else {
+			istringstream is (line);
+			long long weight; is >> weight;
+			if(weight>=top) continue; // hard clause
+			if(weight>1e9) exit_ERROR({"Clause weight exceeds 1e9: ",std::to_string(weight)});
+			weights.push_back(weight);
+		}
+	}
+	nbWcnfAuxVars = weights.size();
+	std::vector<int> lits(nbWcnfAuxVars);
+	for(int i=0; i<nbWcnfAuxVars; ++i){
+		lits[i]=n+1+i;
+	}
+	setNbVariables(n+nbWcnfAuxVars);
+	addObjective(lits,weights);
+}
+
+void wcnf_read(istream & in, long long top) {
+	int auxvar = getNbOrigVars();
+	for (string line; getline(in, line);) {
+		if (line.empty() || line[0] == 'c') continue;
+		else {
+			istringstream is (line);
+			long long weight; is >> weight;
+			vector<int> lits;
+			int l;
+			while (is >> l, l) lits.push_back(l);
+			if(weight<top){ // soft clause
+				++auxvar;
+				lits.push_back(auxvar);
+			} // else{ //hard clause
+			process_ineq(lits, vector<int>(lits.size(), 1), 1);
 		}
 	}
 }
@@ -802,30 +840,43 @@ void cnf_read(istream & in) {
 			process_ineq(lits, vector<int>(lits.size(),1), 1);
 		}
 	}
-	opt_K = 0;
-	opt_coef_sum = 0;
-	opt_normalize_add = 0;
 }
 
 void file_read(istream & in) {
 	for (string line; getline(in, line);) {
 		if (line.empty() || line[0] == 'c') continue;
 		if (line[0] == 'p') {
-			istringstream is (line); is >> line >> line;
-			int n;
-			is >> n;
+			istringstream is (line);
+			is >> line; // skip 'p'
+			string type; is >> type;
+			int n; is >> n;
 			setNbVariables(n);
-			cnf_read(in);
-			break;
+			if(type=="cnf"){
+			  cnf_read(in);
+			  return;
+			}else if(type == "wcnf"){
+				is >> line; // skip nbConstraints
+				long long top; is >> top;
+				// NOTE: keeping formula in memory because I need a dual pass to first extract the auxiliary variables,
+				// and later extract the (potentially soft) constraints
+				std::string formula{ std::istreambuf_iterator<char>(in),
+				                     std::istreambuf_iterator<char>() };
+				istringstream in2(formula);
+			  wcnf_read_objective(in2,top);
+			  istringstream in3(formula);
+			  wcnf_read(in3,top);
+			  return;
+			}
 		} else if (line[0] == '*' && line.substr(0, 13) == "* #variable= ") {
 			istringstream is (line.substr(13));
 			int n;
 			is >> n;
 			setNbVariables(n);
 			opb_read(in);
-			break;
+			return;
 		}
 	}
+	exit_ERROR({"No supported format [opb, cnf, wcnf] detected."});
 }
 
 // ---------------------------------------------------------------------
@@ -958,7 +1009,7 @@ void exit_SAT() {
 	assert(checksol());
 	print_stats();
 	puts("s SATISFIABLE");
-	printf("v");for(int i=1;i<=n-opt_K;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
+	printf("v");for(int i=1;i<=getNbOrigVars();i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
 	exit(10);
 }
 
@@ -981,12 +1032,19 @@ void exit_OPT() {
 	print_stats();
 	cout << "s OPTIMUM FOUND" << endl;
 	cout << "c objective function value " << last_sol_value << endl;
-	printf("v");for(int i=1;i<=n-opt_K;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
+	printf("v");for(int i=1;i<=getNbOrigVars();i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
 	exit(30);
 }
 
+void exit_ERROR(const std::initializer_list<std::string>& messages){
+	cout << "Error: ";
+	for(const string& m: messages) cout << m;
+	std::cout << std::endl;
+	exit(1);
+}
+
 void usage(int argc, char**argv) {
-	printf("Usage: %s [OPTION] instance.(opb|cnf)\n", argv[0]);
+	printf("Usage: %s [OPTION] instance.(opb|cnf|wcnf)\n", argv[0]);
 	printf("\n");
 	printf("Options:\n");
 	printf("  --help           Prints this help message\n");
@@ -998,6 +1056,16 @@ void usage(int argc, char**argv) {
 }
 
 char * filename = 0;
+
+typedef bool (*func)(double);
+template <class T>
+void getOption(const map<string, string>& opt_val, const string& option, func test, T& val){
+	if (opt_val.count(option)) {
+		double v = atof(opt_val.at(option).c_str());
+		if (test(v)) val=v;
+		else exit_ERROR({"Invalid value for ",option,": ",opt_val.at(option),".\nCheck usage with --help option."});
+	}
+}
 
 void read_options(int argc, char**argv) {
 	for(int i=1;i<argc;i++){
@@ -1012,33 +1080,19 @@ void read_options(int argc, char**argv) {
 		if (string(argv[i]).substr(0,2) != "--") filename = argv[i];
 		else {
 			bool found = false;
-			for(string key : opts) {
+			for(string& key : opts) {
 				if (string(argv[i]).substr(0,key.size()+3)=="--"+key+"=") {
 					found = true;
 					opt_val[key] = string(argv[i]).substr(key.size()+3);
 				}
 			}
-			if (!found)
-				printf("Unknown option: %s. Use '--help' for help.\n",argv[i]),exit(1);
+			if (!found) exit_ERROR({"Unknown option: ",argv[i],".\nCheck usage with --help option."});
 		}
 	}
-	if (opt_val.count("verbosity")) verbosity = atoi(opt_val["verbosity"].c_str());
-
-	if (opt_val.count("var-decay")) {
-		double v = atof(opt_val["var-decay"].c_str());
-		if (v >= 0.5 && v < 1) var_decay = v;
-		else printf("Error: invalid value for var decay: %s (should be 0.5 <= value < 1)\n",opt_val["var-decay"].c_str()), exit(1);
-	}
-	if (opt_val.count("rinc")) {
-		double v = atof(opt_val["rinc"].c_str());
-		if (v >= 1) rinc = v;
-		else printf("Error: invalid value for rinc: %s (should be floating point number >=1)\n",opt_val["rinc"].c_str()), exit(1);
-	}
-	if (opt_val.count("rfirst")) {
-		int v = atoi(opt_val["rfirst"].c_str());
-		if (v >= 1) rfirst = v;
-		else printf("Error: invalid value for rfirst: %s (should be integer >=1)\n",opt_val["rfirst"].c_str()), exit(1);
-	}
+	getOption(opt_val,"verbosity",[](double x)->bool{return true;},verbosity);
+	getOption(opt_val,"var-decay",[](double x)->bool{return x>=0.5 && x<1;},var_decay);
+	getOption(opt_val,"rinc",[](double x)->bool{return x>=1;},rinc);
+	getOption(opt_val,"rfirst",[](double x)->bool{return x>=1;},rfirst);
 }
 
 int curr_restarts=0;
@@ -1127,18 +1181,16 @@ int main(int argc, char**argv){
 	signal(SIGXCPU,SIGINT_exit);
 	if (filename != 0) {
 		ifstream fin (filename);
-		if (!fin) {
-			printf("Error: Couldn't open file %s\n", filename);
-			exit(1);
-		}
+		if (!fin)  exit_ERROR({"Could not open ",filename});
 		file_read(fin);
 	} else {
-		if (verbosity > 0) printf("c No filename given, reading from standard input. Use '--help' for help.\n");
+		if (verbosity > 0) std::cout << "c No filename given, reading from standard input." << std::endl;
 		file_read(cin);
 	}
 	signal(SIGINT, SIGINT_interrupt);
 	signal(SIGTERM,SIGINT_interrupt);
 	signal(SIGXCPU,SIGINT_interrupt);
+	std::cout << "c #variables=" << getNbOrigVars() << " #constraints=" << clauses.size()-(opt?1:0) << std::endl;
 	for (int m = opt_coef_sum; m >= 0; m--) {
 		vector<int> aux;
 		for (int i = 0; i < opt_K; i++) {
