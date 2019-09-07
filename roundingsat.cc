@@ -365,7 +365,7 @@ struct ConflictData {
 	// the reason's coefs multiplied by the coef. of the intermediate conflict clause
 	vector<long long> _M; vector<long long>::iterator M;
 	long long w;
-	vector<int> used; // not vector<bool>
+	vector<int> used; // 1: used, 2: clashing in some step
 	vector<int> usedlist;
 	void init(){
 		_M.resize(2*n+1, 0);
@@ -378,11 +378,11 @@ struct ConflictData {
 		slack=0;
 		cnt_falsified_currentlvl=0;
 		w=0;
-		for(int x:usedlist)M[x]=M[-x]=0,used[x]=false;
+		for(int x:usedlist)M[x]=M[-x]=0,used[x]=0;
 		usedlist.clear();
 	}
 	void use(int x){
-		if(!used[x])used[x]=true,usedlist.push_back(x);
+		if(!used[x])used[x]=max(used[x],1),usedlist.push_back(x);
 	}
 } confl_data;
 
@@ -443,6 +443,7 @@ template<class It1, class It2> void add_to_conflict(size_t size, It1 const&reaso
 		int c = reason_coefs[it];
 		confl_data.use(abs(l));
 		if (M[-l] > 0) {
+			confl_data.used[abs(l)] = 2;
 			if (c >= M[-l]) {
 				if (Level[l] == decisionLevel()) confl_data.cnt_falsified_currentlvl--;
 				M[l] = c - M[-l];
@@ -517,7 +518,10 @@ void analyze(CRef confl, vector<int>& out_lits, vector<int>& out_coefs, int& out
 			}
 		}
 	}
-	for(int x:confl_data.usedlist)varBumpActivity(x);
+	for(int x:confl_data.usedlist){
+		varBumpActivity(x);
+		if (confl_data.used[x] == 2) varBumpActivity(x);
+	}
 	for(int x:confl_data.usedlist)for(int l=-x;l<=x;l+=2*x)if(confl_data.M[l]){
 		out_lits.push_back(l),out_coefs.push_back(min(confl_data.M[l],confl_data.w));
 	}
