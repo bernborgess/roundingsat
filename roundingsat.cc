@@ -1165,9 +1165,15 @@ bool solve(vector<int> aux) {
 				cnt_reduceDB++;
 				nbclausesbeforereduce += incReduceDB;
 			}
-			for (int l : aux) if (~Level[-l]) return false;
 			int next = 0;
-			for (int l : aux) if (Level[l] == Level[-l]) next = l;
+			while (decisionLevel() < (int) aux.size()) {
+				int p = aux[decisionLevel()];
+				if (~Level[p]) newDecisionLevel(); else
+				if (~Level[-p]) return false; else {
+					next = p;
+					break;
+				}
+			}
 			if (next == 0) next = pickBranchLit();
 			if(next==0)return true;
 			newDecisionLevel();
