@@ -6,7 +6,7 @@ roundingsat is a pseudo-boolean SAT solver for optimization and decision problem
 
 The solver currently consists of a single file which can be compiled on Linux. It uses some c++11 constructs.
 
-    g++ -o roundingsat roundingsat.cc -std=c++11 -O3
+    g++ -o roundingsat roundingsat.cc -std=c++11 -O3 -DNDEBUG
 
 ## Usage
 
