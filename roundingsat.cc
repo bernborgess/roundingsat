@@ -198,9 +198,10 @@ vector<CRef> _Reason; vector<CRef>::iterator Reason;
 vector<int> trail;
 vector<int> _Level; vector<int>::iterator Level;
 vector<int> trail_lim;
+vector<int> max_assumption_at_level;
 int qhead; // for unit propagation
 vector<int> phase;
-void newDecisionLevel() { trail_lim.push_back(trail.size()); }
+void newDecisionLevel() { trail_lim.push_back(trail.size()),max_assumption_at_level.push_back(max_assumption_at_level.back()); }
 int decisionLevel() { return trail_lim.size(); }
 double initial_time;
 int NCONFL=0, NDECIDE=0;
@@ -338,7 +339,7 @@ void undoOne(){
 	trail.pop_back();
 	Level[l] = -1;
 	phase[abs(l)]=l;
-	while(!trail_lim.empty() && trail_lim.back() >= (int)trail.size())trail_lim.pop_back();
+	if(!trail_lim.empty() && trail_lim.back() == (int)trail.size())trail_lim.pop_back(),max_assumption_at_level.pop_back();
 	Reason[l] = CRef_Undef;
 	insertVarOrder(abs(l));
 }
@@ -631,6 +632,7 @@ void setNbVariables(int nvars){
 		//adj[i].clear(); adj[-i].clear(); // is already cleared.
 	}
 	confl_data.init();
+	max_assumption_at_level.push_back(0);
 }
 
 // ---------------------------------------------------------------------
@@ -1105,7 +1107,7 @@ long long nconfl_to_restart=0;
 //reduceDB:
 int cnt_reduceDB=1;
 
-bool solve(vector<int> aux) {
+bool solve(vector<int> assumptions) {
 	while (true) {
 		CRef confl = propagate();
 		if (confl != CRef_Undef) {
@@ -1166,11 +1168,13 @@ bool solve(vector<int> aux) {
 				nbclausesbeforereduce += incReduceDB;
 			}
 			int next = 0;
-			while (decisionLevel() < (int) aux.size()) {
-				int p = aux[decisionLevel()];
-				if (~Level[p]) newDecisionLevel(); else
-				if (~Level[-p]) return false; else {
+			bool next_is_assumption = false;
+			while ((int) max_assumption_at_level.back() < (int) assumptions.size()) {
+				int p = assumptions[max_assumption_at_level.back()];
+				if (~Level[-p]) return false; else
+				if (~Level[p]) max_assumption_at_level.back()++; else {
 					next = p;
+					next_is_assumption = true;
 					break;
 				}
 			}
@@ -1179,6 +1183,7 @@ bool solve(vector<int> aux) {
 			newDecisionLevel();
 			NDECIDE++;
 			uncheckedEnqueue(next,CRef_Undef);
+			if (next_is_assumption) max_assumption_at_level.back()++;
 		}
 	}
 }
@@ -1229,6 +1234,7 @@ int main(int argc, char**argv){
 			}
 		} else break;
 		backjumpTo(0);
+		max_assumption_at_level[0] = 0;
 	}
 	if (!opt) exit_SAT();
 	else exit_OPT();
