@@ -338,7 +338,7 @@ void undoOne(){
 	trail.pop_back();
 	Level[l] = -1;
 	phase[abs(l)]=l;
-	while(!trail_lim.empty() && trail_lim.back() == (int)trail.size())trail_lim.pop_back();
+	while(!trail_lim.empty() && trail_lim.back() >= (int)trail.size())trail_lim.pop_back();
 	Reason[l] = CRef_Undef;
 	insertVarOrder(abs(l));
 }
