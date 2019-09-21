@@ -198,10 +198,9 @@ vector<CRef> _Reason; vector<CRef>::iterator Reason;
 vector<int> trail;
 vector<int> _Level; vector<int>::iterator Level;
 vector<int> trail_lim;
-vector<int> max_assumption_at_level;
 int qhead; // for unit propagation
 vector<int> phase;
-void newDecisionLevel() { trail_lim.push_back(trail.size()),max_assumption_at_level.push_back(max_assumption_at_level.back()); }
+void newDecisionLevel() { trail_lim.push_back(trail.size()); }
 int decisionLevel() { return trail_lim.size(); }
 double initial_time;
 int NCONFL=0, NDECIDE=0;
@@ -339,7 +338,7 @@ void undoOne(){
 	trail.pop_back();
 	Level[l] = -1;
 	phase[abs(l)]=l;
-	if(!trail_lim.empty() && trail_lim.back() == (int)trail.size())trail_lim.pop_back(),max_assumption_at_level.pop_back();
+	if(!trail_lim.empty() && trail_lim.back() == (int)trail.size())trail_lim.pop_back();
 	Reason[l] = CRef_Undef;
 	insertVarOrder(abs(l));
 }
@@ -501,6 +500,7 @@ void analyze(CRef confl, vector<int>& out_lits, vector<int>& out_coefs, int& out
 			if (confl_data.cnt_falsified_currentlvl == 1) {
 				break;
 			} else {
+				if (Reason[l] == CRef_Undef) throw "UNSAT";
 				if (ca[Reason[l]].learnt()) {
 					claBumpActivity(ca[Reason[l]]);
 					if (ca[Reason[l]].lbd > 2) ca[Reason[l]].lbd = min(ca[Reason[l]].lbd, computeLBD(Reason[l]));
@@ -632,7 +632,6 @@ void setNbVariables(int nvars){
 		//adj[i].clear(); adj[-i].clear(); // is already cleared.
 	}
 	confl_data.init();
-	max_assumption_at_level.push_back(0);
 }
 
 // ---------------------------------------------------------------------
@@ -1130,7 +1129,11 @@ bool solve(vector<int> assumptions) {
 				}
 			}
 			vector<int>lits;vector<int>coefs;int w;
-			analyze(confl, lits, coefs, w);
+			try {
+				analyze(confl, lits, coefs, w);
+			} catch (const char *) {
+				return false;
+			}
 			bool trivial = simplify_constraint(lits,coefs,w);
 			_unused(trivial);
 			assert(!trivial);
@@ -1167,23 +1170,23 @@ bool solve(vector<int> assumptions) {
 				cnt_reduceDB++;
 				nbclausesbeforereduce += incReduceDB;
 			}
-			int next = 0;
-			bool next_is_assumption = false;
-			while ((int) max_assumption_at_level.back() < (int) assumptions.size()) {
-				int p = assumptions[max_assumption_at_level.back()];
-				if (~Level[-p]) return false; else
-				if (~Level[p]) max_assumption_at_level.back()++; else {
-					next = p;
-					next_is_assumption = true;
-					break;
+			if (decisionLevel() == 0) {
+				vector<int> new_assumptions;
+				for (int l : assumptions) {
+					if (~Level[-l]) return false;
+					if (!~Level[l]) new_assumptions.push_back(l);
+				}
+				if (!new_assumptions.empty()) {
+					newDecisionLevel();
+					for (int l : new_assumptions) uncheckedEnqueue(l, CRef_Undef);
+					continue;
 				}
 			}
-			if (next == 0) next = pickBranchLit();
+			int next = pickBranchLit();
 			if(next==0)return true;
 			newDecisionLevel();
 			NDECIDE++;
 			uncheckedEnqueue(next,CRef_Undef);
-			if (next_is_assumption) max_assumption_at_level.back()++;
 		}
 	}
 }
@@ -1234,7 +1237,6 @@ int main(int argc, char**argv){
 			}
 		} else break;
 		backjumpTo(0);
-		max_assumption_at_level[0] = 0;
 	}
 	if (!opt) exit_SAT();
 	else exit_OPT();
