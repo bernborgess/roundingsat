@@ -479,7 +479,7 @@ void analyze(CRef confl, vector<int>& out_lits, vector<int>& out_coefs, int& out
 			if (confl_data.cnt_falsified_currentlvl == 1) {
 				break;
 			} else {
-				if (Reason[l] == CRef_Undef) throw "UNSAT";
+				assert(Reason[l] != CRef_Undef);
 				if (ca[Reason[l]].learnt()) {
 					claBumpActivity(ca[Reason[l]]);
 					if (ca[Reason[l]].lbd > 2) ca[Reason[l]].lbd = min(ca[Reason[l]].lbd, computeLBD(Reason[l]));
@@ -1093,6 +1093,9 @@ long long nconfl_to_restart=0;
 int cnt_reduceDB=1;
 
 bool solve(vector<int> assumptions) {
+	backjumpTo(0); // ensures assumptions are reset
+	std::vector<unsigned int> assumptions_lim={0};
+	assumptions_lim.reserve(assumptions.size());
 	while (true) {
 		CRef confl = propagate();
 		if (confl != CRef_Undef) {
@@ -1115,11 +1118,7 @@ bool solve(vector<int> assumptions) {
 				}
 			}
 			vector<int>lits;vector<int>coefs;int w;
-			try {
-				analyze(confl, lits, coefs, w);
-			} catch (const char *) {
-				return false;
-			}
+			analyze(confl, lits, coefs, w);
 			bool trivial = simplify_constraint(lits,coefs,w);
 			_unused(trivial);
 			assert(!trivial);
@@ -1156,20 +1155,21 @@ bool solve(vector<int> assumptions) {
 				cnt_reduceDB++;
 				nbclausesbeforereduce += incReduceDB;
 			}
-			if (decisionLevel() == 0) {
-				vector<int> new_assumptions;
-				for (int l : assumptions) {
-					if (~Level[-l]) return false;
-					if (!~Level[l]) new_assumptions.push_back(l);
-				}
-				if (!new_assumptions.empty()) {
-					newDecisionLevel();
-					for (int l : new_assumptions) uncheckedEnqueue(l, CRef_Undef);
-					continue;
+			int next = 0;
+			if(assumptions_lim.size()>(unsigned int) decisionLevel()+1)assumptions_lim.resize(decisionLevel()+1);
+			while(assumptions_lim.back()<assumptions.size()){
+				int l = assumptions[assumptions_lim.back()];
+				if (~Level[-l]) return false;
+				if (~Level[l]){
+					++assumptions_lim.back();
+				}else{
+					next = l;
+					assumptions_lim.push_back(assumptions_lim.back());
+					break;
 				}
 			}
-			int next = pickBranchLit();
-			if(next==0)return true;
+			if(next==0) next = pickBranchLit();
+			if(next==0) return true;
 			newDecisionLevel();
 			NDECIDE++;
 			uncheckedEnqueue(next,CRef_Undef);
@@ -1222,7 +1222,6 @@ int main(int argc, char**argv){
 				cout << "o " << last_sol_value << endl;
 			}
 		} else break;
-		backjumpTo(0);
 	}
 	if (!opt) exit_SAT();
 	else exit_OPT();
