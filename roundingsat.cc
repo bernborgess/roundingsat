@@ -419,6 +419,7 @@ template<class It1, class It2> void add_to_conflict(size_t size, It1 const&reaso
 	for(size_t it=0;it<size;it++){
 		int l = reason_lits[it];
 		int c = reason_coefs[it];
+		assert(c>0);
 		confl_data.use(abs(l));
 		if (M[-l] > 0) {
 			confl_data.used[abs(l)] = 2;
@@ -492,6 +493,7 @@ void analyze(CRef confl, vector<int>& out_lits, vector<int>& out_coefs, int& out
 		int oldlvl=decisionLevel();
 		undoOne();
 		if(decisionLevel()<oldlvl){
+			assert(confl_data.cnt_falsified_currentlvl == 0);
 			for(int x:confl_data.usedlist)for(int l=-x;l<=x;l+=2*x)if(confl_data.M[l]) {
 				if (Level[-l] == decisionLevel()) confl_data.cnt_falsified_currentlvl++;
 			}
@@ -781,8 +783,13 @@ void wcnf_read_objective(istream & in, long long top) {
 			istringstream is (line);
 			long long weight; is >> weight;
 			if(weight>=top) continue; // hard clause
-			if(weight>1e9) exit_ERROR({"Clause weight exceeds 1e9: ",std::to_string(weight)});
-			weights.push_back(weight);
+			if(weight>1e9) exit_ERROR({"Clause weight exceeds 10^9: ",std::to_string(weight)});
+			if(weight<0) exit_ERROR({"Negative clause weight: ",std::to_string(weight)});
+			if(weight==0){
+				std::cout << "c Warning: ignoring clause with weight 0" << std::endl;
+			}else{
+				weights.push_back(weight);
+			}
 		}
 	}
 	nbWcnfAuxVars = weights.size();
@@ -801,13 +808,14 @@ void wcnf_read(istream & in, long long top) {
 		else {
 			istringstream is (line);
 			long long weight; is >> weight;
+			if(weight==0) continue;
 			vector<int> lits;
 			int l;
 			while (is >> l, l) lits.push_back(l);
 			if(weight<top){ // soft clause
 				++auxvar;
 				lits.push_back(auxvar);
-			} // else{ //hard clause
+			} // else hard clause
 			process_ineq(lits, vector<int>(lits.size(), 1), 1);
 		}
 	}
