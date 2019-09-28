@@ -196,6 +196,24 @@ template<class T> void resizeLitMap(std::vector<T>& _map, typename std::vector<T
 	for(int i=newmiddle-oldmiddle-1; i>=0; --i) _map[i]=init;
 }
 
+unsigned int gcd(unsigned int u, unsigned int v){
+	assert(v>0 && u>0);
+	if (u%v==0) return v;
+	if (v%u==0) return u;
+	int shift = __builtin_ctz(u | v);
+	u >>= __builtin_ctz(u);
+	do {
+		v >>= __builtin_ctz(v);
+		if (u > v) {
+			unsigned int t = v;
+			v = u;
+			u = t;
+		}
+		v = v - u;
+	} while (v != 0);
+	return u << shift;
+}
+
 vector<vector<Watch>> _adj; vector<vector<Watch>>::iterator adj;
 vector<CRef> _Reason; vector<CRef>::iterator Reason;
 vector<int> trail;
@@ -387,6 +405,7 @@ int NCONFL=0, NDECIDE=0;
 long long NPROP=0, NIMPL=0;
 __int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
 long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
+long long NGCD=0;
 double rinc = 2;
 int rfirst = 100;
 int nbclausesbeforereduce=2000;
@@ -833,10 +852,23 @@ inline void saturate(vector<int>& coefs, int& w){
 	for (int i = 0; i < (int) coefs.size(); i++) coefs[i] = min(coefs[i], w);
 }
 
+// NOTE: simplified constraint is equivalent to original constraint under the input formula
 bool simplify_constraint(vector<int> &lits, vector<int> &coefs, int &w){
 	reduce_by_toplevel(lits,coefs,w);
 	if(w<=0) return true; // trivially satisfied constraint
 	saturate(coefs,w); // as reduce_by_toplevel could have reduced w
+	if(lits.size()==0) return false; // empty constraint
+	int _gcd = *std::min_element(coefs.begin(), coefs.end());
+	for(int c: coefs){
+		if(_gcd==1) break;
+		_gcd = gcd(_gcd,c);
+	}
+	assert(0<_gcd && _gcd<=w);
+	if(_gcd>1) {
+		++NGCD;
+		for(int& c: coefs) c/=_gcd;
+	}
+	w=ceildiv(w,_gcd);
 	return false;
 }
 
@@ -1175,6 +1207,7 @@ void print_stats() {
 	printf("d clauses learned %lld\n", NCLAUSESLEARNED);
 	printf("d cardinalities learned %lld\n", NCARDINALITIESLEARNED);
 	printf("d general constraints learned %lld\n", NGENERALSLEARNED);
+	printf("d gcd simplifications %lld\n", NGCD);
 }
 
 int last_sol_value;
