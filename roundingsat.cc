@@ -45,6 +45,20 @@ using namespace std;
 
 std::ostream& operator<<(std::ostream& os, __int128 t) { return os << (double) t; }
 
+template <class T> inline void swapErase(T& indexable, size_t index){
+	indexable[index]=indexable.back();
+	indexable.pop_back();
+}
+
+template <class T, class S> inline bool equals(const T& x, const S& y){
+	if(x!=y){std::cerr << x << "==" << y << std::endl;} return x==y; }
+template <class T, class S> inline bool not_equals(const T& x, const S& y){
+	if(x==y){std::cerr << x << "!=" << y << std::endl;} return x!=y; }
+template <class T, class S> inline bool greater_than(const T& x, const S& y){
+	if(x<=y){std::cerr << x << ">" << y << std::endl;} return x>y; }
+template <class T, class S> inline bool greater_than_eq(const T& x, const S& y){
+	if(x<y){std::cerr << x << ">=" << y << std::endl;} return x>=y; }
+
 void exit_SAT(),exit_UNSAT(),exit_INDETERMINATE(),exit_OPT(),exit_ERROR(const std::initializer_list<std::string>&);
 
 // Minisat cpuTime function
@@ -215,9 +229,10 @@ unsigned int gcd(unsigned int u, unsigned int v){
 }
 
 vector<vector<Watch>> _adj; vector<vector<Watch>>::iterator adj;
-vector<CRef> _Reason; vector<CRef>::iterator Reason;
+vector<CRef> _Reason; vector<CRef>::iterator Reason; // TODO: could be var-map instead of lit-map
 vector<int> trail;
 vector<int> _Level; vector<int>::iterator Level;
+vector<int> _Pos; vector<int>::iterator Pos; // TODO: could be var-map instead of lit-map
 vector<int> trail_lim;
 int qhead; // for unit propagation
 vector<int> phase;
@@ -406,10 +421,13 @@ long long NPROP=0, NIMPL=0;
 __int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
 long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
 long long NGCD=0;
+long long NSELFSUBSUMP=0;
+long long NWEAKENEDFALSELITS=0, NWEAKENEDNONFALSELITS=0;
 double rinc = 2;
 int rfirst = 100;
 int nbclausesbeforereduce=2000;
 int incReduceDB=300;
+bool minimizeLearnts=false;
 // VSIDS ---------------------------------------------------------------
 double var_decay=0.95;
 double var_inc=1.0;
@@ -488,7 +506,21 @@ template<class A,class B> long long slack(int length,A const& lits,B const& coef
 	return s;
 }
 
-long long slack(Clause & C){ return slack(C.size(),C.lits(),C.coefs(),C.w); }
+inline long long slack(Clause & C){ return slack(C.size(),C.lits(),C.coefs(),C.w); }
+inline void saturate(vector<int>& coefs, int& w){ for (int& c: coefs) c = min(c,w); }
+void reduce_by_toplevel(vector<int>& lits, vector<int>& coefs, int& w){
+	size_t i,j;
+	for(i=j=0; i<lits.size(); i++){
+		if(Level[ lits[i]]==0) w-=coefs[i]; else
+		if(Level[-lits[i]]==0); else {
+			lits[j]=lits[i];
+			coefs[j]=coefs[i];
+			j++;
+		}
+	}
+	lits.erase(lits.begin()+j,lits.end());
+	coefs.erase(coefs.begin()+j,coefs.end());
+}
 
 void attachClause(CRef cr){
 	Clause & C = ca[cr];
@@ -538,7 +570,8 @@ void removeClause(CRef cr){
 // ---------------------------------------------------------------------
 void uncheckedEnqueue(int p, CRef from){
 	assert(Level[p]==-1 && Level[-p]==-1);
-	Level[p] = -2;
+	Level[p] = -2; // TODO: ask Jan why this happens
+	Pos[p] = (int) trail.size();
 	Reason[p] = from;
 	trail.push_back(p);
 }
@@ -548,6 +581,7 @@ void undoOne(){
 	int l = trail.back();
 	trail.pop_back();
 	Level[l] = -1;
+	Pos[l] = -1;
 	phase[abs(l)]=l;
 	if(!trail_lim.empty() && trail_lim.back() == (int)trail.size())trail_lim.pop_back();
 	Reason[l] = CRef_Undef;
@@ -555,12 +589,14 @@ void undoOne(){
 }
 
 void backjumpTo(int level){
+	assert(level>=0);
 	while(decisionLevel()>level) undoOne();
 	qhead = trail.size();
 }
 
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
+
 /**
  * In the conflict analysis we represent the learnt clause
  * by an array of length 2*N, with one position per literal.
@@ -570,7 +606,6 @@ void backjumpTo(int level){
  * in the analysis and reset only their coefficients.
  */
 struct ConflictData {
-	long long slack;
 	int cnt_falsified_currentlvl;
 	// here we use int64 because we could get overflow in the following case:
 	// the reason's coefs multiplied by the coef. of the intermediate conflict clause
@@ -583,7 +618,6 @@ struct ConflictData {
 		used.resize(size+1,0);
 	}
 	void reset(){
-		slack=0;
 		cnt_falsified_currentlvl=0;
 		w=0;
 		for(int x:usedlist)M[x]=M[-x]=0,used[x]=0;
@@ -592,55 +626,86 @@ struct ConflictData {
 	void use(int x){
 		if(!used[x])used[x]=max(used[x],1),usedlist.push_back(x);
 	}
+	void print(){
+		std::vector<int> usedlistclone = usedlist;
+		sort(usedlistclone.begin(),usedlistclone.end(),[&](int l1,int l2){return max(Pos[l1],Pos[-l1])<max(Pos[l2],Pos[-l2]);});
+		for(int x:usedlistclone)for(int l=-x;l<=x;l+=2*x)if(M[l]) {
+			std::cout << M[l] << "x" << l << ":" << (Level[l]>0?"1":(Level[-l]>0?"0":"")) << "." << max(Level[l],Level[-l]) << " ";
+		}
+		std::cout << ">= " << w << std::endl;
+	}
+	void round_confl(long long c) {
+		for(int x:usedlist)for(int l=-x;l<=x;l+=2*x)if(M[l]){
+			if (Level[-l] == -1) {
+				//if (M[l] % c != 0) w -= M[l], M[l] = 0;
+				//else M[l] /= c;
+
+				// partial weakening would instead do:
+				w -= M[l] % c;
+				M[l] /= c;
+			} else M[l] = ceildiv(M[l], c);
+		}
+		w = ceildiv(w, c);
+	}
 } confl_data;
 
+void printReason(std::vector<int>& lits, std::vector<int>& coefs, int degree){
+	std::vector<std::pair<int,int> > litcoefs;
+	litcoefs.reserve(lits.size());
+	for(int i=0; i< (int) lits.size(); ++i){
+		litcoefs.push_back({coefs[i],lits[i]});
+	}
+	sort(litcoefs.begin(),litcoefs.end(),[&](std::pair<int,int> lc1,std::pair<int,int> lc2){return max(Pos[lc1.second],Pos[-lc1.second])<max(Pos[lc2.second],Pos[-lc2.second]);});
+	for(std::pair<int,int> lc:litcoefs){
+		int l = lc.second;
+		std::cout << lc.first << "x" << l << ":" << (Level[l]>0?"1":(Level[-l]>0?"0":"")) << "." << max(Level[l],Level[-l]) << " ";
+	}
+	std::cout << ">= " << degree << std::endl;
+}
+
 void round_reason(int l0, vector<int>&out_lits,vector<int>&out_coefs,int&out_w) {
+	out_lits.clear();
+	out_coefs.clear();
 	Clause & C = ca[Reason[l0]];
 	int old_coef_l0 = C.coefs()[find(C.lits(),C.lits()+C.size(),l0)-C.lits()];
 	int w = C.w;
 	for(size_t i=0;i<C.size();i++){
 		int l = C.lits()[i];
 		int coef = C.coefs()[i];
+		if(Level[ l]==0) w-=coef; else
+		if(Level[-l]==0); else
 		if (Level[-l] == -1) {
-			if (coef % old_coef_l0 != 0) w -= coef;
-			else out_lits.push_back(l), out_coefs.push_back(coef / old_coef_l0);
+			//if (coef % old_coef_l0 != 0) w -= coef;
+			//else out_lits.push_back(l), out_coefs.push_back(coef / old_coef_l0);
 			
 			// partial weakening would instead do:
-			/*w -= coef % old_coef_l0;
-			if (coef >= old_coef_l0) out_lits.push_back(l), out_coefs.push_back(coef / old_coef_l0);*/
+			w -= coef % old_coef_l0;
+			if (coef >= old_coef_l0) out_lits.push_back(l), out_coefs.push_back(coef / old_coef_l0);
 		} else {
 			out_lits.push_back(l), out_coefs.push_back(ceildiv(coef, old_coef_l0));
 		}
 	}
 	out_w = ceildiv<long long>(w, old_coef_l0);
-	assert(slack(out_lits.size(), out_lits, out_coefs, out_w) == 0);
+	saturate(out_coefs,out_w);
+	assert(slack(out_lits.size(), out_lits, out_coefs, out_w) <= 0); // NOTE: possible that slack is less than 0 when unknown literals are set later on the trail
 }
 
-void round_conflict(long long c) {
-	for(int x:confl_data.usedlist)for(int l=-x;l<=x;l+=2*x)if(confl_data.M[l]){
-		if (Level[-l] == -1) {
-			if (confl_data.M[l] % c != 0) {
-				confl_data.w -= confl_data.M[l], confl_data.M[l] = 0;
-			} else confl_data.M[l] /= c;
-			
-			// partial weakening would instead do:
-			/*confl_data.w -= confl_data.M[l] % c;
-			confl_data.M[l] /= c;*/
-		} else confl_data.M[l] = ceildiv(confl_data.M[l], c);
-	}
-	confl_data.w = ceildiv(confl_data.w, c);
-	confl_data.slack = -ceildiv(-confl_data.slack, c);
-}
-
-template<class It1, class It2> void add_to_conflict(size_t size, It1 const&reason_lits,It2 const&reason_coefs,int reason_w){
+// TODO: split initialization case from add_to_conflict case, and check on unit literals in initialization
+template<class It1, class It2> void add_to_conflict(size_t size, It1 const&reason_lits,It2 const&reason_coefs,int reason_w, int mult){
+	assert(mult>0);
+	assert(reason_w>0);
 	vector<long long>::iterator M = confl_data.M;
 	long long & w = confl_data.w;
-	w += reason_w;
-	bool overflow = false;
+	long long f = mult; // any multiplication using f will now be over long long instead of int
+
+	w += f*reason_w;
 	for(size_t it=0;it<size;it++){
 		int l = reason_lits[it];
-		int c = reason_coefs[it];
-		assert(c>0);
+		assert(Level[l]!=0);
+		assert(Level[-l]!=0);
+		assert(greater_than(reason_coefs[it],0));
+		assert(greater_than_eq(reason_w,reason_coefs[it]));
+		long long c = f*reason_coefs[it];
 		confl_data.use(abs(l));
 		if (M[-l] > 0) {
 			confl_data.used[abs(l)] = 2;
@@ -658,13 +723,14 @@ template<class It1, class It2> void add_to_conflict(size_t size, It1 const&reaso
 			if (Level[-l] == decisionLevel() && M[l] == 0) confl_data.cnt_falsified_currentlvl++;
 			M[l] += c;
 		}
-		if (M[l] > (int) 1e9) overflow = true;
 	}
-	if (w > (int) 1e9 || overflow) {
+	// saturate all
+	for(int x:confl_data.usedlist)for(int l=-x;l<=x;l+=2*x)confl_data.M[l]=min(w, confl_data.M[l]);
+	if (w > (int) 1e9) {
 		// round to cardinality.
 		long long d = 0;
 		for(int x:confl_data.usedlist)for(int l=-x;l<=x;l+=2*x)d=max(d, confl_data.M[l]);
-		round_conflict(d);
+		confl_data.round_confl(d);
 	}
 }
 
@@ -683,8 +749,7 @@ void analyze(CRef confl, vector<int>& out_lits, vector<int>& out_coefs, int& out
 		if (C.lbd > 2) C.lbd = min(C.lbd, computeLBD(confl));
 	}
 	confl_data.reset();
-	add_to_conflict(C.size(), C.lits(), C.coefs(), C.w);
-	confl_data.slack = slack(C);
+	add_to_conflict(C.size(), C.lits(), C.coefs(), C.w, 1);
 	vector<int> reason_lits; reason_lits.reserve(n);
 	vector<int> reason_coefs; reason_coefs.reserve(n);
 	int reason_w;
@@ -693,11 +758,11 @@ void analyze(CRef confl, vector<int>& out_lits, vector<int>& out_coefs, int& out
 			exit_UNSAT();
 		}
 		int l = trail.back();
-		if(confl_data.M[-l]) {
-			confl_data.M[-l] = min(confl_data.M[-l], confl_data.w); // so that we don't round the conflict if w=1.
-			if (confl_data.M[-l] > 1) {
-				round_conflict(confl_data.M[-l]);
-			}
+		if(confl_data.M[-l]>0) {
+//			confl_data.M[-l] = min(confl_data.M[-l], confl_data.w); // so that we don't round the conflict if w=1.
+//			if (confl_data.M[-l] > 1) {
+//				confl_data.round_confl(confl_data.M[-l]);
+//			}
 			if (confl_data.cnt_falsified_currentlvl == 1) {
 				break;
 			} else {
@@ -706,29 +771,53 @@ void analyze(CRef confl, vector<int>& out_lits, vector<int>& out_coefs, int& out
 					claBumpActivity(ca[Reason[l]]);
 					if (ca[Reason[l]].lbd > 2) ca[Reason[l]].lbd = min(ca[Reason[l]].lbd, computeLBD(Reason[l]));
 				}
-				reason_lits.clear();
-				reason_coefs.clear();
 				round_reason(l, reason_lits, reason_coefs, reason_w);
-				add_to_conflict(reason_lits.size(), reason_lits, reason_coefs, reason_w);
+				add_to_conflict(reason_lits.size(), reason_lits, reason_coefs, reason_w,confl_data.M[-l]);
 			}
 		}
 		int oldlvl=decisionLevel();
 		undoOne();
 		if(decisionLevel()<oldlvl){
-			assert(confl_data.cnt_falsified_currentlvl == 0);
+			//assert(equals(confl_data.cnt_falsified_currentlvl,0));
 			for(int x:confl_data.usedlist)for(int l=-x;l<=x;l+=2*x)if(confl_data.M[l]) {
 				if (Level[-l] == decisionLevel()) confl_data.cnt_falsified_currentlvl++;
 			}
 		}
 	}
+
 	for(int x:confl_data.usedlist){
 		varBumpActivity(x);
 		if (confl_data.used[x] == 2) varBumpActivity(x);
 	}
-	for(int x:confl_data.usedlist)for(int l=-x;l<=x;l+=2*x)if(confl_data.M[l]){
-		out_lits.push_back(l),out_coefs.push_back(min(confl_data.M[l],confl_data.w));
+
+	// self-subsuming resolution
+	for(int i=trail.size()-1; i>=0 && minimizeLearnts; --i){
+		int l = trail[i];
+		assert(greater_than_eq(Level[l],0));
+		if(Level[l]==0) break;
+		if(Reason[l]==CRef_Undef || confl_data.M[-l]==0) continue;
+
+		round_reason(l,reason_lits,reason_coefs,reason_w);
+		if(reason_w<=0) continue;
+
+		long long toWeaken = 0;
+		for(int j=0; j<(int) reason_lits.size(); ++j) {
+			if (Level[-reason_lits[j]]==-1 || confl_data.M[reason_lits[j]]==0) toWeaken += reason_coefs[j];
+		}
+		if(reason_w<toWeaken) continue; // check whether reason weakens learned constraint
+
+		add_to_conflict(reason_lits.size(), reason_lits, reason_coefs, reason_w, confl_data.M[-l]);
+		assert(equals(confl_data.M[-l],0));
+		++NSELFSUBSUMP;
 	}
+
+	for(int x:confl_data.usedlist)for(int l=-x;l<=x;l+=2*x)if(confl_data.M[l]>0){
+		assert(greater_than_eq(1e9,confl_data.M[l]));
+		out_lits.push_back(l);
+		out_coefs.push_back(min(confl_data.M[l],confl_data.w));
+	}else{ assert(equals(confl_data.M[l],0)); }
 	out_w=confl_data.w;
+	assert(greater_than(0,slack(out_lits.size(),out_lits,out_coefs,out_w)));
 }
 
 /**
@@ -757,14 +846,20 @@ CRef propagate() {
 				int c = coefs[pos];
 				for(int it=C.nwatch;it<(int)C.size() && C.sumwatchcoefs-c < C.minsumwatch;it++)if(Level[-lits[it]]==-1){
 					adj[lits[it]].push_back({cr});
-					swap(lits[it],lits[C.nwatch]),swap(coefs[it],coefs[C.nwatch]);
+					// swap(lits[it],lits[C.nwatch]),swap(coefs[it],coefs[C.nwatch]);
+					int middle = (it+C.nwatch)/2;
+					swap(lits[it],lits[middle]),swap(coefs[it],coefs[middle]);
+					swap(lits[middle],lits[C.nwatch]),swap(coefs[middle],coefs[C.nwatch]);
 					C.sumwatchcoefs += coefs[C.nwatch];
 					C.nwatch++;
 				}
 				if (C.sumwatchcoefs-c >= C.minsumwatch) {
-					swap(lits[pos],lits[C.nwatch-1]),swap(coefs[pos],coefs[C.nwatch-1]);
-					C.sumwatchcoefs-=coefs[C.nwatch-1];
 					C.nwatch--;
+					// swap(lits[pos],lits[C.nwatch]),swap(coefs[pos],coefs[C.nwatch]);
+					int middle = (pos+C.nwatch)/2;
+					swap(lits[pos],lits[middle]),swap(coefs[pos],coefs[middle]);
+					swap(lits[middle],lits[C.nwatch]),swap(coefs[middle],coefs[C.nwatch]);
+					C.sumwatchcoefs-=coefs[C.nwatch];
 					continue;
 				}
 			}
@@ -822,6 +917,7 @@ void setNbVariables(long long nvars){
 	resizeLitMap(_adj,adj,nvars,{});
 	resizeLitMap(_Reason,Reason,nvars,CRef_Undef);
 	resizeLitMap(_Level,Level,nvars,-1);
+	resizeLitMap(_Pos,Pos,nvars,-1);
 	activity.resize(nvars+1,0);
 	phase.resize(nvars+1);
 	tmpConstraint.resize(nvars+1);
@@ -834,30 +930,13 @@ void setNbVariables(long long nvars){
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 // Proto-constraint handling
-void reduce_by_toplevel(vector<int>& lits, vector<int>& coefs, int& w){
-	size_t i,j;
-	for(i=j=0; i<lits.size(); i++){
-		if(Level[ lits[i]]==0) w-=coefs[i]; else
-		if(Level[-lits[i]]==0); else {
-			lits[j]=lits[i];
-			coefs[j]=coefs[i];
-			j++;
-		}
-	}
-	lits.erase(lits.begin()+j,lits.end());
-	coefs.erase(coefs.begin()+j,coefs.end());
-}
-
-inline void saturate(vector<int>& coefs, int& w){
-	for (int i = 0; i < (int) coefs.size(); i++) coefs[i] = min(coefs[i], w);
-}
 
 // NOTE: simplified constraint is equivalent to original constraint under the input formula
 bool simplify_constraint(vector<int> &lits, vector<int> &coefs, int &w){
 	reduce_by_toplevel(lits,coefs,w);
 	if(w<=0) return true; // trivially satisfied constraint
-	saturate(coefs,w); // as reduce_by_toplevel could have reduced w
 	if(lits.size()==0) return false; // empty constraint
+	saturate(coefs,w); // as reduce_by_toplevel could have reduced w
 	int _gcd = *std::min_element(coefs.begin(), coefs.end());
 	for(int c: coefs){
 		if(_gcd==1) break;
@@ -867,12 +946,15 @@ bool simplify_constraint(vector<int> &lits, vector<int> &coefs, int &w){
 	if(_gcd>1) {
 		++NGCD;
 		for(int& c: coefs) c/=_gcd;
+		w=ceildiv(w,_gcd);
 	}
-	w=ceildiv(w,_gcd);
 	return false;
 }
 
-CRef learnConstraint(vector<int>& lits,vector<int>& coefs, int w){
+CRef learnConstraint(vector<int>& lits,vector<int>& coefs, int& w){
+	bool trivial = simplify_constraint(lits,coefs,w);
+	_unused(trivial);
+	assert(!trivial);
 	assert(lits.size()>0);
 	CRef cr = ca.alloc(lits,coefs,w, true);
 	Clause & C = ca[cr];
@@ -1208,6 +1290,9 @@ void print_stats() {
 	printf("d cardinalities learned %lld\n", NCARDINALITIESLEARNED);
 	printf("d general constraints learned %lld\n", NGENERALSLEARNED);
 	printf("d gcd simplifications %lld\n", NGCD);
+	printf("d selfsubsumptions %lld\n", NSELFSUBSUMP);
+	printf("d weakened non-implied lits %lld\n", NWEAKENEDNONFALSELITS);
+	printf("d weakened falsified lits %lld\n", NWEAKENEDFALSELITS);
 }
 
 int last_sol_value;
@@ -1275,6 +1360,7 @@ void usage(int argc, char**argv) {
 	printf("  --var-decay=arg  Set the VSIDS decay factor (0.5<=arg<1; default %lf).\n",var_decay);
 	printf("  --rinc=arg       Set the base of the Luby restart sequence (floating point number >=1; default %lf).\n",rinc);
 	printf("  --rfirst=arg     Set the interval of the Luby restart sequence (integer >=1; default %d).\n",rfirst);
+	printf("  --minimize-learnts=arg Toggle learnt constraint minimization (0 or 1; default %d).\n",minimizeLearnts);
 }
 
 char * filename = 0;
@@ -1296,7 +1382,7 @@ void read_options(int argc, char**argv) {
 			exit(1);
 		}
 	}
-	vector<string> opts = {"verbosity", "var-decay", "rinc", "rfirst"};
+	vector<string> opts = {"verbosity", "var-decay", "rinc", "rfirst", "minimize-learnts"};
 	map<string, string> opt_val;
 	for(int i=1;i<argc;i++){
 		if (string(argv[i]).substr(0,2) != "--") filename = argv[i];
@@ -1315,6 +1401,7 @@ void read_options(int argc, char**argv) {
 	getOption(opt_val,"var-decay",[](double x)->bool{return x>=0.5 && x<1;},var_decay);
 	getOption(opt_val,"rinc",[](double x)->bool{return x>=1;},rinc);
 	getOption(opt_val,"rfirst",[](double x)->bool{return x>=1;},rfirst);
+	getOption(opt_val,"minimize-learnts",[](double x)->bool{return x==0 || x==1;},minimizeLearnts);
 }
 
 int curr_restarts=0;
@@ -1329,7 +1416,6 @@ bool solve(vector<int> assumptions) {
 	while (true) {
 		CRef confl = propagate();
 		if (confl != CRef_Undef) {
-			have_confl:
 			varDecayActivity();
 			claDecayActivity();
 			if (decisionLevel() == 0) {
@@ -1339,6 +1425,7 @@ bool solve(vector<int> assumptions) {
 			if(NCONFL%1000==0){
 				if (verbosity > 0) {
 					printf("c #Conflicts: %10d | #Learnt: %10d\n",NCONFL,(int)learnts.size());
+//					print_stats();
 					if(verbosity>2){
 						// memory usage
 						cout<<"c total clause space: "<<ca.cap*4/1024./1024.<<"MB"<<endl;
@@ -1349,28 +1436,96 @@ bool solve(vector<int> assumptions) {
 			}
 			vector<int>lits;vector<int>coefs;int w;
 			analyze(confl, lits, coefs, w);
-			bool trivial = simplify_constraint(lits,coefs,w);
-			_unused(trivial);
-			assert(!trivial);
-			// compute an assertion level
-			// it may be possible to backjump further, but we don't do this
-			int lvl = 0;
-			for (int i=0; i<(int)lits.size(); i++)
-				if (Level[-lits[i]] < decisionLevel())
-					lvl = max(lvl, Level[-lits[i]]);
-			assert(lvl < decisionLevel());
-			backjumpTo(lvl);
-			CRef cr = learnConstraint(lits,coefs,w);
 
-			if (::slack(ca[cr]) == 0) {
+			// compute an assertion level
+			std::vector<int> indices;
+			indices.reserve(lits.size());
+			for (int i=0; i<(int)lits.size(); ++i) indices.push_back(i);
+			std::sort(indices.begin(),indices.end(),[&](int i,int j){
+				return Pos[-lits[i]]>Pos[-lits[j]];
+			});
+			long long slk = slack(lits.size(),lits,coefs,w);
+			assert(greater_than(0,slk));
+			int lvl = 0;
+			int skip_lvl=0;
+			for(int idx: indices){
+				int current_lvl = Level[-lits[idx]];
+				if(current_lvl<0) break;
+				slk+=coefs[idx];
+				if(slk>=0){
+					if(skip_lvl>current_lvl){
+						lvl=current_lvl;
+						break;
+					}
+					skip_lvl=current_lvl;
+				}
+			}
+			assert(greater_than(decisionLevel(),lvl));
+			backjumpTo(lvl);
+
+			slk = slack(lits.size(),lits,coefs,w);
+			// NOTE: no guarantee the current level actually asserts some literal...
+			int smallestPropagated = 1e9+1;
+			if (slk >= 0) {
+				// find out wiggle room to weaken falsifieds
+				for (int i = 0; i < (int) lits.size(); ++i) {
+					int l = lits[i];
+					int c = coefs[i];
+					if (Level[l] == -1 && Level[-l] == -1 && c>slk) {
+						smallestPropagated = min(smallestPropagated, c);
+					}
+				}
+			}
+
+			if(smallestPropagated<=1e9){
+				long long wiggle_room = smallestPropagated-slk;
+				if(wiggle_room>1){
+					std::sort(indices.begin(),indices.end(),[&](int i,int j){
+						return coefs[i]<coefs[j] || (coefs[i]==coefs[j] && Pos[-lits[i]]>Pos[-lits[j]]);
+					});
+					for(int idx: indices){
+						if(Level[-lits[idx]]==-1) continue;
+						int c = coefs[idx];
+						wiggle_room-=c;
+						if(wiggle_room<1) break;
+						// weaken falsified lit
+						coefs[idx] = 0;
+						lits[idx] = 0;
+						w-=c;
+						slk+=c;
+						++NWEAKENEDFALSELITS;
+					}
+					coefs.erase(std::remove_if(coefs.begin(),coefs.end(),[](int x){return x==0;}),coefs.end());
+					lits.erase(std::remove_if(lits.begin(),lits.end(),[](int x){return x==0;}),lits.end());
+					assert(slk>=0);
+					assert(w>0);
+				}
+
+				for (int i=0; i<(int)lits.size(); ++i){
+					int l = lits[i];
+					int c = coefs[i];
+					assert(c>0);
+					if (Level[-l]==-1 && c<=slk){
+						// not falsified but also not assertable after backjump, so maybe good to weaken
+						w-=c;
+						swapErase(lits,i);
+						swapErase(coefs,i);
+						--i;
+						++NWEAKENEDNONFALSELITS;
+					}
+				}
+				assert(slk>=0);
+			}
+			assert(equals(slack(lits.size(),lits,coefs,w),slk));
+
+			CRef cr = learnConstraint(lits,coefs,w);
+			if (slk >= 0) {
 				for (int i=0; i<(int)lits.size(); i++)
-					if (Level[-lits[i]] == -1 && Level[lits[i]] == -1)
+					if (Level[-lits[i]] == -1 && Level[lits[i]] == -1 && coefs[i]>slk)
 						uncheckedEnqueue(lits[i], cr);
 			} else {
-				// the learnt constraint is conflicting at the assertion level.
-				// in this case, immediately enter a new conflict analysis again.
-				confl = cr;
-				goto have_confl;
+				assert(equals(decisionLevel(),0));
+				exit_UNSAT();
 			}
 		} else {
 			if(asynch_interrupt)exit_INDETERMINATE();
