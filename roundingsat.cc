@@ -171,6 +171,16 @@ vector<CRef> clauses, learnts;
 struct Watch {
 	CRef cref;
 };
+
+template <class T>
+inline T ceildiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return (p+q-1)/q; }
+template <class T>
+inline T floordiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return p/q; }
+template <class T>
+inline T ceildiv_safe(const T& p,const T& q){ assert(q>0); return (p<0?-floordiv(-p,q):ceildiv(p,q)); }
+template <class T>
+inline T floordiv_safe(const T& p,const T& q){ assert(q>0); return (p<0?-ceildiv(-p,q):floordiv(p,q)); }
+
 vector<vector<Watch>> _adj; vector<vector<Watch>>::iterator adj;
 vector<CRef> _Reason; vector<CRef>::iterator Reason;
 vector<int> trail;
@@ -180,6 +190,103 @@ int qhead; // for unit propagation
 vector<int> phase;
 void newDecisionLevel() { trail_lim.push_back(trail.size()); }
 int decisionLevel() { return trail_lim.size(); }
+
+template<class SMALL, class LARGE> // LARGE should be able to fit sums of SMALL
+struct Constraint{
+	std::vector<int> vars;
+	vector<SMALL> coefs;
+	LARGE rhs = 0;
+
+	void reset(){
+		for(int v: vars) coefs[v]=std::numeric_limits<SMALL>::min();
+		vars.clear();
+		rhs=0;
+	}
+
+	void init(std::vector<int>& lits, std::vector<SMALL>& cs, LARGE& w){
+		reset();
+		for(int i=0; i<lits.size(); ++i) addLhs(cs[i],lits[i]);
+		addRhs(w);
+	}
+
+	void addLhs(SMALL c, int l){ // treat negative literals as 1-v
+		if(c==0) return;
+		int v = l;
+		if(l<0){
+			rhs -= c;
+			c = -c;
+			v = -l;
+		}
+		if((int)coefs.size()<=v) coefs.resize(v+1,std::numeric_limits<SMALL>::min());
+		if(coefs[v]==std::numeric_limits<SMALL>::min()) vars.push_back(v), coefs[v]=0;
+		coefs[v]+=c;
+	}
+
+	inline void addRhs(SMALL r){ rhs+=r; }
+	inline LARGE getRhs(){ return rhs; }
+	inline LARGE getDegree() {
+		LARGE result = rhs;
+		for (int v: vars) result -= min(0,coefs[v]); // considering negative coefficients
+		return result;
+	}
+
+	void saturate(){
+		LARGE w = getDegree();
+		if(w<=0) reset(), rhs=w;
+		for (int v: vars){
+			if(coefs[v]>w) coefs[v]=w;
+			if(coefs[v]<-w) rhs-=coefs[v]+w, coefs[v]=-w;
+		}
+		assert(w==getDegree()); // degree is invariant under saturation
+	}
+
+	void divide(SMALL d){
+		for (int v: vars) coefs[v] = ceildiv_safe<SMALL>(coefs[v],d);
+		rhs=ceildiv_safe<SMALL>(rhs,d);
+	}
+
+	void getNormalForm(std::vector<int>& lits, std::vector<SMALL>& cs, LARGE& w){
+		lits.clear(); cs.clear();
+		w=getDegree();
+		if(w<=0) return;
+		lits.reserve(vars.size()); cs.reserve(vars.size());
+		for(int v: vars){
+			if(coefs[v]<0){
+				lits.push_back(-v);
+				cs.push_back(min<LARGE>(-coefs[v],w));
+			}else if(coefs[v]>0){
+				lits.push_back(v);
+				cs.push_back(min<LARGE>(coefs[v],w));
+			}
+		}
+	}
+
+	bool isUsed(int l){ return coefs.size()>abs(l) && coefs[abs(l)]!=std::numeric_limits<SMALL>::min(); }
+
+	void print(){
+		sort(vars.begin(),vars.end(),[&](SMALL v1,SMALL v2){return v1<v2;});
+		for(int v: vars) std::cout << coefs[v] << "x" << v << " ";
+		std::cout << ">= " << rhs << " (" << getDegree() << ")" << std::endl;
+	}
+
+	void printNormalForm(){
+		sort(vars.begin(),vars.end(),[&](SMALL v1,SMALL v2){return v1<v2;});
+		std::vector<int> lits; std::vector<SMALL> cs; LARGE w;
+		getNormalForm(lits,cs,w);
+		for(int i=0; i<(int)lits.size(); ++i){
+			int l = lits[i];
+			std::cout << cs[i] << "x" << l << ":" << (Level[l]>0?"1":(Level[-l]>0?"0":"")) << "." << max(Level[l],Level[-l]) << " ";
+		}
+		std::cout << ">= " << w << std::endl;
+	}
+
+	void invert(){
+		for(int v: vars) coefs[v]=-coefs[v];
+		rhs=-rhs;
+	}
+};
+Constraint<int, long long> tmpConstraint;
+
 double initial_time;
 int NCONFL=0, NDECIDE=0;
 long long NPROP=0, NIMPL=0;
@@ -363,15 +470,6 @@ struct ConflictData {
 		if(!used[x])used[x]=max(used[x],1),usedlist.push_back(x);
 	}
 } confl_data;
-
-template <class T>
-inline T ceildiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return (p+q-1)/q; }
-template <class T>
-inline T floordiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return p/q; }
-template <class T>
-inline T ceildiv_safe(const T& p,const T& q){ assert(q>0); return (p<0?-floordiv(-p,q):ceildiv(p,q)); }
-template <class T>
-inline T floordiv_safe(const T& p,const T& q){ assert(q>0); return (p<0?-ceildiv(-p,q):floordiv(p,q)); }
 
 void round_reason(int l0, vector<int>&out_lits,vector<int>&out_coefs,int&out_w) {
 	Clause & C = ca[Reason[l0]];
@@ -594,8 +692,9 @@ void init(){
 	ca.capacity(1024*1024);//4MB
 }
 
-void setNbVariables(int nvars){
+void setNbVariables(long long nvars){
 	if (nvars < 0) exit_ERROR({"Number of variables must be positive."});
+	if (nvars > 1e9) exit_ERROR({"Number of variables cannot exceet 1e9."});
 	n = nvars;
 	_adj.resize(2*n+1); adj = _adj.begin() + n;
 	_Reason.resize(2*n+1, CRef_Undef); Reason = _Reason.begin() + n;
@@ -655,25 +754,24 @@ CRef learnConstraint(vector<int>& lits,vector<int>& coefs, int w){
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 // Parsers
-void process_ineq(vector<int> lits, vector<int> coefs, int w){
-	for(size_t i=0;i<lits.size();i++){
-		if(coefs[i] < 0) lits[i]*=-1,coefs[i]*=-1,w+=coefs[i];
-		if (w > (int) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
-	}
+void addConstraint(Constraint<int, long long>& c){
+	std::vector<int> lits; std::vector<int> coefs; long long d=0; int w;
+	c.getNormalForm(lits,coefs,d);
+	if (abs(d) > (long long) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
+	w=(int)d;
 	bool trivial = simplify_constraint(lits,coefs,w);
-	if(trivial)return;//already satisfied.
+	if(trivial) return; // already satisfied.
 	long long som = 0;for(int c:coefs)som+=c;
 	if(som < w)puts("c UNSAT trivially inconsistent constraint"),exit_UNSAT();
 	for(size_t i=0;i<lits.size();i++)if(som-coefs[i] < w){
 		//printf("propagate %d\n",lits[i]);
 		uncheckedEnqueue(lits[i],CRef_Undef);
 	}
-	trivial = simplify_constraint(lits,coefs,w);
-	if(trivial)return;//already satisfied.
+	if(trivial) return; // already satisfied.
 	CRef cr = ca.alloc(lits, coefs, w, false);
 	attachClause(cr);
 	clauses.push_back(cr);
-	if (propagate() != CRef_Undef)puts("c UNSAT initial UP"),exit_UNSAT();
+	if (propagate() != CRef_Undef)puts("c UNSAT initial conflict"),exit_UNSAT();
 }
 
 /*
@@ -689,9 +787,13 @@ int read_number(const string & s) {
 	return answer;
 }
 
-// NOTE: extends lits and coefs
-void addObjective(std::vector<int>& lits, std::vector<int>& coefs) {
-	assert(clauses.size()==0);
+void addObjective(Constraint<int, long long>& c) {
+	assert(clauses.size()==0); // objective function bound must be first constraint
+	std::vector<int> lits; std::vector<int> coefs;
+	for(int v: c.vars) if(c.coefs[v]!=0) {
+		lits.push_back(v);
+		coefs.push_back(c.coefs[v]);
+	}
 	opt = true;
 	opt_coef_sum = 0;
 	opt_normalize_add = 0;
@@ -701,16 +803,18 @@ void addObjective(std::vector<int>& lits, std::vector<int>& coefs) {
 		lits[i]=-lits[i];
 		if (opt_coef_sum > (int) 1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
 	}
-	opt_K = 0; while ((1<<opt_K)-1 < opt_coef_sum) opt_K++;
+	opt_K = 0; while ((1<<opt_K) <= opt_coef_sum) opt_K++;
 	for(int i=0;i<opt_K;i++)lits.push_back(n+1+i),coefs.push_back(1<<i);
 	setNbVariables(n+opt_K);
-	process_ineq(lits, coefs, opt_coef_sum);
-	if(clauses.size()==0) { // Trivial objective function.
+	CRef cr = CRef_Undef;
+	if(lits.size()==0) { // Trivial objective function.
 		// Add dummy objective, as it is assumed the objective function is stored as first constraint.
-		CRef cr = ca.alloc({0, 0}, {0, 0}, 0, false);
-		attachClause(cr);
-		clauses.push_back(cr);
+		cr = ca.alloc({0, 0}, {0, 0}, 0, false);
+	}else{
+		cr = ca.alloc(lits, coefs, opt_coef_sum, false);
 	}
+	attachClause(cr);
+	clauses.push_back(cr);
 }
 
 void opb_read(istream & in) {
@@ -734,8 +838,7 @@ void opb_read(istream & in) {
 			}
 			first_constraint = false;
 			istringstream is (line);
-			vector<int> lits;
-			vector<int> coefs;
+			tmpConstraint.reset();
 			vector<string> tokens;
 			{ string tmp; while (is >> tmp) tokens.push_back(tmp); }
 			if (tokens.size() % 2 != 0) exit_ERROR({"No support for non-linear constraints."});
@@ -755,20 +858,16 @@ void opb_read(istream & in) {
 				int l = atoi(var.c_str());
 				if (!(1 <= l && l <= n)) exit_ERROR({"Literal token out of variable range: ",origvar});
 				if (negated) l = -l;
-				if (coef != 0) {
-					lits.push_back(l);
-					coefs.push_back(coef);
-				}
+				tmpConstraint.addLhs(coef,l);
 			}
-			if (opt_line) addObjective(lits,coefs);
+			if (opt_line) addObjective(tmpConstraint);
 			else {
-				int w = read_number(line0.substr(line0.find("=") + 1));
-				process_ineq(lits, coefs, w);
+				tmpConstraint.addRhs(read_number(line0.substr(line0.find("=") + 1)));
+				addConstraint(tmpConstraint);
 				// Handle equality case with two constraints
 				if (line0.find(" = ") != string::npos) {
-					for (int & coef : coefs) coef = -coef;
-					w *= -1;
-					process_ineq(lits, coefs, w);
+					tmpConstraint.invert();
+					addConstraint(tmpConstraint);
 				}
 			}
 		}
@@ -793,12 +892,10 @@ void wcnf_read_objective(istream & in, long long top) {
 		}
 	}
 	nbWcnfAuxVars = weights.size();
-	std::vector<int> lits(nbWcnfAuxVars);
-	for(int i=0; i<nbWcnfAuxVars; ++i){
-		lits[i]=n+1+i;
-	}
+	tmpConstraint.reset();
+	for(int i=0; i<nbWcnfAuxVars; ++i) tmpConstraint.addLhs(weights[i],n+1+i);
 	setNbVariables(n+nbWcnfAuxVars);
-	addObjective(lits,weights);
+	addObjective(tmpConstraint);
 }
 
 void wcnf_read(istream & in, long long top) {
@@ -809,14 +906,15 @@ void wcnf_read(istream & in, long long top) {
 			istringstream is (line);
 			long long weight; is >> weight;
 			if(weight==0) continue;
-			vector<int> lits;
+			tmpConstraint.reset();
+			tmpConstraint.addRhs(1);
 			int l;
-			while (is >> l, l) lits.push_back(l);
+			while (is >> l, l) tmpConstraint.addLhs(1,l);
 			if(weight<top){ // soft clause
 				++auxvar;
-				lits.push_back(auxvar);
+				tmpConstraint.addLhs(1,auxvar);
 			} // else hard clause
-			process_ineq(lits, vector<int>(lits.size(), 1), 1);
+			addConstraint(tmpConstraint);
 		}
 	}
 }
@@ -826,10 +924,11 @@ void cnf_read(istream & in) {
 		if (line.empty() || line[0] == 'c') continue;
 		else {
 			istringstream is (line);
-			vector<int> lits;
+			tmpConstraint.reset();
+			tmpConstraint.addRhs(1);
 			int l;
-			while (is >> l, l) lits.push_back(l);
-			process_ineq(lits, vector<int>(lits.size(),1), 1);
+			while (is >> l, l) tmpConstraint.addLhs(1,l);
+			addConstraint(tmpConstraint);
 		}
 	}
 }
@@ -1195,6 +1294,7 @@ int main(int argc, char**argv){
 	signal(SIGINT, SIGINT_interrupt);
 	signal(SIGTERM,SIGINT_interrupt);
 	signal(SIGXCPU,SIGINT_interrupt);
+
 	std::cout << "c #variables=" << getNbOrigVars() << " #constraints=" << clauses.size()-(opt?1:0) << std::endl;
 	for (int m = opt_coef_sum; m >= 0; m--) {
 		vector<int> aux;
