@@ -242,7 +242,7 @@ struct Constraint{
 
 	void divide(SMALL d){
 		for (int v: vars) coefs[v] = ceildiv_safe<SMALL>(coefs[v],d);
-		rhs=ceildiv_safe<SMALL>(rhs,d);
+		rhs=ceildiv_safe<LARGE>(rhs,d);
 	}
 
 	void getNormalForm(std::vector<int>& lits, std::vector<SMALL>& cs, LARGE& w){
