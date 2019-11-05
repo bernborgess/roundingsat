@@ -94,20 +94,6 @@ struct Clause {
 	bool markedfordel() const { return header.markedfordel; }
 	void markfordel() { header.markedfordel=1; }
 };
-struct lit{int l;lit(int l):l(l){}};
-ostream&operator<<(ostream&o,lit const&l){if(l.l<0)o<<"~";o<<"x"<<abs(l.l);return o;}
-ostream & operator<<(ostream & o, Clause & C) {
-	vector<int> order;
-	for (int i = 0; i < (int) C.size(); i++) order.push_back(i);
-	sort(order.begin(), order.end(), [&C](int i, int j) { return abs(C.lits()[i]) < abs(C.lits()[j]); });
-	for (int i = 0; i < (int) C.size(); i++) {
-		int l = C.lits()[order[i]];
-		int coef = C.coefs()[order[i]];
-		o << coef << " " << lit(l) << " ";
-	}
-	o << ">= " << C.w << ";";
-	return o;
-}
 
 // ---------------------------------------------------------------------
 // memory. maximum supported size of learnt clause database is 16GB
@@ -154,7 +140,7 @@ struct {
 		memory = (uint32_t*) xrealloc(memory, sizeof(uint32_t) * cap);
 	}
 	int sz_clause(int length) { return (sizeof(Clause)+sizeof(int)*length+sizeof(int)*length)/sizeof(uint32_t); }
-	CRef alloc(vector<int> lits, vector<int> coefs, int w, bool learnt){
+	CRef alloc(vector<int> lits, vector<int> coefs, int w, bool learnt){ // TODO: take Constraint
 		assert(!lits.empty());
 		int length = (int) lits.size();
 		// note: coefficients can be arbitrarily ordered (we don't sort them in descending order for example)
@@ -189,6 +175,19 @@ struct Watch {
 };
 const double resize_factor=1.5;
 
+double initial_time;
+int NCONFL=0, NDECIDE=0;
+long long NPROP=0, NIMPL=0;
+__int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
+long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
+long long NGCD=0;
+long long NWEAKENEDFALSELITS=0, NWEAKENEDNONFALSELITS=0;
+double rinc = 2;
+int rfirst = 100;
+int nbclausesbeforereduce=2000;
+int incReduceDB=300;
+bool originalRoundToOne=false;
+
 template <class T>
 inline T ceildiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return (p+q-1)/q; }
 template <class T>
@@ -210,8 +209,9 @@ template<class T> void resizeLitMap(std::vector<T>& _map, typename std::vector<T
 	for(int i=newmiddle-oldmiddle-1; i>=0; --i) _map[i]=init;
 }
 
+// NOTE: x mod 0 is defined as x
 unsigned int gcd(unsigned int u, unsigned int v){
-	assert(v>0 && u>0);
+	if (v==0) return u;
 	if (u%v==0) return v;
 	if (v%u==0) return u;
 	int shift = __builtin_ctz(u | v);
@@ -244,7 +244,7 @@ struct Constraint{
 	std::vector<int> vars;
 	vector<SMALL> coefs;
 	LARGE rhs = 0;
-	SMALL _unused_ = std::numeric_limits<SMALL>::min();
+	SMALL _unused_ = std::numeric_limits<SMALL>::max();
 
 	inline void resize(int s){
 		coefs.resize(s,_unused_);
@@ -256,25 +256,28 @@ struct Constraint{
 		rhs=0;
 	}
 
-	// TODO: simplify C: remove level 0's, saturate, gcd, weaken non-implying...
 	void init(Clause& C){
 		reset();
-		//for(int i=0; i<C.size(); ++i) {
-		//	int l = C.lits()[i];
-		//	int c = C.coefs()[i];
-		//	if (Level[l] == 0) { w -= c; }
-		//	if(w<=0) return;
-		//}
-		for(size_t i=0;i<C.size();++i){
-			addLhs(C.coefs()[i], C.lits()[i]);
-		}
+		for(size_t i=0;i<C.size();++i) addLhs(C.coefs()[i], C.lits()[i]);
 		addRhs(C.w);
 		saturate();
 	}
 
+	void cleanUp(){
+		for(int i=0; i<(int)vars.size(); ++i){
+			int v =vars[i];
+			if(coefs[v]==0){
+				coefs[v]=_unused_;
+				swapErase(vars,i);
+				--i;
+			}
+		}
+	}
+
 	void addLhs(SMALL c, int l){ // treat negative literals as 1-v
 		assert(l!=0);
-		if(c==0) return;
+		if(c==0 || Level[-l]==0) return;
+		if(Level[l]==0){ rhs-=c; return; }
 		int v = l;
 		if(l<0){
 			rhs -= c;
@@ -287,18 +290,22 @@ struct Constraint{
 	}
 
 	inline void addRhs(SMALL r){ rhs+=r; }
-	inline LARGE getRhs(){ return rhs; }
-	inline LARGE getDegree() {
+	inline LARGE getRhs() const { return rhs; }
+	inline LARGE getDegree() const {
 		LARGE result = rhs;
 		for (int v: vars) result -= min<SMALL>(0,coefs[v]); // considering negative coefficients
 		return result;
 	}
-	inline SMALL getCoef(int l) { return l<0?-coefs[-l]:coefs[l]; }
-	inline int getLit(int l){
+	inline SMALL getCoef(int l) const { return coefs[abs(l)]==_unused_?0:(l<0?-coefs[-l]:coefs[l]); }
+	inline int getLit(int l) const { // NOTE: always check for answer "0"!
 		int v = abs(l);
 		if(coefs[v]==0 || coefs[v]==_unused_) return 0;
 		if(coefs[v]<0) return -v;
 		else return v;
+	}
+	inline bool increasesSlack(int v) const { // NOTE: equivalent to "non-falsified" for a normal-form constraint
+		assert((getLit(v)!=0 && Level[-getLit(v)]==-1)==(coefs[v]>0 && Level[-v]==-1) || (coefs[v]<0 && Level[v]==-1));
+		return (coefs[v]>0 && Level[-v]==-1) || (coefs[v]<0 && Level[v]==-1);
 	}
 
 	inline void weaken(SMALL m, int l){ // add either abs(m)*(l>=0) or abs(m)*(-l>=-1)
@@ -317,21 +324,26 @@ struct Constraint{
 		return w;
 	}
 
-	void getNormalForm(std::vector<int>& lits, std::vector<SMALL>& cs, LARGE& w){
+	template<class COEFS, class RHS>
+	void getNormalForm(std::vector<int>& lits, std::vector<COEFS>& cs, RHS& w) const {
 		lits.clear(); cs.clear();
 		w=getDegree();
 		if(w<=0) return;
 		lits.reserve(vars.size()); cs.reserve(vars.size());
 		for(int v: vars){
 			int l = getLit(v);
+			if(l==0) continue;
 			lits.push_back(l);
 			cs.push_back(min<LARGE>(getCoef(l),w));
 		}
 	}
 
-	void invert(){
-		for(int v: vars) coefs[v]=-coefs[v];
-		rhs=-rhs;
+	void getInverted(Constraint<SMALL,LARGE>& out) const {
+		out.reset();
+		out.resize(coefs.size());
+		for(int v: vars) out.coefs[v]=-coefs[v];
+		out.rhs=-rhs;
+		out.vars=vars;
 	}
 
 	void divide(SMALL d){
@@ -339,38 +351,32 @@ struct Constraint{
 		rhs=ceildiv_safe<LARGE>(rhs,d);
 	}
 
-	LARGE getSlack(){
+	LARGE getSlack() const {
 		LARGE slack = -rhs;
 		for(int v: vars) if(Level[v]!=-1 || (Level[-v]==-1 && coefs[v]>0)) slack+=coefs[v];
 		return slack;
 	}
 
+	// TODO: weaken non-implying falsifieds! e.g. 1x1 2x2 4x3 8x4 16x5 <- smaller terms will get rounded up when dividing by 16
 	template<class S, class L>
 	void add(const Constraint<S,L>& c, SMALL mult=1){
 		assert(mult>0);
-		for(int v: c.vars){
-			addLhs(mult*c.coefs[v],v);
-		}
+		for(int v: c.vars) addLhs(mult*c.coefs[v],v);
 		addRhs(mult*c.rhs);
-
 		LARGE deg = saturate();
-		if (deg > (int) 1e9) {
-			// round to cardinality.
-			long long d = 0;
-			for(int x:vars)d=max(d, abs(coefs[x]));
-			roundToOne(d);
-		}
+		if (deg > (int) 1e9) roundToOne(ceildiv<LARGE>(deg,1e9),!originalRoundToOne);
+		assert(getDegree() <= (int)1e9);
 	}
 
-	void roundToOne(SMALL d){
+	void roundToOne(SMALL d, bool partial){
 		assert(d>0);
 		for(int v:vars){
-			//assert(Level[-v]!=0);
-			//assert(Level[ v]!=0);
-			if((coefs[v]%d)==0){ coefs[v]/=d; continue; }
-			if((Level[v]==-1 && Level[-v]==-1) || (Level[v]!=-1)==(coefs[v]>0)){
-				weaken(-coefs[v],v);
-				// weaken(-coefs[v]%d,v); // partial weakening
+			assert(Level[-v]!=0);
+			assert(Level[ v]!=0);
+			if(coefs[v]%d==0){ coefs[v]/=d; continue; }
+			else if(increasesSlack(v)){
+				if(partial) weaken(-coefs[v]%d,v); // partial weakening
+				else weaken(-coefs[v],v);
 			}else{
 				assert((Level[v]==-1)==(coefs[v]>0));
 				if(coefs[v]<0) weaken(-d-(coefs[v]%d),v);
@@ -383,8 +389,19 @@ struct Constraint{
 		saturate();
 	}
 
-	bool simplify(){
-		return false; // TODO
+	void postProcess(){
+		saturate();
+		// TODO: cardinality detection, weaken non-implying...
+		int _gcd = 0;
+		for(int v: vars){
+			if(_gcd==1) break;
+			assert(abs(coefs[v])<=1e9);
+			_gcd = gcd(_gcd,(int) abs(coefs[v]));
+		}
+		if(_gcd>1) {
+			++NGCD;
+			divide(_gcd);
+		}
 	}
 
 	bool falsifiedCurrentLvlIsOne(){
@@ -400,32 +417,106 @@ struct Constraint{
 		}
 		return foundOne;
 	}
+
+	int getAssertionLevel(){
+		// compute an assertion level
+		cleanUp(); // ensures getLit is never 0
+		std::sort(vars.begin(),vars.end(),[&](int v1,int v2){
+			return Pos[-getLit(v1)]>Pos[-getLit(v2)];
+		});
+		LARGE slk = getSlack();
+		if(slk>=0) return decisionLevel();
+		int lvl = 0;
+		int skip_lvl=0;
+		for(int v: vars){
+			int l = getLit(v);
+			assert(l!=0);
+			int current_lvl = Level[-l];
+			if(current_lvl<0) break;
+			slk+=getCoef(l);
+			if(slk>=0){
+				if(skip_lvl>current_lvl){
+					lvl=current_lvl;
+					break;
+				}
+				skip_lvl=current_lvl;
+			}
+		}
+		assert(greater_than(decisionLevel(),lvl));
+		return lvl;
+	}
+
+	LARGE heuristicWeakening(){
+		LARGE slk = getSlack();
+
+		SMALL smallestPropagated=_unused_;
+		if (slk >= 0) {
+			// find out wiggle room to weaken falsifieds
+			for (int v: vars){
+				SMALL c = abs(coefs[v]);
+				if (Level[v]==-1 && Level[-v]==-1 && c>slk) {
+					smallestPropagated = min(smallestPropagated, c);
+				}
+			}
+		}
+		if(smallestPropagated==_unused_) return slk; // no propagation, no idea what to weaken
+
+		// weaken non-implieds
+		for (int v: vars){
+			if (abs(coefs[v])<=slk && increasesSlack(v)){
+				assert(coefs[v]!=0);
+				weaken(-coefs[v],v);
+				++NWEAKENEDNONFALSELITS;
+			}
+		}
+
+		// weaken non-implying
+		LARGE wiggle_room = smallestPropagated-slk;
+		if(wiggle_room>1){
+			cleanUp(); // ensures getLit(v)!=0
+			std::sort(vars.begin(),vars.end(),[&](int v1,int v2){
+				int l1=getLit(v1);
+				int l2=getLit(v2);
+				int c1=getCoef(l1);
+				int c2=getCoef(l2);
+				return c1<c2 || (c1==c2 && Pos[-l1]>Pos[-l2]);
+			});
+			for(int v: vars){
+				if(increasesSlack(v)) continue;
+				int c = abs(coefs[v]);
+				wiggle_room-=c;
+				if(wiggle_room<1) break;
+				weaken(-coefs[v],v);
+				slk+=c;
+				++NWEAKENEDFALSELITS;
+			}
+		}
+
+		assert(slk==getSlack());
+		return slk;
+	}
 };
+
+Constraint<int, long long> tmpConstraint;
+Constraint<long long, __int128> confl_data;
+
 template<class S, class L>
 ostream & operator<<(ostream & o, Constraint<S,L>& C) {
 	sort(C.vars.begin(),C.vars.end(), [](S v1, S v2) { return v1<v2; });
 	for(int v: C.vars){
 		int l = C.getLit(v);
 		if(l==0) continue;
-		o << C.getCoef(l) << "x" << l << ":" << (Level[l]>0?"t":(Level[-l]>0?"f":"u")) << "@" << max(Level[l],Level[-l]) << " ";
+		o << C.getCoef(l) << "x" << l << ":" << (Level[l]>=0?"t":(Level[-l]>=0?"f":"u")) << "@" << max(Level[l],Level[-l]) << " ";
 	}
 	o << ">= " << C.getDegree();
 	return o;
 }
+ostream & operator<<(ostream & o, Clause & C) {
+	tmpConstraint.init(C);
+	o << tmpConstraint;
+	return o;
+}
 
-Constraint<int, long long> tmpConstraint;
-
-double initial_time;
-int NCONFL=0, NDECIDE=0;
-long long NPROP=0, NIMPL=0;
-__int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
-long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
-long long NGCD=0;
-long long NWEAKENEDFALSELITS=0, NWEAKENEDNONFALSELITS=0;
-double rinc = 2;
-int rfirst = 100;
-int nbclausesbeforereduce=2000;
-int incReduceDB=300;
 // VSIDS ---------------------------------------------------------------
 double var_decay=0.95;
 double var_inc=1.0;
@@ -504,22 +595,6 @@ template<class A,class B> long long slack(int length,A const& lits,B const& coef
 	return s;
 }
 
-inline long long slack(Clause & C){ return slack(C.size(),C.lits(),C.coefs(),C.w); }
-inline void saturate(vector<int>& coefs, int& w){ for (int& c: coefs) c = min(c,w); }
-void reduce_by_toplevel(vector<int>& lits, vector<int>& coefs, int& w){
-	size_t i,j;
-	for(i=j=0; i<lits.size(); i++){
-		if(Level[ lits[i]]==0) w-=coefs[i]; else
-		if(Level[-lits[i]]==0); else {
-			lits[j]=lits[i];
-			coefs[j]=coefs[i];
-			j++;
-		}
-	}
-	lits.erase(lits.begin()+j,lits.end());
-	coefs.erase(coefs.begin()+j,coefs.end());
-}
-
 void attachClause(CRef cr){
 	Clause & C = ca[cr];
 	// sort literals by the decision level at which they were falsified, descending order (never falsified = level infinity)
@@ -595,143 +670,6 @@ void backjumpTo(int level){
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 
-/**
- * In the conflict analysis we represent the learnt clause
- * by an array of length 2*N, with one position per literal.
- * 
- * After each analyze() we want to reset this array.
- * Because this is expensive we keep track of which literals participate
- * in the analysis and reset only their coefficients.
- */
-struct ConflictData {
-	int cnt_falsified_currentlvl;
-	// here we use int64 because we could get overflow in the following case:
-	// the reason's coefs multiplied by the coef. of the intermediate conflict clause
-	vector<long long> _M; vector<long long>::iterator M;
-	long long w;
-	vector<int> used; // 1: used, 2: clashing in some step
-	vector<int> usedlist;
-	void resize(int size){
-		resizeLitMap(_M,M,size,(long long)0);
-		used.resize(size+1,0);
-	}
-	void reset(){
-		cnt_falsified_currentlvl=0;
-		w=0;
-		for(int x:usedlist)M[x]=M[-x]=0,used[x]=0;
-		usedlist.clear();
-	}
-	void use(int x){
-		if(!used[x])used[x]=max(used[x],1),usedlist.push_back(x);
-	}
-	void print(){
-		std::vector<int> usedlistclone = usedlist;
-		sort(usedlistclone.begin(),usedlistclone.end(),[&](int l1,int l2){return max(Pos[l1],Pos[-l1])<max(Pos[l2],Pos[-l2]);});
-		for(int x:usedlistclone)for(int l=-x;l<=x;l+=2*x)if(M[l]) {
-			std::cout << M[l] << "x" << l << ":" << (Level[l]>0?"1":(Level[-l]>0?"0":"")) << "." << max(Level[l],Level[-l]) << " ";
-		}
-		std::cout << ">= " << w << std::endl;
-	}
-	void round_confl(long long c) {
-		for(int x:usedlist)for(int l=-x;l<=x;l+=2*x)if(M[l]){
-			if (Level[-l] == -1) {
-				//if (M[l] % c != 0) w -= M[l], M[l] = 0;
-				//else M[l] /= c;
-
-				// partial weakening would instead do:
-				w -= M[l] % c;
-				M[l] /= c;
-			} else M[l] = ceildiv(M[l], c);
-		}
-		w = ceildiv(w, c);
-	}
-} confl_data;
-
-void printReason(std::vector<int>& lits, std::vector<int>& coefs, int degree){
-	std::vector<std::pair<int,int> > litcoefs;
-	litcoefs.reserve(lits.size());
-	for(int i=0; i< (int) lits.size(); ++i){
-		litcoefs.push_back({coefs[i],lits[i]});
-	}
-	sort(litcoefs.begin(),litcoefs.end(),[&](std::pair<int,int> lc1,std::pair<int,int> lc2){return max(Pos[lc1.second],Pos[-lc1.second])<max(Pos[lc2.second],Pos[-lc2.second]);});
-	for(std::pair<int,int> lc:litcoefs){
-		int l = lc.second;
-		std::cout << lc.first << "x" << l << ":" << (Level[l]>0?"1":(Level[-l]>0?"0":"")) << "." << max(Level[l],Level[-l]) << " ";
-	}
-	std::cout << ">= " << degree << std::endl;
-}
-
-void round_reason(int l0, vector<int>&out_lits,vector<int>&out_coefs,int&out_w) {
-	out_lits.clear();
-	out_coefs.clear();
-	Clause & C = ca[Reason[l0]];
-	int old_coef_l0 = C.coefs()[find(C.lits(),C.lits()+C.size(),l0)-C.lits()];
-	int w = C.w;
-	for(size_t i=0;i<C.size();i++){
-		int l = C.lits()[i];
-		int coef = C.coefs()[i];
-		if(Level[ l]==0) w-=coef; else
-		if(Level[-l]==0); else
-		if (Level[-l] == -1) {
-			//if (coef % old_coef_l0 != 0) w -= coef;
-			//else out_lits.push_back(l), out_coefs.push_back(coef / old_coef_l0);
-			
-			// partial weakening would instead do:
-			w -= coef % old_coef_l0;
-			if (coef >= old_coef_l0) out_lits.push_back(l), out_coefs.push_back(coef / old_coef_l0);
-		} else {
-			out_lits.push_back(l), out_coefs.push_back(ceildiv(coef, old_coef_l0));
-		}
-	}
-	out_w = ceildiv<long long>(w, old_coef_l0);
-	saturate(out_coefs,out_w);
-	assert(slack(out_lits.size(), out_lits, out_coefs, out_w) <= 0); // NOTE: possible that slack is less than 0 when unknown literals are set later on the trail
-}
-
-// TODO: split initialization case from add_to_conflict case, and check on unit literals in initialization
-template<class It1, class It2> void add_to_conflict(size_t size, It1 const&reason_lits,It2 const&reason_coefs,int reason_w, int mult){
-	assert(mult>0);
-	assert(reason_w>0);
-	vector<long long>::iterator M = confl_data.M;
-	long long & w = confl_data.w;
-	long long f = mult; // any multiplication using f will now be over long long instead of int
-
-	w += f*reason_w;
-	for(size_t it=0;it<size;it++){
-		int l = reason_lits[it];
-		assert(Level[l]!=0);
-		assert(Level[-l]!=0);
-		assert(greater_than(reason_coefs[it],0));
-		assert(greater_than_eq(reason_w,reason_coefs[it]));
-		long long c = f*reason_coefs[it];
-		confl_data.use(abs(l));
-		if (M[-l] > 0) {
-			confl_data.used[abs(l)] = 2;
-			if (c >= M[-l]) {
-				if (Level[l] == decisionLevel()) confl_data.cnt_falsified_currentlvl--;
-				M[l] = c - M[-l];
-				w -= M[-l];
-				M[-l] = 0;
-				if (Level[-l] == decisionLevel() && M[l] > 0) confl_data.cnt_falsified_currentlvl++;
-			} else {
-				M[-l] -= c;
-				w -= c;
-			}
-		} else {
-			if (Level[-l] == decisionLevel() && M[l] == 0) confl_data.cnt_falsified_currentlvl++;
-			M[l] += c;
-		}
-	}
-	// saturate all
-	for(int x:confl_data.usedlist)for(int l=-x;l<=x;l+=2*x)confl_data.M[l]=min(w, confl_data.M[l]);
-	if (w > (int) 1e9) {
-		// round to cardinality.
-		long long d = 0;
-		for(int x:confl_data.usedlist)for(int l=-x;l<=x;l+=2*x)d=max(d, confl_data.M[l]);
-		confl_data.round_confl(d);
-	}
-}
-
 int computeLBD(CRef cr) {
 	Clause & C = ca[cr];
 	set<int> levels;
@@ -740,61 +678,50 @@ int computeLBD(CRef cr) {
 	return (int) levels.size();
 }
 
-void analyze(CRef confl, vector<int>& out_lits, vector<int>& out_coefs, int& out_w){
+void analyze(CRef confl){
 	Clause & C = ca[confl];
 	if (C.learnt()) {
 		claBumpActivity(C);
 		if (C.lbd > 2) C.lbd = min(C.lbd, computeLBD(confl));
 	}
-	confl_data.reset();
-	add_to_conflict(C.size(), C.lits(), C.coefs(), C.w, 1);
-	vector<int> reason_lits; reason_lits.reserve(n);
-	vector<int> reason_coefs; reason_coefs.reserve(n);
-	int reason_w;
+
+	confl_data.init(C);
 	while(1){
 		if (decisionLevel() == 0) {
+			assert(greater_than(0,confl_data.getSlack()));
 			exit_UNSAT();
 		}
 		int l = trail.back();
-		if(confl_data.M[-l]>0) {
-//			confl_data.M[-l] = min(confl_data.M[-l], confl_data.w); // so that we don't round the conflict if w=1.
-//			if (confl_data.M[-l] > 1) {
-//				confl_data.round_confl(confl_data.M[-l]);
-//			}
-			if (confl_data.cnt_falsified_currentlvl == 1) {
+		int confl_coef_l = confl_data.getCoef(-l);
+		if(confl_coef_l>0) {
+			if (confl_data.falsifiedCurrentLvlIsOne()) {
 				break;
 			} else {
 				assert(Reason[l] != CRef_Undef);
-				if (ca[Reason[l]].learnt()) {
-					claBumpActivity(ca[Reason[l]]);
-					if (ca[Reason[l]].lbd > 2) ca[Reason[l]].lbd = min(ca[Reason[l]].lbd, computeLBD(Reason[l]));
+				if(originalRoundToOne){
+					confl_data.roundToOne(confl_coef_l,false);
+					confl_coef_l=1;
 				}
-				round_reason(l, reason_lits, reason_coefs, reason_w);
-				add_to_conflict(reason_lits.size(), reason_lits, reason_coefs, reason_w,confl_data.M[-l]);
+				Clause& reasonC = ca[Reason[l]];
+				if (reasonC.learnt()) {
+					claBumpActivity(reasonC);
+					if (reasonC.lbd > 2) reasonC.lbd = min(reasonC.lbd, computeLBD(Reason[l]));
+				}
+				tmpConstraint.init(reasonC);
+				tmpConstraint.roundToOne(tmpConstraint.getCoef(l),!originalRoundToOne);
+				confl_data.add(tmpConstraint,confl_coef_l);
+				assert(equals(confl_data.getCoef(-l),0));
+				assert(greater_than(0,confl_data.getSlack()));
 			}
 		}
-		int oldlvl=decisionLevel();
 		undoOne();
-		if(decisionLevel()<oldlvl){
-			//assert(equals(confl_data.cnt_falsified_currentlvl,0));
-			for(int x:confl_data.usedlist)for(int l=-x;l<=x;l+=2*x)if(confl_data.M[l]) {
-				if (Level[-l] == decisionLevel()) confl_data.cnt_falsified_currentlvl++;
-			}
-		}
 	}
+	assert(greater_than(0,confl_data.getSlack()));
 
-	for(int x:confl_data.usedlist){
+	for(int x:confl_data.vars){
 		varBumpActivity(x);
-		if (confl_data.used[x] == 2) varBumpActivity(x);
+		//if (confl_data.used[x] == 2) varBumpActivity(x); // TODO: fix
 	}
-
-	for(int x:confl_data.usedlist)for(int l=-x;l<=x;l+=2*x)if(confl_data.M[l]>0){
-		assert(greater_than_eq(1e9,confl_data.M[l]));
-		out_lits.push_back(l);
-		out_coefs.push_back(min(confl_data.M[l],confl_data.w));
-	}else{ assert(equals(confl_data.M[l],0)); }
-	out_w=confl_data.w;
-	assert(greater_than(0,slack(out_lits.size(),out_lits,out_coefs,out_w)));
 }
 
 /**
@@ -906,38 +833,37 @@ void setNbVariables(long long nvars){
 
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
-// Proto-constraint handling
+// Constraint addition
 
-// NOTE: simplified constraint is equivalent to original constraint under the input formula
-bool simplify_constraint(vector<int> &lits, vector<int> &coefs, int &w){
-	reduce_by_toplevel(lits,coefs,w);
-	if(w<=0) return true; // trivially satisfied constraint
-	if(lits.size()==0) return false; // empty constraint
-	saturate(coefs,w); // as reduce_by_toplevel could have reduced w
-	int _gcd = *std::min_element(coefs.begin(), coefs.end());
-	for(int c: coefs){
-		if(_gcd==1) break;
-		_gcd = gcd(_gcd,c);
-	}
-	assert(0<_gcd && _gcd<=w);
-	if(_gcd>1) {
-		++NGCD;
-		for(int& c: coefs) c/=_gcd;
-		w=ceildiv(w,_gcd);
-	}
-	return false;
-}
+void learnConstraint(Constraint<long long,__int128>& c){
+	backjumpTo(c.getAssertionLevel());
 
-CRef learnConstraint(vector<int>& lits,vector<int>& coefs, int& w){
-	bool trivial = simplify_constraint(lits,coefs,w);
-	_unused(trivial);
-	assert(!trivial);
-	assert(lits.size()>0);
+	__int128 slack = c.heuristicWeakening();
+	if(slack < 0) {
+		assert(equals(decisionLevel(), 0));
+		exit_UNSAT();
+	}
+
+	c.postProcess();
+	assert(confl_data.getAssertionLevel()==decisionLevel());
+
+	vector<int>lits;vector<int>coefs;__int128 degree;
+	confl_data.getNormalForm(lits,coefs,degree);
+	assert(degree>0);
+	assert(degree<=1e9);
+	int w = (int)degree;
 	CRef cr = ca.alloc(lits,coefs,w, true);
 	Clause & C = ca[cr];
 	C.lbd = computeLBD(cr);
 	attachClause(cr);
 	learnts.push_back(cr);
+
+	slack = confl_data.getSlack();
+	assert(slack>=0);
+	//TODO: have attachClause perform this propagation, similar to Stephan's XOR-branch
+	for (int i=0; i<(int)lits.size(); i++)
+		if (Level[-lits[i]] == -1 && Level[lits[i]] == -1 && coefs[i]>slack) uncheckedEnqueue(lits[i], cr);
+
 	LEARNEDLENGTHSUM+=lits.size();
 	LEARNEDDEGREESUM+=w;
 	if(w==1) ++NCLAUSESLEARNED;
@@ -948,32 +874,34 @@ CRef learnConstraint(vector<int>& lits,vector<int>& coefs, int& w){
 		if(isCardinality) ++NCARDINALITIESLEARNED;
 		else ++NGENERALSLEARNED;
 	}
-	return cr;
+}
+
+void addConstraint(Constraint<int, long long>& c){
+	assert(decisionLevel()==0);
+	assert(learnts.size()==0);
+	c.postProcess();
+	long long slack = c.getSlack();
+	if(slack < 0)puts("c UNSAT trivially inconsistent constraint"),exit_UNSAT();
+
+	std::vector<int> lits; std::vector<int> coefs; long long degree;
+	c.getNormalForm(lits,coefs,degree);
+	if(degree > (long long) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
+	if(degree<=0) return; // already satisfied.
+	int w=(int)degree;
+
+	CRef cr = ca.alloc(lits, coefs, w, false);
+	attachClause(cr);
+	clauses.push_back(cr);
+	//TODO: have attachClause perform this propagation, similar to Stephan's XOR-branch
+	for (int i=0; i<(int)lits.size(); i++)
+		if (Level[-lits[i]] == -1 && Level[lits[i]] == -1 && coefs[i]>slack) uncheckedEnqueue(lits[i], cr);
+
+	if (propagate() != CRef_Undef)puts("c UNSAT initial conflict"),exit_UNSAT();
 }
 
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 // Parsers
-void addConstraint(Constraint<int, long long>& c){
-	assert(learnts.size()==0);
-	std::vector<int> lits; std::vector<int> coefs; long long d=0; int w;
-	c.getNormalForm(lits,coefs,d);
-	if (abs(d) > (long long) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
-	w=(int)d;
-	bool trivial = simplify_constraint(lits,coefs,w);
-	if(trivial) return; // already satisfied.
-	long long som = 0;for(int c:coefs)som+=c;
-	if(som < w)puts("c UNSAT trivially inconsistent constraint"),exit_UNSAT();
-	for(size_t i=0;i<lits.size();i++)if(som-coefs[i] < w){
-		//printf("propagate %d\n",lits[i]);
-		uncheckedEnqueue(lits[i],CRef_Undef);
-	}
-	if(trivial) return; // already satisfied.
-	CRef cr = ca.alloc(lits, coefs, w, false);
-	attachClause(cr);
-	clauses.push_back(cr);
-	if (propagate() != CRef_Undef)puts("c UNSAT initial conflict"),exit_UNSAT();
-}
 
 /*
  * The OPB parser does not support nonlinear constraints like "+1 x1 x2 +1 x3 x4 >= 1;"
@@ -1022,6 +950,7 @@ void addObjective(Constraint<int, long long>& c) {
 void opb_read(istream & in) {
 	Constraint<int,long long> objective_func;
 	bool opt = false;
+	Constraint<int,long long> inverted;
 	bool first_constraint = true;
 	_unused(first_constraint);
 	for (string line; getline(in, line);) {
@@ -1067,12 +996,12 @@ void opb_read(istream & in) {
 			if (opt_line) opt=true, objective_func=tmpConstraint;
 			else {
 				tmpConstraint.addRhs(read_number(line0.substr(line0.find("=") + 1)));
-				addConstraint(tmpConstraint);
 				// Handle equality case with two constraints
 				if (line0.find(" = ") != string::npos) {
-					tmpConstraint.invert();
-					addConstraint(tmpConstraint);
+					tmpConstraint.getInverted(inverted);
+					addConstraint(inverted);
 				}
+				addConstraint(tmpConstraint); // NOTE: addConstraint modifies tmpConstraint, so invert should be called first
 			}
 		}
 	}
@@ -1268,7 +1197,7 @@ void print_stats() {
 	printf("d general constraints learned %lld\n", NGENERALSLEARNED);
 	printf("d gcd simplifications %lld\n", NGCD);
 	printf("d weakened non-implied lits %lld\n", NWEAKENEDNONFALSELITS);
-	printf("d weakened falsified lits %lld\n", NWEAKENEDFALSELITS);
+	printf("d weakened non-implying lits %lld\n", NWEAKENEDFALSELITS);
 }
 
 int last_sol_value;
@@ -1336,6 +1265,7 @@ void usage(int argc, char**argv) {
 	printf("  --var-decay=arg  Set the VSIDS decay factor (0.5<=arg<1; default %lf).\n",var_decay);
 	printf("  --rinc=arg       Set the base of the Luby restart sequence (floating point number >=1; default %lf).\n",rinc);
 	printf("  --rfirst=arg     Set the interval of the Luby restart sequence (integer >=1; default %d).\n",rfirst);
+	printf("  --original-rto=arg Set whether to use RoundingSat's original round-to-one conflict analysis (0 or 1; default %d).\n",originalRoundToOne);
 }
 
 char * filename = 0;
@@ -1357,7 +1287,7 @@ void read_options(int argc, char**argv) {
 			exit(1);
 		}
 	}
-	vector<string> opts = {"verbosity", "var-decay", "rinc", "rfirst"};
+	vector<string> opts = {"verbosity", "var-decay", "rinc", "rfirst", "original-rto"};
 	map<string, string> opt_val;
 	for(int i=1;i<argc;i++){
 		if (string(argv[i]).substr(0,2) != "--") filename = argv[i];
@@ -1376,6 +1306,7 @@ void read_options(int argc, char**argv) {
 	getOption(opt_val,"var-decay",[](double x)->bool{return x>=0.5 && x<1;},var_decay);
 	getOption(opt_val,"rinc",[](double x)->bool{return x>=1;},rinc);
 	getOption(opt_val,"rfirst",[](double x)->bool{return x>=1;},rfirst);
+	getOption(opt_val,"original-rto",[](double x)->bool{return x==0 || x==1;},originalRoundToOne);
 }
 
 int curr_restarts=0;
@@ -1408,99 +1339,10 @@ bool solve(vector<int> assumptions) {
 					}
 				}
 			}
-			vector<int>lits;vector<int>coefs;int w;
-			analyze(confl, lits, coefs, w);
 
-			// compute an assertion level
-			std::vector<int> indices;
-			indices.reserve(lits.size());
-			for (int i=0; i<(int)lits.size(); ++i) indices.push_back(i);
-			std::sort(indices.begin(),indices.end(),[&](int i,int j){
-				return Pos[-lits[i]]>Pos[-lits[j]];
-			});
-			long long slk = slack(lits.size(),lits,coefs,w);
-			assert(greater_than(0,slk));
-			int lvl = 0;
-			int skip_lvl=0;
-			for(int idx: indices){
-				int current_lvl = Level[-lits[idx]];
-				if(current_lvl<0) break;
-				slk+=coefs[idx];
-				if(slk>=0){
-					if(skip_lvl>current_lvl){
-						lvl=current_lvl;
-						break;
-					}
-					skip_lvl=current_lvl;
-				}
-			}
-			assert(greater_than(decisionLevel(),lvl));
-			backjumpTo(lvl);
+			analyze(confl);
+			learnConstraint(confl_data);
 
-			slk = slack(lits.size(),lits,coefs,w);
-			// NOTE: no guarantee the current level actually asserts some literal...
-			int smallestPropagated = 1e9+1;
-			if (slk >= 0) {
-				// find out wiggle room to weaken falsifieds
-				for (int i = 0; i < (int) lits.size(); ++i) {
-					int l = lits[i];
-					int c = coefs[i];
-					if (Level[l] == -1 && Level[-l] == -1 && c>slk) {
-						smallestPropagated = min(smallestPropagated, c);
-					}
-				}
-			}
-
-			if(smallestPropagated<=1e9){
-				long long wiggle_room = smallestPropagated-slk;
-				if(wiggle_room>1){
-					std::sort(indices.begin(),indices.end(),[&](int i,int j){
-						return coefs[i]<coefs[j] || (coefs[i]==coefs[j] && Pos[-lits[i]]>Pos[-lits[j]]);
-					});
-					for(int idx: indices){
-						if(Level[-lits[idx]]==-1) continue;
-						int c = coefs[idx];
-						wiggle_room-=c;
-						if(wiggle_room<1) break;
-						// weaken falsified lit
-						coefs[idx] = 0;
-						lits[idx] = 0;
-						w-=c;
-						slk+=c;
-						++NWEAKENEDFALSELITS;
-					}
-					coefs.erase(std::remove_if(coefs.begin(),coefs.end(),[](int x){return x==0;}),coefs.end());
-					lits.erase(std::remove_if(lits.begin(),lits.end(),[](int x){return x==0;}),lits.end());
-					assert(slk>=0);
-					assert(w>0);
-				}
-
-				for (int i=0; i<(int)lits.size(); ++i){
-					int l = lits[i];
-					int c = coefs[i];
-					assert(c>0);
-					if (Level[-l]==-1 && c<=slk){
-						// not falsified but also not assertable after backjump, so maybe good to weaken
-						w-=c;
-						swapErase(lits,i);
-						swapErase(coefs,i);
-						--i;
-						++NWEAKENEDNONFALSELITS;
-					}
-				}
-				assert(slk>=0);
-			}
-			assert(equals(slack(lits.size(),lits,coefs,w),slk));
-
-			CRef cr = learnConstraint(lits,coefs,w);
-			if (slk >= 0) {
-				for (int i=0; i<(int)lits.size(); i++)
-					if (Level[-lits[i]] == -1 && Level[lits[i]] == -1 && coefs[i]>slk)
-						uncheckedEnqueue(lits[i], cr);
-			} else {
-				assert(equals(decisionLevel(),0));
-				exit_UNSAT();
-			}
 		} else {
 			if(asynch_interrupt)exit_INDETERMINATE();
 			if(nconfl_to_restart <= 0){
