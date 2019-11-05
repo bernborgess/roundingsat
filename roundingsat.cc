@@ -43,6 +43,8 @@ using namespace std;
 
 #define _unused(x) ((void)(x)) // marks variables unused in release mode
 
+std::ostream& operator<<(std::ostream& os, __int128 t) { return os << (double) t; }
+
 void exit_SAT(),exit_UNSAT(),exit_INDETERMINATE(),exit_OPT(),exit_ERROR(const std::initializer_list<std::string>&);
 
 // Minisat cpuTime function
@@ -209,20 +211,36 @@ struct Constraint{
 	std::vector<int> vars;
 	vector<SMALL> coefs;
 	LARGE rhs = 0;
+	SMALL _unused_ = std::numeric_limits<SMALL>::min();
+
+	inline void resize(int s){
+		coefs.resize(s,_unused_);
+	}
 
 	void reset(){
-		for(int v: vars) coefs[v]=std::numeric_limits<SMALL>::min();
+		for(int v: vars) coefs[v]=_unused_;
 		vars.clear();
 		rhs=0;
 	}
 
-	void init(std::vector<int>& lits, std::vector<SMALL>& cs, LARGE& w){
+	// TODO: simplify C: remove level 0's, saturate, gcd, weaken non-implying...
+	void init(Clause& C){
 		reset();
-		for(int i=0; i<lits.size(); ++i) addLhs(cs[i],lits[i]);
-		addRhs(w);
+		//for(int i=0; i<C.size(); ++i) {
+		//	int l = C.lits()[i];
+		//	int c = C.coefs()[i];
+		//	if (Level[l] == 0) { w -= c; }
+		//	if(w<=0) return;
+		//}
+		for(size_t i=0;i<C.size();++i){
+			addLhs(C.coefs()[i], C.lits()[i]);
+		}
+		addRhs(C.w);
+		saturate();
 	}
 
 	void addLhs(SMALL c, int l){ // treat negative literals as 1-v
+		assert(l!=0);
 		if(c==0) return;
 		int v = l;
 		if(l<0){
@@ -230,8 +248,8 @@ struct Constraint{
 			c = -c;
 			v = -l;
 		}
-		if((int)coefs.size()<=v) coefs.resize(v+1,std::numeric_limits<SMALL>::min());
-		if(coefs[v]==std::numeric_limits<SMALL>::min()) vars.push_back(v), coefs[v]=0;
+		assert(v<(int)coefs.size());
+		if(coefs[v]==_unused_) vars.push_back(v), coefs[v]=0;
 		coefs[v]+=c;
 	}
 
@@ -239,11 +257,23 @@ struct Constraint{
 	inline LARGE getRhs(){ return rhs; }
 	inline LARGE getDegree() {
 		LARGE result = rhs;
-		for (int v: vars) result -= min(0,coefs[v]); // considering negative coefficients
+		for (int v: vars) result -= min<SMALL>(0,coefs[v]); // considering negative coefficients
 		return result;
 	}
+	inline SMALL getCoef(int l) { return l<0?-coefs[-l]:coefs[l]; }
+	inline int getLit(int l){
+		int v = abs(l);
+		if(coefs[v]==0 || coefs[v]==_unused_) return 0;
+		if(coefs[v]<0) return -v;
+		else return v;
+	}
 
-	void saturate(){
+	inline void weaken(SMALL m, int l){ // add either abs(m)*(l>=0) or abs(m)*(-l>=-1)
+		addLhs(m,l);
+		if(m<0) addRhs(m);
+	}
+
+	LARGE saturate(){ // returns degree
 		LARGE w = getDegree();
 		if(w<=0) reset(), rhs=w;
 		for (int v: vars){
@@ -251,11 +281,7 @@ struct Constraint{
 			if(coefs[v]<-w) rhs-=coefs[v]+w, coefs[v]=-w;
 		}
 		assert(w==getDegree()); // degree is invariant under saturation
-	}
-
-	void divide(SMALL d){
-		for (int v: vars) coefs[v] = ceildiv_safe<SMALL>(coefs[v],d);
-		rhs=ceildiv_safe<LARGE>(rhs,d);
+		return w;
 	}
 
 	void getNormalForm(std::vector<int>& lits, std::vector<SMALL>& cs, LARGE& w){
@@ -264,40 +290,96 @@ struct Constraint{
 		if(w<=0) return;
 		lits.reserve(vars.size()); cs.reserve(vars.size());
 		for(int v: vars){
-			if(coefs[v]<0){
-				lits.push_back(-v);
-				cs.push_back(min<LARGE>(-coefs[v],w));
-			}else if(coefs[v]>0){
-				lits.push_back(v);
-				cs.push_back(min<LARGE>(coefs[v],w));
-			}
+			int l = getLit(v);
+			lits.push_back(l);
+			cs.push_back(min<LARGE>(getCoef(l),w));
 		}
-	}
-
-	bool isUsed(int l){ return coefs.size()>abs(l) && coefs[abs(l)]!=std::numeric_limits<SMALL>::min(); }
-
-	void print(){
-		sort(vars.begin(),vars.end(),[&](SMALL v1,SMALL v2){return v1<v2;});
-		for(int v: vars) std::cout << coefs[v] << "x" << v << " ";
-		std::cout << ">= " << rhs << " (" << getDegree() << ")" << std::endl;
-	}
-
-	void printNormalForm(){
-		sort(vars.begin(),vars.end(),[&](SMALL v1,SMALL v2){return v1<v2;});
-		std::vector<int> lits; std::vector<SMALL> cs; LARGE w;
-		getNormalForm(lits,cs,w);
-		for(int i=0; i<(int)lits.size(); ++i){
-			int l = lits[i];
-			std::cout << cs[i] << "x" << l << ":" << (Level[l]>0?"1":(Level[-l]>0?"0":"")) << "." << max(Level[l],Level[-l]) << " ";
-		}
-		std::cout << ">= " << w << std::endl;
 	}
 
 	void invert(){
 		for(int v: vars) coefs[v]=-coefs[v];
 		rhs=-rhs;
 	}
+
+	void divide(SMALL d){
+		for (int v: vars) coefs[v] = ceildiv_safe<SMALL>(coefs[v],d);
+		rhs=ceildiv_safe<LARGE>(rhs,d);
+	}
+
+	LARGE getSlack(){
+		LARGE slack = -rhs;
+		for(int v: vars) if(Level[v]!=-1 || (Level[-v]==-1 && coefs[v]>0)) slack+=coefs[v];
+		return slack;
+	}
+
+	template<class S, class L>
+	void add(const Constraint<S,L>& c, SMALL mult=1){
+		assert(mult>0);
+		for(int v: c.vars){
+			addLhs(mult*c.coefs[v],v);
+		}
+		addRhs(mult*c.rhs);
+
+		LARGE deg = saturate();
+		if (deg > (int) 1e9) {
+			// round to cardinality.
+			long long d = 0;
+			for(int x:vars)d=max(d, abs(coefs[x]));
+			roundToOne(d);
+		}
+	}
+
+	void roundToOne(SMALL d){
+		assert(d>0);
+		for(int v:vars){
+			//assert(Level[-v]!=0);
+			//assert(Level[ v]!=0);
+			if((coefs[v]%d)==0){ coefs[v]/=d; continue; }
+			if((Level[v]==-1 && Level[-v]==-1) || (Level[v]!=-1)==(coefs[v]>0)){
+				weaken(-coefs[v],v);
+				// weaken(-coefs[v]%d,v); // partial weakening
+			}else{
+				assert((Level[v]==-1)==(coefs[v]>0));
+				if(coefs[v]<0) weaken(-d-(coefs[v]%d),v);
+				else weaken(d-(coefs[v]%d),v);
+			}
+			assert(coefs[v]%d==0);
+			coefs[v]/=d;
+		}
+		rhs=ceildiv_safe<LARGE>(rhs,d);
+		saturate();
+	}
+
+	bool simplify(){
+		return false; // TODO
+	}
+
+	bool falsifiedCurrentLvlIsOne(){
+		bool foundOne=0;
+		for(int i=0; i<(int)vars.size(); ++i){
+			int v = vars[i];
+			if((coefs[v]>0 && Level[-v]==decisionLevel()) || (coefs[v]<0 && Level[v]==decisionLevel())){
+				vars[i]=vars[foundOne];
+				vars[foundOne]=v;
+				if(foundOne) return false;
+				else foundOne=1;
+			}
+		}
+		return foundOne;
+	}
 };
+template<class S, class L>
+ostream & operator<<(ostream & o, Constraint<S,L>& C) {
+	sort(C.vars.begin(),C.vars.end(), [](S v1, S v2) { return v1<v2; });
+	for(int v: C.vars){
+		int l = C.getLit(v);
+		if(l==0) continue;
+		o << C.getCoef(l) << "x" << l << ":" << (Level[l]>0?"t":(Level[-l]>0?"f":"u")) << "@" << max(Level[l],Level[-l]) << " ";
+	}
+	o << ">= " << C.getDegree();
+	return o;
+}
+
 Constraint<int, long long> tmpConstraint;
 
 double initial_time;
@@ -723,8 +805,9 @@ void setNbVariables(long long nvars){
 	resizeLitMap(_Level,Level,nvars,-1);
 	activity.resize(nvars+1,0);
 	phase.resize(nvars+1);
+	tmpConstraint.resize(nvars+1);
+	confl_data.resize(nvars+1);
 	order_heap.resize(nvars);
-	confl_data.resize(nvars);
 	for(int i=n+1;i<=nvars;++i) phase[i] = -i, order_heap.insert(i);
 	n = nvars;
 }
