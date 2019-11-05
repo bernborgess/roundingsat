@@ -421,13 +421,11 @@ long long NPROP=0, NIMPL=0;
 __int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
 long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
 long long NGCD=0;
-long long NSELFSUBSUMP=0;
 long long NWEAKENEDFALSELITS=0, NWEAKENEDNONFALSELITS=0;
 double rinc = 2;
 int rfirst = 100;
 int nbclausesbeforereduce=2000;
 int incReduceDB=300;
-bool minimizeLearnts=false;
 // VSIDS ---------------------------------------------------------------
 double var_decay=0.95;
 double var_inc=1.0;
@@ -788,27 +786,6 @@ void analyze(CRef confl, vector<int>& out_lits, vector<int>& out_coefs, int& out
 	for(int x:confl_data.usedlist){
 		varBumpActivity(x);
 		if (confl_data.used[x] == 2) varBumpActivity(x);
-	}
-
-	// self-subsuming resolution
-	for(int i=trail.size()-1; i>=0 && minimizeLearnts; --i){
-		int l = trail[i];
-		assert(greater_than_eq(Level[l],0));
-		if(Level[l]==0) break;
-		if(Reason[l]==CRef_Undef || confl_data.M[-l]==0) continue;
-
-		round_reason(l,reason_lits,reason_coefs,reason_w);
-		if(reason_w<=0) continue;
-
-		long long toWeaken = 0;
-		for(int j=0; j<(int) reason_lits.size(); ++j) {
-			if (Level[-reason_lits[j]]==-1 || confl_data.M[reason_lits[j]]==0) toWeaken += reason_coefs[j];
-		}
-		if(reason_w<toWeaken) continue; // check whether reason weakens learned constraint
-
-		add_to_conflict(reason_lits.size(), reason_lits, reason_coefs, reason_w, confl_data.M[-l]);
-		assert(equals(confl_data.M[-l],0));
-		++NSELFSUBSUMP;
 	}
 
 	for(int x:confl_data.usedlist)for(int l=-x;l<=x;l+=2*x)if(confl_data.M[l]>0){
@@ -1290,7 +1267,6 @@ void print_stats() {
 	printf("d cardinalities learned %lld\n", NCARDINALITIESLEARNED);
 	printf("d general constraints learned %lld\n", NGENERALSLEARNED);
 	printf("d gcd simplifications %lld\n", NGCD);
-	printf("d selfsubsumptions %lld\n", NSELFSUBSUMP);
 	printf("d weakened non-implied lits %lld\n", NWEAKENEDNONFALSELITS);
 	printf("d weakened falsified lits %lld\n", NWEAKENEDFALSELITS);
 }
@@ -1360,7 +1336,6 @@ void usage(int argc, char**argv) {
 	printf("  --var-decay=arg  Set the VSIDS decay factor (0.5<=arg<1; default %lf).\n",var_decay);
 	printf("  --rinc=arg       Set the base of the Luby restart sequence (floating point number >=1; default %lf).\n",rinc);
 	printf("  --rfirst=arg     Set the interval of the Luby restart sequence (integer >=1; default %d).\n",rfirst);
-	printf("  --minimize-learnts=arg Toggle learnt constraint minimization (0 or 1; default %d).\n",minimizeLearnts);
 }
 
 char * filename = 0;
@@ -1382,7 +1357,7 @@ void read_options(int argc, char**argv) {
 			exit(1);
 		}
 	}
-	vector<string> opts = {"verbosity", "var-decay", "rinc", "rfirst", "minimize-learnts"};
+	vector<string> opts = {"verbosity", "var-decay", "rinc", "rfirst"};
 	map<string, string> opt_val;
 	for(int i=1;i<argc;i++){
 		if (string(argv[i]).substr(0,2) != "--") filename = argv[i];
@@ -1401,7 +1376,6 @@ void read_options(int argc, char**argv) {
 	getOption(opt_val,"var-decay",[](double x)->bool{return x>=0.5 && x<1;},var_decay);
 	getOption(opt_val,"rinc",[](double x)->bool{return x>=1;},rinc);
 	getOption(opt_val,"rfirst",[](double x)->bool{return x>=1;},rfirst);
-	getOption(opt_val,"minimize-learnts",[](double x)->bool{return x==0 || x==1;},minimizeLearnts);
 }
 
 int curr_restarts=0;
