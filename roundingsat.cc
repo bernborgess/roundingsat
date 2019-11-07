@@ -311,32 +311,42 @@ double var_decay=0.95;
 double var_inc=1.0;
 vector<double> activity;
 struct{
+	int cap;
 	// segment tree (fast implementation of priority queue).
 	vector<int> tree;
 	void init() {
-		// TODO: make resizes incremental
+		cap = 0;
+		tree.resize(2, -1);
+		resize();
+	}
+	void resize() {
+		if (cap >= n) return;
+		while (cap < n) cap = 2 * cap + 1;
+		// insert elements in such order that tie breaking remains intact
+		vector<int> variables;
+		while (!empty()) variables.push_back(removeMax());
 		tree.clear();
-		tree.resize(2*(n+1), -1);
-		for(int i=1; i<=n; ++i) insert(i);
+		tree.resize(2*(cap+1), -1);
+		for (int x : variables) insert(x);
 	}
 	void percolateUp(int x) {
-		for(int at=x+n+1; at>1; at>>=1){
+		for(int at=x+cap+1; at>1; at>>=1){
 			if(tree[at^1]==-1 || activity[x]>activity[tree[at^1]])tree[at>>1]=x;
 			else break;
 		}
 	}
 	bool empty() { return tree[1] == -1; }
-	bool inHeap(int v) { return tree[v+n+1] != -1; }
+	bool inHeap(int v) { return tree[v+cap+1] != -1; }
 	void insert(int x) {
 		if (inHeap(x)) return;
-		tree[x+n+1] = x;
+		tree[x+cap+1] = x;
 		percolateUp(x);
 	}
 	int removeMax() {
 		int x = tree[1];
 		assert(x != -1);
-		tree[x+n+1] = -1;
-		for(int at=x+n+1; at>1; at>>=1){
+		tree[x+cap+1] = -1;
+		for(int at=x+cap+1; at>1; at>>=1){
 			if(tree[at^1] != -1 && (tree[at]==-1 || activity[tree[at^1]]>activity[tree[at]]))tree[at>>1]=tree[at^1];
 			else tree[at>>1]=tree[at];
 		}
@@ -467,9 +477,9 @@ struct ConflictData {
 	long long w;
 	vector<int> used; // 1: used, 2: clashing in some step
 	vector<int> usedlist;
-	void resize(int nvars){
-		resizeLitMap(_M,M,nvars,(long long)0);
-		used.resize(nvars+1,0);
+	void resize(){
+		resizeLitMap(_M,M,n,(long long)0);
+		used.resize(n+1,0);
 	}
 	void reset(){
 		slack=0;
@@ -702,21 +712,23 @@ void init(){
 	ca.cap = 0;
 	ca.wasted = 0;
 	ca.capacity(1024*1024);//4MB
+	order_heap.init();
 }
 
 void setNbVariables(long long nvars){
 	if (nvars < 0) exit_ERROR({"Number of variables must be positive."});
-	if (nvars > 1e9) exit_ERROR({"Number of variables cannot exceet 1e9."});
+	if (nvars > 1e9) exit_ERROR({"Number of variables cannot exceed 1e9."});
 	if (nvars <= n) return;
 	resizeLitMap(_adj,adj,nvars,{});
 	resizeLitMap(_Reason,Reason,nvars,CRef_Undef);
 	resizeLitMap(_Level,Level,nvars,-1);
 	activity.resize(nvars+1,0);
 	phase.resize(nvars+1);
-	for(int i=n+1;i<=nvars;++i) phase[i] = -i;
-	confl_data.resize(nvars);
+	int old = n;
 	n = nvars;
-	order_heap.init();
+	confl_data.resize();
+	order_heap.resize();
+	for(int i=old+1;i<=n;++i) phase[i] = -i, order_heap.insert(i);
 }
 
 // ---------------------------------------------------------------------
