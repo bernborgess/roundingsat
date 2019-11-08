@@ -171,6 +171,7 @@ vector<CRef> clauses, learnts;
 struct Watch {
 	CRef cref;
 };
+const double resize_factor=1.5;
 
 template <class T>
 inline T ceildiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return (p+q-1)/q; }
@@ -184,7 +185,7 @@ inline T floordiv_safe(const T& p,const T& q){ assert(q>0); return (p<0?-ceildiv
 template<class T> void resizeLitMap(std::vector<T>& _map, typename std::vector<T>::iterator& map, int size, T init){
 	assert(size<(1<<28));
 	int oldmiddle = (_map.size()-1)/2;
-	int newmiddle = 1.5*size;
+	int newmiddle = resize_factor*size;
 	assert(newmiddle>oldmiddle);
 	_map.resize(2*newmiddle+1);
 	map=_map.begin()+newmiddle;
@@ -311,21 +312,16 @@ double var_decay=0.95;
 double var_inc=1.0;
 vector<double> activity;
 struct{
-	int cap;
+	int cap=0;
 	// segment tree (fast implementation of priority queue).
-	vector<int> tree;
-	void init() {
-		cap = 0;
-		tree.resize(2, -1);
-		resize();
-	}
-	void resize() {
-		if (cap >= n) return;
-		while (cap < n) cap = 2 * cap + 1;
+	vector<int> tree = {-1,-1};
+	void resize(int newsize) {
+		if (cap >= newsize) return;
 		// insert elements in such order that tie breaking remains intact
 		vector<int> variables;
 		while (!empty()) variables.push_back(removeMax());
 		tree.clear();
+		cap = resize_factor*newsize;
 		tree.resize(2*(cap+1), -1);
 		for (int x : variables) insert(x);
 	}
@@ -338,6 +334,7 @@ struct{
 	bool empty() { return tree[1] == -1; }
 	bool inHeap(int v) { return tree[v+cap+1] != -1; }
 	void insert(int x) {
+		assert(x<=cap);
 		if (inHeap(x)) return;
 		tree[x+cap+1] = x;
 		percolateUp(x);
@@ -477,9 +474,9 @@ struct ConflictData {
 	long long w;
 	vector<int> used; // 1: used, 2: clashing in some step
 	vector<int> usedlist;
-	void resize(){
-		resizeLitMap(_M,M,n,(long long)0);
-		used.resize(n+1,0);
+	void resize(int size){
+		resizeLitMap(_M,M,size,(long long)0);
+		used.resize(size+1,0);
 	}
 	void reset(){
 		slack=0;
@@ -712,7 +709,6 @@ void init(){
 	ca.cap = 0;
 	ca.wasted = 0;
 	ca.capacity(1024*1024);//4MB
-	order_heap.init();
 }
 
 void setNbVariables(long long nvars){
@@ -724,11 +720,10 @@ void setNbVariables(long long nvars){
 	resizeLitMap(_Level,Level,nvars,-1);
 	activity.resize(nvars+1,0);
 	phase.resize(nvars+1);
-	int old = n;
+	order_heap.resize(nvars);
+	confl_data.resize(nvars);
+	for(int i=n+1;i<=nvars;++i) phase[i] = -i, order_heap.insert(i);
 	n = nvars;
-	confl_data.resize();
-	order_heap.resize();
-	for(int i=old+1;i<=n;++i) phase[i] = -i, order_heap.insert(i);
 }
 
 // ---------------------------------------------------------------------
