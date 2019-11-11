@@ -180,7 +180,7 @@ int NCONFL=0, NDECIDE=0;
 long long NPROP=0, NIMPL=0;
 __int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
 long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
-long long NGCD=0;
+long long NGCD=0, NCARDDETECT=0;
 long long NWEAKENEDFALSELITS=0, NWEAKENEDNONFALSELITS=0;
 double rinc = 2;
 int rfirst = 100;
@@ -209,9 +209,9 @@ template<class T> void resizeLitMap(std::vector<T>& _map, typename std::vector<T
 	for(int i=newmiddle-oldmiddle-1; i>=0; --i) _map[i]=init;
 }
 
-// NOTE: x mod 0 is defined as x
 unsigned int gcd(unsigned int u, unsigned int v){
-	if (v==0) return u;
+	assert(u!=0);
+	assert(v!=0);
 	if (u%v==0) return v;
 	if (v%u==0) return u;
 	int shift = __builtin_ctz(u | v);
@@ -347,6 +347,7 @@ struct Constraint{
 	}
 
 	void divide(SMALL d){
+		assert(d>0);
 		for (int v: vars) coefs[v] = ceildiv_safe<SMALL>(coefs[v],d);
 		rhs=ceildiv_safe<LARGE>(rhs,d);
 	}
@@ -389,18 +390,51 @@ struct Constraint{
 		saturate();
 	}
 
+	// TODO: weaken non-implying/non-implieds?
 	void postProcess(){
-		saturate();
-		// TODO: cardinality detection, weaken non-implying...
-		int _gcd = 0;
+		cleanUp();
+		LARGE degree = saturate();
+		assert(degree<=1e9); // we assume int coefficients in the rest of this method
+		if(degree<=1 || vars.size()==0) return;
+		int w=(int)degree;
+		sort(vars.begin(),vars.end(),[&](int v1, int v2){return abs(coefs[v1])<abs(coefs[v2]);});
+		if(abs(coefs[vars.back()])==1) return; // already a cardinality constraint
+		// divide by greatest common divisor
+		int _gcd = abs(coefs[vars.front()]);
 		for(int v: vars){
 			if(_gcd==1) break;
-			assert(abs(coefs[v])<=1e9);
 			_gcd = gcd(_gcd,(int) abs(coefs[v]));
 		}
 		if(_gcd>1) {
 			++NGCD;
 			divide(_gcd);
+			w=ceildiv(w,_gcd);
+		}
+		// detect whether constraint is a hidden cardinality constraint
+		int largeCoefsNeeded=0;
+		int largeCoefSum=0;
+		for(; largeCoefsNeeded<(int)vars.size() && largeCoefSum<w; ++largeCoefsNeeded){
+			largeCoefSum+=abs(coefs[vars[vars.size()-1-largeCoefsNeeded]]);
+		}
+		if(largeCoefSum<w){ // trivially unsatisfiable constraint
+			reset();
+			rhs=1;
+			return;
+		}
+		int smallCoefsNeeded=0;
+		int smallCoefSum=0;
+		for(; smallCoefsNeeded<largeCoefsNeeded; ++smallCoefsNeeded){
+			smallCoefSum+=abs(coefs[vars[smallCoefsNeeded]]);
+		}
+		if(smallCoefSum>w){
+			assert(largeCoefsNeeded==smallCoefsNeeded);
+			++NCARDDETECT;
+			rhs=smallCoefsNeeded;
+			for(int v: vars){
+				int l = getLit(v);
+				coefs[v]=0;
+				addLhs(1,l);
+			}
 		}
 	}
 
@@ -843,9 +877,7 @@ void learnConstraint(Constraint<long long,__int128>& c){
 		assert(equals(decisionLevel(), 0));
 		exit_UNSAT();
 	}
-
 	c.postProcess();
-	assert(confl_data.getAssertionLevel()==decisionLevel());
 
 	vector<int>lits;vector<int>coefs;__int128 degree;
 	confl_data.getNormalForm(lits,coefs,degree);
@@ -1196,6 +1228,7 @@ void print_stats() {
 	printf("d cardinalities learned %lld\n", NCARDINALITIESLEARNED);
 	printf("d general constraints learned %lld\n", NGENERALSLEARNED);
 	printf("d gcd simplifications %lld\n", NGCD);
+	printf("d detected cardinalities %lld\n", NCARDDETECT);
 	printf("d weakened non-implied lits %lld\n", NWEAKENEDNONFALSELITS);
 	printf("d weakened non-implying lits %lld\n", NWEAKENEDFALSELITS);
 }
