@@ -171,6 +171,7 @@ vector<CRef> clauses, learnts;
 struct Watch {
 	CRef cref;
 };
+const double resize_factor=1.5;
 
 template <class T>
 inline T ceildiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return (p+q-1)/q; }
@@ -180,6 +181,18 @@ template <class T>
 inline T ceildiv_safe(const T& p,const T& q){ assert(q>0); return (p<0?-floordiv(-p,q):ceildiv(p,q)); }
 template <class T>
 inline T floordiv_safe(const T& p,const T& q){ assert(q>0); return (p<0?-ceildiv(-p,q):floordiv(p,q)); }
+
+template<class T> void resizeLitMap(std::vector<T>& _map, typename std::vector<T>::iterator& map, int size, T init){
+	assert(size<(1<<28));
+	int oldmiddle = (_map.size()-1)/2;
+	int newmiddle = resize_factor*size;
+	assert(newmiddle>oldmiddle);
+	_map.resize(2*newmiddle+1);
+	map=_map.begin()+newmiddle;
+	for(int i=_map.size()-1; i>newmiddle+oldmiddle; --i) _map[i]=init;
+	for(int i=newmiddle+oldmiddle; i>=newmiddle-oldmiddle; --i) _map[i]=_map[i-newmiddle+oldmiddle];
+	for(int i=newmiddle-oldmiddle-1; i>=0; --i) _map[i]=init;
+}
 
 vector<vector<Watch>> _adj; vector<vector<Watch>>::iterator adj;
 vector<CRef> _Reason; vector<CRef>::iterator Reason;
@@ -299,35 +312,44 @@ double var_decay=0.95;
 double var_inc=1.0;
 vector<double> activity;
 struct{
+	int cap=0;
 	// segment tree (fast implementation of priority queue).
-	vector<int> tree;
-	void init() {
+	vector<int> tree = {-1,-1};
+	void resize(int newsize) {
+		if (cap >= newsize) return;
+		// insert elements in such order that tie breaking remains intact
+		vector<int> variables;
+		while (!empty()) variables.push_back(removeMax());
 		tree.clear();
-		tree.resize(2*(n+1), -1);
+		cap = resize_factor*newsize;
+		tree.resize(2*(cap+1), -1);
+		for (int x : variables) insert(x);
 	}
 	void percolateUp(int x) {
-		for(int at=x+n+1; at>1; at>>=1){
-			if(tree[at^1]==-1 || activity[x]>activity[tree[at^1]])tree[at>>1]=x;else break;
+		for(int at=x+cap+1; at>1; at>>=1){
+			if(tree[at^1]==-1 || activity[x]>activity[tree[at^1]])tree[at>>1]=x;
+			else break;
 		}
 	}
 	bool empty() { return tree[1] == -1; }
+	bool inHeap(int v) { return tree[v+cap+1] != -1; }
 	void insert(int x) {
-		tree[x+n+1] = x;
+		assert(x<=cap);
+		if (inHeap(x)) return;
+		tree[x+cap+1] = x;
 		percolateUp(x);
 	}
 	int removeMax() {
 		int x = tree[1];
 		assert(x != -1);
-		tree[x+n+1] = -1;
-		for(int at=x+n+1; at>1; at>>=1){
-			if(tree[at^1] != -1 && (tree[at]==-1 || activity[tree[at^1]]>activity[tree[at]]))tree[at>>1]=tree[at^1];else tree[at>>1]=tree[at];
+		tree[x+cap+1] = -1;
+		for(int at=x+cap+1; at>1; at>>=1){
+			if(tree[at^1] != -1 && (tree[at]==-1 || activity[tree[at^1]]>activity[tree[at]]))tree[at>>1]=tree[at^1];
+			else tree[at>>1]=tree[at];
 		}
 		return x;
 	}
-	bool inHeap(int v) { return tree[v+n+1] != -1; }
 } order_heap;
-void insertVarOrder(int x) {
-	if (!order_heap.inHeap(x)) order_heap.insert(x); }
 
 void varDecayActivity() { var_inc *= (1 / var_decay); }
 void varBumpActivity(int v){
@@ -425,7 +447,7 @@ void undoOne(){
 	phase[abs(l)]=l;
 	if(!trail_lim.empty() && trail_lim.back() == (int)trail.size())trail_lim.pop_back();
 	Reason[l] = CRef_Undef;
-	insertVarOrder(abs(l));
+	order_heap.insert(abs(l));
 }
 
 void backjumpTo(int level){
@@ -452,12 +474,9 @@ struct ConflictData {
 	long long w;
 	vector<int> used; // 1: used, 2: clashing in some step
 	vector<int> usedlist;
-	void init(){
-		_M.resize(2*n+1, 0);
-		M = _M.begin() + n;
-		used.resize(n+1, 0);
-		usedlist.reserve(n);
-		reset();
+	void resize(int size){
+		resizeLitMap(_M,M,size,(long long)0);
+		used.resize(size+1,0);
 	}
 	void reset(){
 		slack=0;
@@ -559,6 +578,7 @@ void analyze(CRef confl, vector<int>& out_lits, vector<int>& out_coefs, int& out
 		claBumpActivity(C);
 		if (C.lbd > 2) C.lbd = min(C.lbd, computeLBD(confl));
 	}
+	confl_data.reset();
 	add_to_conflict(C.size(), C.lits(), C.coefs(), C.w);
 	confl_data.slack = slack(C);
 	vector<int> reason_lits; reason_lits.reserve(n);
@@ -605,7 +625,6 @@ void analyze(CRef confl, vector<int>& out_lits, vector<int>& out_coefs, int& out
 		out_lits.push_back(l),out_coefs.push_back(min(confl_data.M[l],confl_data.w));
 	}
 	out_w=confl_data.w;
-	confl_data.reset();
 }
 
 /**
@@ -694,23 +713,17 @@ void init(){
 
 void setNbVariables(long long nvars){
 	if (nvars < 0) exit_ERROR({"Number of variables must be positive."});
-	if (nvars > 1e9) exit_ERROR({"Number of variables cannot exceet 1e9."});
+	if (nvars > 1e9) exit_ERROR({"Number of variables cannot exceed 1e9."});
+	if (nvars <= n) return;
+	resizeLitMap(_adj,adj,nvars,{});
+	resizeLitMap(_Reason,Reason,nvars,CRef_Undef);
+	resizeLitMap(_Level,Level,nvars,-1);
+	activity.resize(nvars+1,0);
+	phase.resize(nvars+1);
+	order_heap.resize(nvars);
+	confl_data.resize(nvars);
+	for(int i=n+1;i<=nvars;++i) phase[i] = -i, order_heap.insert(i);
 	n = nvars;
-	_adj.resize(2*n+1); adj = _adj.begin() + n;
-	_Reason.resize(2*n+1, CRef_Undef); Reason = _Reason.begin() + n;
-	_Level.resize(2*n+1); Level = _Level.begin() + n;
-	phase.resize(n+1);
-	activity.resize(n+1);
-	order_heap.init();
-	for(int i=1;i<=n;i++){
-		Level[i]=Level[-i]=-1;
-		Reason[i]=Reason[-i]=CRef_Undef;
-		phase[i]=-i;
-		activity[i]=0;
-		insertVarOrder(i);
-		//adj[i].clear(); adj[-i].clear(); // is already cleared.
-	}
-	confl_data.init();
 }
 
 // ---------------------------------------------------------------------
@@ -1268,7 +1281,7 @@ bool solve(vector<int> assumptions) {
 				}
 			}
 			if(next==0) next = pickBranchLit();
-			if(next==0) return true;
+			if(next==0) { assert(order_heap.empty()); return true; }
 			newDecisionLevel();
 			NDECIDE++;
 			uncheckedEnqueue(next,CRef_Undef);
