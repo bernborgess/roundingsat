@@ -162,12 +162,12 @@ struct {
 int verbosity = 1;
 // currently, the maximum number of variables is hardcoded (variable N), and most arrays are of fixed size.
 int n = 0;
-bool opt = false;
+int orig_n = 0;
 int opt_K = 0;
 int opt_normalize_add = 0, opt_coef_sum = 0;
-int nbWcnfAuxVars = 0;
-inline int getNbOrigVars(){ return n-opt_K-nbWcnfAuxVars; }
 vector<CRef> clauses, learnts;
+CRef objective=CRef_Undef;
+bool optimizing(){ return objective!=CRef_Undef; }
 struct Watch {
 	CRef cref;
 };
@@ -417,6 +417,7 @@ void attachClause(CRef cr){
 }
 
 bool locked(CRef cr){
+	if(objective==cr) return true;
 	Clause & c = ca[cr];
 	for(size_t idx=0;idx<c.size();idx++){
 		if(Reason[c.lits()[idx]] == cr) return true;
@@ -780,6 +781,7 @@ CRef learnConstraint(vector<int>& lits,vector<int>& coefs, int w){
 // ---------------------------------------------------------------------
 // Parsers
 void addConstraint(Constraint<int, long long>& c){
+	assert(learnts.size()==0);
 	std::vector<int> lits; std::vector<int> coefs; long long d=0; int w;
 	c.getNormalForm(lits,coefs,d);
 	if (abs(d) > (long long) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
@@ -812,14 +814,13 @@ int read_number(const string & s) {
 	return answer;
 }
 
+// NOTE: must be called after adding the original constraints, as we implement the objective as a learnt constraint
 void addObjective(Constraint<int, long long>& c) {
-	assert(clauses.size()==0); // objective function bound must be first constraint
 	std::vector<int> lits; std::vector<int> coefs;
 	for(int v: c.vars) if(c.coefs[v]!=0) {
 		lits.push_back(v);
 		coefs.push_back(c.coefs[v]);
 	}
-	opt = true;
 	opt_coef_sum = 0;
 	opt_normalize_add = 0;
 	for(size_t i=0;i<lits.size();i++){
@@ -831,18 +832,22 @@ void addObjective(Constraint<int, long long>& c) {
 	opt_K = 0; while ((1<<opt_K) <= opt_coef_sum) opt_K++;
 	for(int i=0;i<opt_K;i++)lits.push_back(n+1+i),coefs.push_back(1<<i);
 	setNbVariables(n+opt_K);
-	CRef cr = CRef_Undef;
-	if(lits.size()==0) { // Trivial objective function.
-		// Add dummy objective, as it is assumed the objective function is stored as first constraint.
-		cr = ca.alloc({0, 0}, {0, 0}, 0, false);
+
+	if(lits.size()==0) {
+		// Add dummy objective that evaluates to 0
+		objective = ca.alloc({0, 0}, {0, 0}, 0, true);
 	}else{
-		cr = ca.alloc(lits, coefs, opt_coef_sum, false);
+		objective = ca.alloc(lits, coefs, opt_coef_sum, true);
 	}
-	attachClause(cr);
-	clauses.push_back(cr);
+	Clause& C = ca[objective];
+	C.lbd = lits.size();
+	attachClause(objective);
+	learnts.push_back(objective);
 }
 
 void opb_read(istream & in) {
+	Constraint<int,long long> objective_func;
+	bool opt = false;
 	bool first_constraint = true;
 	_unused(first_constraint);
 	for (string line; getline(in, line);) {
@@ -885,7 +890,7 @@ void opb_read(istream & in) {
 				if (negated) l = -l;
 				tmpConstraint.addLhs(coef,l);
 			}
-			if (opt_line) addObjective(tmpConstraint);
+			if (opt_line) opt=true, objective_func=tmpConstraint;
 			else {
 				tmpConstraint.addRhs(read_number(line0.substr(line0.find("=") + 1)));
 				addConstraint(tmpConstraint);
@@ -897,34 +902,12 @@ void opb_read(istream & in) {
 			}
 		}
 	}
-}
-
-void wcnf_read_objective(istream & in, long long top) {
-	std::vector<int> weights;
-	for (string line; getline(in, line);) {
-		if (line.empty() || line[0] == 'c') continue;
-		else {
-			istringstream is (line);
-			long long weight; is >> weight;
-			if(weight>=top) continue; // hard clause
-			if(weight>1e9) exit_ERROR({"Clause weight exceeds 10^9: ",std::to_string(weight)});
-			if(weight<0) exit_ERROR({"Negative clause weight: ",std::to_string(weight)});
-			if(weight==0){
-				std::cout << "c Warning: ignoring clause with weight 0" << std::endl;
-			}else{
-				weights.push_back(weight);
-			}
-		}
-	}
-	nbWcnfAuxVars = weights.size();
-	tmpConstraint.reset();
-	for(int i=0; i<nbWcnfAuxVars; ++i) tmpConstraint.addLhs(weights[i],n+1+i);
-	setNbVariables(n+nbWcnfAuxVars);
-	addObjective(tmpConstraint);
+	orig_n=n;
+	if(opt) addObjective(objective_func);
 }
 
 void wcnf_read(istream & in, long long top) {
-	int auxvar = getNbOrigVars();
+	std::vector<int> weights;
 	for (string line; getline(in, line);) {
 		if (line.empty() || line[0] == 'c') continue;
 		else {
@@ -936,12 +919,19 @@ void wcnf_read(istream & in, long long top) {
 			int l;
 			while (is >> l, l) tmpConstraint.addLhs(1,l);
 			if(weight<top){ // soft clause
-				++auxvar;
-				tmpConstraint.addLhs(1,auxvar);
+				if(weight>1e9) exit_ERROR({"Clause weight exceeds 10^9: ",std::to_string(weight)});
+				if(weight<0) exit_ERROR({"Negative clause weight: ",std::to_string(weight)});
+				weights.push_back(weight);
+				setNbVariables(n+1); // increases n to n+1
+				tmpConstraint.addLhs(1,n);
 			} // else hard clause
 			addConstraint(tmpConstraint);
 		}
 	}
+	orig_n = n-weights.size();
+	tmpConstraint.reset();
+	for(int i=0; i<(int) weights.size(); ++i) tmpConstraint.addLhs(weights[i],orig_n+1+i);
+	addObjective(tmpConstraint);
 }
 
 void cnf_read(istream & in) {
@@ -956,6 +946,7 @@ void cnf_read(istream & in) {
 			addConstraint(tmpConstraint);
 		}
 	}
+	orig_n=n;
 }
 
 void file_read(istream & in) {
@@ -973,14 +964,7 @@ void file_read(istream & in) {
 			}else if(type == "wcnf"){
 				is >> line; // skip nbConstraints
 				long long top; is >> top;
-				// NOTE: keeping formula in memory because I need a dual pass to first extract the auxiliary variables,
-				// and later extract the (potentially soft) constraints
-				std::string formula{ std::istreambuf_iterator<char>(in),
-				                     std::istreambuf_iterator<char>() };
-				istringstream in2(formula);
-			  wcnf_read_objective(in2,top);
-			  istringstream in3(formula);
-			  wcnf_read(in3,top);
+				wcnf_read(in, top);
 			  return;
 			}
 		} else if (line[0] == '*' && line.substr(0, 13) == "* #variable= ") {
@@ -1022,8 +1006,9 @@ void garbage_collect(){
 		ca.at += ca.sz_clause(length);
 	}
 	#define update_ptr(cr) if(cr.ofs>=ofs_learnts)cr=learnts[lower_bound(learnts_old.begin(), learnts_old.end(), cr)-learnts_old.begin()]
-	for(int l=-n; l<=n; l++)for(size_t i=0;i<adj[l].size();i++)update_ptr(adj[l][i].cref);
-	for(int l=-n;l<=n;l++)if(Reason[l]!=CRef_Undef)update_ptr(Reason[l]);
+	for(int l=-n;l<=n;l++) for(size_t i=0;i<adj[l].size();i++) update_ptr(adj[l][i].cref);
+	for(int l=-n;l<=n;l++) if(Reason[l]!=CRef_Undef) update_ptr(Reason[l]);
+	if(optimizing()) update_ptr(objective);
 	#undef update_ptr
 }
 
@@ -1113,8 +1098,8 @@ int last_sol_value;
 vector<bool> last_sol;
 
 bool checksol() {
-	for(size_t i=(opt?1:0); i<clauses.size(); ++i){
-		Clause& C = ca[clauses[i]];
+	for(CRef cr: clauses){
+		Clause& C = ca[cr];
 		long long slack=-C.w;
 		for(size_t j=0; j<C.size(); ++j){
 			int l = C.lits()[j];
@@ -1130,7 +1115,7 @@ void exit_SAT() {
 	assert(checksol());
 	print_stats();
 	puts("s SATISFIABLE");
-	printf("v");for(int i=1;i<=getNbOrigVars();i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
+	printf("v");for(int i=1;i<=orig_n;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
 	exit(10);
 }
 
@@ -1153,7 +1138,7 @@ void exit_OPT() {
 	print_stats();
 	cout << "s OPTIMUM FOUND" << endl;
 	cout << "c objective function value " << last_sol_value << endl;
-	printf("v");for(int i=1;i<=getNbOrigVars();i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
+	printf("v");for(int i=1;i<=orig_n;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
 	exit(30);
 }
 
@@ -1325,7 +1310,7 @@ int main(int argc, char**argv){
 	signal(SIGTERM,SIGINT_interrupt);
 	signal(SIGXCPU,SIGINT_interrupt);
 
-	std::cout << "c #variables=" << getNbOrigVars() << " #constraints=" << clauses.size()-(opt?1:0) << std::endl;
+	std::cout << "c #variables=" << orig_n << " #constraints=" << clauses.size() << std::endl;
 	for (int m = opt_coef_sum; m >= 0; m--) {
 		vector<int> aux;
 		for (int i = 0; i < opt_K; i++) {
@@ -1335,14 +1320,14 @@ int main(int argc, char**argv){
 		if (solve(aux)) {
 			last_sol.resize(n+1-opt_K);
 			for (int i=1;i<=n-opt_K;i++)if(~Level[i])last_sol[i]=true;else last_sol[i]=false;
-			if (opt) {
+			if (optimizing()) {
 				// m + sum(coeff[i]*~ell[i]) >= opt_coef_sum possible.
 				// m + opt_coef_sum - sum(coeff[i]*ell[i]) >= opt_coef_sum possible.
 				// sum(coeff[i]*ell[i]) <= m possible.
 				// sum(coeff0[i]*x[i]) + opt_normalize_add <= m possible.
 				// sum(coeff0[i]*x[i]) <= m - opt_normalize_add possible.
 				int s = 0;
-				Clause & C = ca[clauses[0]];
+				Clause & C = ca[objective];
 				for (int i=0; i<(int)C.size(); i++) if (abs(C.lits()[i]) <= n-opt_K) {
 					if (~Level[C.lits()[i]]) s += C.coefs()[i];
 				}
@@ -1353,6 +1338,6 @@ int main(int argc, char**argv){
 			}
 		} else break;
 	}
-	if (!opt) exit_SAT();
+	if (!optimizing()) exit_SAT();
 	else exit_OPT();
 }
