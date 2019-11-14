@@ -243,14 +243,14 @@ struct Constraint{
 	std::vector<int> vars;
 	vector<SMALL> coefs;
 	LARGE rhs = 0;
-	SMALL _unused_ = std::numeric_limits<SMALL>::max();
+	constexpr SMALL _unused_(){ return std::numeric_limits<SMALL>::max(); }
 
 	inline void resize(int s){
-		coefs.resize(s,_unused_);
+		coefs.resize(s,_unused_());
 	}
 
 	void reset(){
-		for(int v: vars) coefs[v]=_unused_;
+		for(int v: vars) coefs[v]=_unused_();
 		vars.clear();
 		rhs=0;
 	}
@@ -266,7 +266,7 @@ struct Constraint{
 		for(int i=0; i<(int)vars.size(); ++i){
 			int v =vars[i];
 			if(coefs[v]==0){
-				coefs[v]=_unused_;
+				coefs[v]=_unused_();
 				swapErase(vars,i);
 				--i;
 			}
@@ -284,7 +284,7 @@ struct Constraint{
 			v = -l;
 		}
 		assert(v<(int)coefs.size());
-		if(coefs[v]==_unused_) vars.push_back(v), coefs[v]=0;
+		if(coefs[v]==_unused_()) vars.push_back(v), coefs[v]=0;
 		coefs[v]+=c;
 	}
 
@@ -295,10 +295,10 @@ struct Constraint{
 		for (int v: vars) result -= min<SMALL>(0,coefs[v]); // considering negative coefficients
 		return result;
 	}
-	inline SMALL getCoef(int l) const { return coefs[abs(l)]==_unused_?0:(l<0?-coefs[-l]:coefs[l]); }
+	inline SMALL getCoef(int l) const { return coefs[abs(l)]==_unused_()?0:(l<0?-coefs[-l]:coefs[l]); }
 	inline int getLit(int l) const { // NOTE: always check for answer "0"!
 		int v = abs(l);
-		if(coefs[v]==0 || coefs[v]==_unused_) return 0;
+		if(coefs[v]==0 || coefs[v]==_unused_()) return 0;
 		if(coefs[v]<0) return -v;
 		else return v;
 	}
@@ -522,7 +522,7 @@ struct Constraint{
 	LARGE heuristicWeakening(){
 		LARGE slk = getSlack();
 
-		SMALL smallestPropagated=_unused_; // smallest coefficient of propagated literals
+		SMALL smallestPropagated=_unused_(); // smallest coefficient of propagated literals
 		if (slk >= 0) {
 			for (int v: vars){
 				SMALL c = abs(coefs[v]);
@@ -531,7 +531,7 @@ struct Constraint{
 				}
 			}
 		}
-		if(smallestPropagated==_unused_) return slk; // no propagation, no idea what to weaken
+		if(smallestPropagated==_unused_()) return slk; // no propagation, no idea what to weaken
 		weakenNonImplied(slk);
 		return weakenNonImplying(smallestPropagated,slk);
 	}
@@ -987,9 +987,9 @@ void addObjective(Constraint<int, long long>& c) {
 }
 
 void opb_read(istream & in) {
+	Constraint<int,long long> inverted;
 	Constraint<int,long long> objective_func;
 	bool opt = false;
-	Constraint<int,long long> inverted;
 	bool first_constraint = true;
 	_unused(first_constraint);
 	for (string line; getline(in, line);) {
