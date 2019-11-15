@@ -303,6 +303,8 @@ Constraint<int, long long> tmpConstraint;
 double initial_time;
 int NCONFL=0, NDECIDE=0;
 long long NPROP=0, NIMPL=0;
+__int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
+long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
 double rinc = 2;
 int rfirst = 100;
 int nbclausesbeforereduce=2000;
@@ -761,6 +763,16 @@ CRef learnConstraint(vector<int>& lits,vector<int>& coefs, int w){
 	C.lbd = computeLBD(cr);
 	attachClause(cr);
 	learnts.push_back(cr);
+	LEARNEDLENGTHSUM+=lits.size();
+	LEARNEDDEGREESUM+=w;
+	if(w==1) ++NCLAUSESLEARNED;
+	else{
+		int c=coefs[0];
+		bool isCardinality = true;
+		for(int i=1; i<(int) coefs.size() && isCardinality; ++i) isCardinality=(coefs[i]==c);
+		if(isCardinality) ++NCARDINALITIESLEARNED;
+		else ++NGENERALSLEARNED;
+	}
 	return cr;
 }
 
@@ -1090,6 +1102,11 @@ void print_stats() {
 	printf("d decisions %d\n", NDECIDE);
 	printf("d conflicts %d\n", NCONFL);
 	printf("d propagations %lld\n", NPROP);
+	printf("d average learned constraint length %.2f\n", NCONFL==0?0:(double)LEARNEDLENGTHSUM/NCONFL);
+	printf("d average learned constraint degree %.2f\n", NCONFL==0?0:(double)LEARNEDDEGREESUM/NCONFL);
+	printf("d clauses learned %lld\n", NCLAUSESLEARNED);
+	printf("d cardinalities learned %lld\n", NCARDINALITIESLEARNED);
+	printf("d general constraints learned %lld\n", NGENERALSLEARNED);
 }
 
 int last_sol_value;
