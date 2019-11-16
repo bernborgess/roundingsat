@@ -181,7 +181,7 @@ long long NPROP=0, NIMPL=0;
 __int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
 long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
 long long NGCD=0, NCARDDETECT=0;
-long long NWEAKENEDFALSELITS=0, NWEAKENEDNONFALSELITS=0;
+long long NWEAKENEDNONIMPLYING=0, NWEAKENEDNONIMPLIED=0;
 double rinc = 2;
 int rfirst = 100;
 int nbclausesbeforereduce=2000;
@@ -480,12 +480,51 @@ struct Constraint{
 		return lvl;
 	}
 
+	void weakenNonImplied(LARGE slack){
+		for (int v: vars){
+			if (abs(coefs[v])<=slack && increasesSlack(v)){
+				assert(coefs[v]!=0);
+				weaken(-coefs[v],v);
+				++NWEAKENEDNONIMPLIED;
+			}
+		}
+	}
+
+	LARGE weakenNonImplying(SMALL propCoef, LARGE slack){
+		LARGE wiggle_room = propCoef-slack-1;
+		if(wiggle_room<=0) return slack;
+		cleanUp(); // ensures getLit(v)!=0
+		int j=0;
+		for(int i=0; i<(int)vars.size(); ++i){
+			int v = vars[i];
+			if(abs(coefs[v])<=wiggle_room && !increasesSlack(v)) vars[i]=vars[j], vars[j]=v, ++j;
+		}
+		std::sort(vars.begin(),vars.begin()+j,[&](int v1,int v2){
+			int l1=getLit(v1); assert(l1!=0);
+			int l2=getLit(v2); assert(l2!=0);
+			int c1=abs(coefs[v1]); assert(c1<=wiggle_room);
+			int c2=abs(coefs[v2]); assert(c2<=wiggle_room);
+			return c1<c2 || (c1==c2 && Pos[-l1]>Pos[-l2]);
+		});
+		for(int i=0; i<j; ++i){
+			int v = vars[i];
+			assert(!increasesSlack(v));
+			int c = abs(coefs[v]);
+			wiggle_room-=c;
+			if(wiggle_room<0) break;
+			weaken(-coefs[v],v);
+			slack+=c;
+			++NWEAKENEDNONIMPLYING;
+		}
+		assert(slack==getSlack());
+		return slack;
+	}
+
 	LARGE heuristicWeakening(){
 		LARGE slk = getSlack();
 
-		SMALL smallestPropagated=_unused_;
+		SMALL smallestPropagated=_unused_; // smallest coefficient of propagated literals
 		if (slk >= 0) {
-			// find out wiggle room to weaken falsifieds
 			for (int v: vars){
 				SMALL c = abs(coefs[v]);
 				if (Level[v]==-1 && Level[-v]==-1 && c>slk) {
@@ -494,40 +533,8 @@ struct Constraint{
 			}
 		}
 		if(smallestPropagated==_unused_) return slk; // no propagation, no idea what to weaken
-
-		// weaken non-implieds
-		for (int v: vars){
-			if (abs(coefs[v])<=slk && increasesSlack(v)){
-				assert(coefs[v]!=0);
-				weaken(-coefs[v],v);
-				++NWEAKENEDNONFALSELITS;
-			}
-		}
-
-		// weaken non-implying
-		LARGE wiggle_room = smallestPropagated-slk;
-		if(wiggle_room>1){
-			cleanUp(); // ensures getLit(v)!=0
-			std::sort(vars.begin(),vars.end(),[&](int v1,int v2){
-				int l1=getLit(v1);
-				int l2=getLit(v2);
-				int c1=getCoef(l1);
-				int c2=getCoef(l2);
-				return c1<c2 || (c1==c2 && Pos[-l1]>Pos[-l2]);
-			});
-			for(int v: vars){
-				if(increasesSlack(v)) continue;
-				int c = abs(coefs[v]);
-				wiggle_room-=c;
-				if(wiggle_room<1) break;
-				weaken(-coefs[v],v);
-				slk+=c;
-				++NWEAKENEDFALSELITS;
-			}
-		}
-
-		assert(slk==getSlack());
-		return slk;
+		weakenNonImplied(slk);
+		return weakenNonImplying(smallestPropagated,slk);
 	}
 };
 
@@ -742,6 +749,7 @@ void analyze(CRef confl){
 					if (reasonC.lbd > 2) reasonC.lbd = min(reasonC.lbd, computeLBD(Reason[l]));
 				}
 				tmpConstraint.init(reasonC);
+				tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack());
 				tmpConstraint.roundToOne(tmpConstraint.getCoef(l),!originalRoundToOne);
 				confl_data.add(tmpConstraint,confl_coef_l);
 				assert(equals(confl_data.getCoef(-l),0));
@@ -1229,8 +1237,8 @@ void print_stats() {
 	printf("d general constraints learned %lld\n", NGENERALSLEARNED);
 	printf("d gcd simplifications %lld\n", NGCD);
 	printf("d detected cardinalities %lld\n", NCARDDETECT);
-	printf("d weakened non-implied lits %lld\n", NWEAKENEDNONFALSELITS);
-	printf("d weakened non-implying lits %lld\n", NWEAKENEDFALSELITS);
+	printf("d weakened non-implied lits %lld\n", NWEAKENEDNONIMPLIED);
+	printf("d weakened non-implying lits %lld\n", NWEAKENEDNONIMPLYING);
 }
 
 int last_sol_value;
