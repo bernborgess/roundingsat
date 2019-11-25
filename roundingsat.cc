@@ -176,8 +176,7 @@ struct Watch {
 const double resize_factor=1.5;
 
 double initial_time;
-int NCONFL=0, NDECIDE=0;
-long long NPROP=0, NIMPL=0;
+long long NCONFL=0, NDECIDE=0, NPROP=0, NIMPL=0;
 __int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
 long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
 long long NGCD=0, NCARDDETECT=0;
@@ -1227,8 +1226,8 @@ static void SIGINT_exit(int signum){
 
 void print_stats() {
 	printf("c CPU time			  : %g s\n", cpuTime()-initial_time);
-	printf("d decisions %d\n", NDECIDE);
-	printf("d conflicts %d\n", NCONFL);
+	printf("d decisions %lld\n", NDECIDE);
+	printf("d conflicts %lld\n", NCONFL);
 	printf("d propagations %lld\n", NPROP);
 	printf("d average learned constraint length %.2f\n", NCONFL==0?0:(double)LEARNEDLENGTHSUM/NCONFL);
 	printf("d average learned constraint degree %.2f\n", NCONFL==0?0:(double)LEARNEDDEGREESUM/NCONFL);
@@ -1370,7 +1369,7 @@ bool solve(vector<int> assumptions) {
 			NCONFL++; nconfl_to_restart--;
 			if(NCONFL%1000==0){
 				if (verbosity > 0) {
-					printf("c #Conflicts: %10d | #Learnt: %10d\n",NCONFL,(int)learnts.size());
+					printf("c #Conflicts: %10lld | #Learnt: %10lld\n",NCONFL,(long long)learnts.size());
 //					print_stats();
 					if(verbosity>2){
 						// memory usage
