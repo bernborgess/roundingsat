@@ -232,8 +232,8 @@ vector<int> _Level; vector<int>::iterator Level;
 vector<int> _Pos; vector<int>::iterator Pos; // TODO: could be var-map instead of lit-map
 vector<int> trail_lim;
 int qhead; // for unit propagation
-int last_sol_obj_val = std::numeric_limits<int>::max();
-bool foundSolution(){return last_sol_obj_val!=std::numeric_limits<int>::max();}
+int last_sol_obj_val = 1e9+1;
+bool foundSolution(){return last_sol_obj_val<=1e9;}
 vector<bool> last_sol;
 vector<int> phase; // TODO: should be bool?
 void newDecisionLevel() { trail_lim.push_back(trail.size()); }
@@ -390,7 +390,7 @@ struct Constraint{
 		saturate();
 	}
 
-	// TODO: weaken non-implying/non-implieds?
+	// NOTE: only equivalence preserving operations here!
 	void postProcess(){
 		cleanUp();
 		LARGE degree = saturate();
@@ -1211,15 +1211,19 @@ void print_stats() {
 	printf("d weakened non-implying lits %lld\n", NWEAKENEDNONIMPLYING);
 }
 
+long long lhs(Clause& C, const std::vector<bool>& sol){
+	long long result = 0;
+	for(size_t j=0; j<C.size(); ++j){
+		int l = C.lits()[j];
+		result+=((l>0)==sol[abs(l)])*C.coefs()[j];
+	}
+	return result;
+}
+
 bool checksol() {
 	for(CRef cr: clauses){
 		Clause& C = ca[cr];
-		long long slack=-C.w;
-		for(size_t j=0; j<C.size(); ++j){
-			int l = C.lits()[j];
-			slack+=((l>0)==last_sol[abs(l)])*C.coefs()[j];
-		}
-		if(slack<0) return false;
+		if(lhs(C,last_sol)<C.w) return false;
 	}
 	puts("c SATISFIABLE (checked)");
 	return true;
@@ -1381,7 +1385,7 @@ bool solve(vector<int> assumptions) {
 			if(next==0) {
 				assert(order_heap.empty());
 				for (int i = 1; i <= orig_n; ++i)last_sol[i] = (~Level[i]);
-				last_sol_obj_val=std::numeric_limits<int>::max()-1;
+				last_sol_obj_val=1e9;
 				return true;
 			}
 			newDecisionLevel();
@@ -1391,15 +1395,18 @@ bool solve(vector<int> assumptions) {
 	}
 }
 
-int opt_K = 0;
-int opt_normalize_add = 0, opt_coef_sum = 0;
+void solveLinearAssumps() {
+	assert(objective_func.vars.size() > 0);
+	// NOTE: objective constraint must be added after adding the original constraints,
+	// as we implement the objective as a learnt constraint
 
-// NOTE: must be called after adding the original constraints, as we implement the objective as a learnt constraint
-void addObjectiveAssumps(Constraint<int, long long>& c) {
+	int opt_K = 0;
+	long long opt_normalize_add = 0, opt_coef_sum = 0;
+
 	std::vector<int> lits; std::vector<int> coefs;
-	for(int v: c.vars) if(c.coefs[v]!=0) {
+	for(int v: objective_func.vars) if(objective_func.coefs[v]!=0) {
 			lits.push_back(v);
-			coefs.push_back(c.coefs[v]);
+			coefs.push_back(objective_func.coefs[v]);
 		}
 	opt_coef_sum = 0;
 	opt_normalize_add = 0;
@@ -1419,15 +1426,9 @@ void addObjectiveAssumps(Constraint<int, long long>& c) {
 	}else{
 		objective = ca.alloc(lits, coefs, opt_coef_sum, true);
 	}
-	Clause& C = ca[objective];
-	C.lbd = lits.size();
+	ca[objective].lbd = lits.size();
 	attachClause(objective);
 	learnts.push_back(objective);
-}
-
-void solveLinearAssumps() {
-	assert(objective_func.vars.size() > 0);
-	addObjectiveAssumps(objective_func);
 
 	for (int m = opt_coef_sum; m >= 0; m--) {
 		vector<int> aux;
@@ -1452,6 +1453,41 @@ void solveLinearAssumps() {
 	}
 }
 
+void solveLinear(){
+	assert(objective_func.vars.size() > 0);
+	long long opt_coef_sum = 0;
+	for (int v: objective_func.vars) opt_coef_sum+=abs(objective_func.coefs[v]);
+	if (opt_coef_sum > (int) 1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
+
+	std::vector<int> lits;
+	std::vector<int> coefs;
+	long long degree;
+	objective_func.getInverted(tmpConstraint);
+	tmpConstraint.getNormalForm(lits,coefs,degree);
+	objective = ca.alloc(lits, coefs, 0, true);
+	ca[objective].lbd=lits.size();
+	attachClause(objective);
+	learnts.push_back(objective);
+
+	while(solve({})){
+		last_sol_obj_val = 0;
+		for(int v: objective_func.vars){
+			last_sol_obj_val+=objective_func.coefs[v]*last_sol[v];
+		}
+		cout << "o " << last_sol_obj_val << endl;
+
+		objective_func.getInverted(tmpConstraint);
+		tmpConstraint.addRhs(-last_sol_obj_val+1);
+		tmpConstraint.postProcess();
+		tmpConstraint.getNormalForm(lits,coefs,degree);
+		objective = ca.alloc(lits, coefs, degree, true);
+		ca[objective].lbd=lits.size();
+		attachClause(objective);
+		learnts.push_back(objective);
+	}
+	exit_UNSAT();
+}
+
 int main(int argc, char**argv){
 	read_options(argc, argv);
 	initial_time = cpuTime();
@@ -1474,9 +1510,11 @@ int main(int argc, char**argv){
 	std::cout << "c #variables=" << orig_n << " #constraints=" << clauses.size() << std::endl;
 
 	if(objective_func.vars.size() > 0){
-		solveLinearAssumps();
+		//solveLinearAssumps();
+		solveLinear();
 		exit_OPT();
 	}else{
+		// TODO: fix empty objective function
 		if(solve({})) exit_SAT();
 		else exit_UNSAT();
 	}
