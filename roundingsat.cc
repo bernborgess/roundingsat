@@ -165,8 +165,6 @@ int verbosity = 1;
 // currently, the maximum number of variables is hardcoded (variable N), and most arrays are of fixed size.
 int n = 0;
 int orig_n = 0;
-int opt_K = 0;
-int opt_normalize_add = 0, opt_coef_sum = 0;
 vector<CRef> clauses, learnts;
 CRef objective=CRef_Undef;
 bool optimizing(){ return objective!=CRef_Undef; }
@@ -234,7 +232,10 @@ vector<int> _Level; vector<int>::iterator Level;
 vector<int> _Pos; vector<int>::iterator Pos; // TODO: could be var-map instead of lit-map
 vector<int> trail_lim;
 int qhead; // for unit propagation
-vector<int> phase;
+int last_sol_obj_val = std::numeric_limits<int>::max();
+bool foundSolution(){return last_sol_obj_val!=std::numeric_limits<int>::max();}
+vector<bool> last_sol;
+vector<int> phase; // TODO: should be bool?
 void newDecisionLevel() { trail_lim.push_back(trail.size()); }
 int decisionLevel() { return trail_lim.size(); }
 
@@ -537,6 +538,7 @@ struct Constraint{
 	}
 };
 
+Constraint<int, long long> objective_func;
 Constraint<int, long long> tmpConstraint;
 Constraint<long long, __int128> confl_data;
 
@@ -652,7 +654,9 @@ void attachClause(CRef cr){
 	}
 	C.sumwatchcoefs = 0;
 	C.nwatch = 0;
-	int mxcoef = 0; for(int i=0;i<(int)C.size();i++) if (abs(C.lits()[i]) <= n - opt_K) mxcoef = max(mxcoef, C.coefs()[i]);
+	int mxcoef = 0; for(int i=0;i<(int)C.size();i++) mxcoef = max(mxcoef, C.coefs()[i]);
+	// TODO: ask Jan about code below
+	// int mxcoef = 0; for(int i=0;i<(int)C.size();i++) if (abs(C.lits()[i]) <= n - opt_K) mxcoef = max(mxcoef, C.coefs()[i]);
 	C.minsumwatch = (long long) C.w + mxcoef;
 	for(int i=0;i<(int)C.size();i++) {
 		C.sumwatchcoefs += C.coefs()[i];
@@ -864,7 +868,9 @@ void setNbVariables(long long nvars){
 	resizeLitMap(_Level,Level,nvars,-1);
 	resizeLitMap(_Pos,Pos,nvars,-1);
 	activity.resize(nvars+1,0);
-	phase.resize(nvars+1);
+	phase.resize(nvars+1,false);
+	last_sol.resize(nvars+1,false);
+	objective_func.resize(nvars+1);
 	tmpConstraint.resize(nvars+1);
 	confl_data.resize(nvars+1);
 	order_heap.resize(nvars);
@@ -955,41 +961,8 @@ int read_number(const string & s) {
 	return answer;
 }
 
-// NOTE: must be called after adding the original constraints, as we implement the objective as a learnt constraint
-void addObjective(Constraint<int, long long>& c) {
-	std::vector<int> lits; std::vector<int> coefs;
-	for(int v: c.vars) if(c.coefs[v]!=0) {
-		lits.push_back(v);
-		coefs.push_back(c.coefs[v]);
-	}
-	opt_coef_sum = 0;
-	opt_normalize_add = 0;
-	for(size_t i=0;i<lits.size();i++){
-		if(coefs[i] < 0) lits[i]*=-1,coefs[i]*=-1,opt_normalize_add+=coefs[i];
-		opt_coef_sum+=coefs[i];
-		lits[i]=-lits[i];
-		if (opt_coef_sum > (int) 1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
-	}
-	opt_K = 0; while ((1<<opt_K) <= opt_coef_sum) opt_K++;
-	for(int i=0;i<opt_K;i++)lits.push_back(n+1+i),coefs.push_back(1<<i);
-	setNbVariables(n+opt_K);
-
-	if(lits.size()==0) {
-		// Add dummy objective that evaluates to 0
-		objective = ca.alloc({0, 0}, {0, 0}, 0, true);
-	}else{
-		objective = ca.alloc(lits, coefs, opt_coef_sum, true);
-	}
-	Clause& C = ca[objective];
-	C.lbd = lits.size();
-	attachClause(objective);
-	learnts.push_back(objective);
-}
-
 void opb_read(istream & in) {
 	Constraint<int,long long> inverted;
-	Constraint<int,long long> objective_func;
-	bool opt = false;
 	bool first_constraint = true;
 	_unused(first_constraint);
 	for (string line; getline(in, line);) {
@@ -1032,7 +1005,7 @@ void opb_read(istream & in) {
 				if (negated) l = -l;
 				tmpConstraint.addLhs(coef,l);
 			}
-			if (opt_line) opt=true, objective_func=tmpConstraint;
+			if (opt_line) objective_func=tmpConstraint;
 			else {
 				tmpConstraint.addRhs(read_number(line0.substr(line0.find("=") + 1)));
 				// Handle equality case with two constraints
@@ -1045,11 +1018,10 @@ void opb_read(istream & in) {
 		}
 	}
 	orig_n=n;
-	if(opt) addObjective(objective_func);
 }
 
 void wcnf_read(istream & in, long long top) {
-	std::vector<int> weights;
+	std::vector<int> weights; // TODO: refactor to remove weights: work directly with objective_func
 	for (string line; getline(in, line);) {
 		if (line.empty() || line[0] == 'c') continue;
 		else {
@@ -1071,9 +1043,8 @@ void wcnf_read(istream & in, long long top) {
 		}
 	}
 	orig_n = n-weights.size();
-	tmpConstraint.reset();
-	for(int i=0; i<(int) weights.size(); ++i) tmpConstraint.addLhs(weights[i],orig_n+1+i);
-	addObjective(tmpConstraint);
+	objective_func.reset();
+	for(int i=0; i<(int) weights.size(); ++i) objective_func.addLhs(weights[i],orig_n+1+i);
 }
 
 void cnf_read(istream & in) {
@@ -1240,9 +1211,6 @@ void print_stats() {
 	printf("d weakened non-implying lits %lld\n", NWEAKENEDNONIMPLYING);
 }
 
-int last_sol_value;
-vector<bool> last_sol;
-
 bool checksol() {
 	for(CRef cr: clauses){
 		Clause& C = ca[cr];
@@ -1261,19 +1229,19 @@ void exit_SAT() {
 	assert(checksol());
 	print_stats();
 	puts("s SATISFIABLE");
-	printf("v");for(int i=1;i<=orig_n;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
+	//printf("v");for(int i=1;i<=orig_n;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
 	exit(10);
 }
 
 void exit_UNSAT() {
-	if(!last_sol.empty()) exit_OPT();
+	if(foundSolution()) exit_OPT();
 	print_stats();
 	puts("s UNSATISFIABLE");
 	exit(20);
 }
 
 void exit_INDETERMINATE() {
-	if (!last_sol.empty()) exit_SAT();
+	if(foundSolution()) exit_SAT();
 	print_stats();
 	puts("s UNKNOWN");
 	exit(0);
@@ -1283,8 +1251,8 @@ void exit_OPT() {
 	assert(checksol());
 	print_stats();
 	cout << "s OPTIMUM FOUND" << endl;
-	cout << "c objective function value " << last_sol_value << endl;
-	printf("v");for(int i=1;i<=orig_n;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
+	cout << "c objective function value " << last_sol_obj_val << endl;
+	//printf("v");for(int i=1;i<=orig_n;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
 	exit(30);
 }
 
@@ -1410,11 +1378,77 @@ bool solve(vector<int> assumptions) {
 				}
 			}
 			if(next==0) next = pickBranchLit();
-			if(next==0) { assert(order_heap.empty()); return true; }
+			if(next==0) {
+				assert(order_heap.empty());
+				for (int i = 1; i <= orig_n; ++i)last_sol[i] = (~Level[i]);
+				last_sol_obj_val=std::numeric_limits<int>::max()-1;
+				return true;
+			}
 			newDecisionLevel();
 			NDECIDE++;
 			uncheckedEnqueue(next,CRef_Undef);
 		}
+	}
+}
+
+int opt_K = 0;
+int opt_normalize_add = 0, opt_coef_sum = 0;
+
+// NOTE: must be called after adding the original constraints, as we implement the objective as a learnt constraint
+void addObjectiveAssumps(Constraint<int, long long>& c) {
+	std::vector<int> lits; std::vector<int> coefs;
+	for(int v: c.vars) if(c.coefs[v]!=0) {
+			lits.push_back(v);
+			coefs.push_back(c.coefs[v]);
+		}
+	opt_coef_sum = 0;
+	opt_normalize_add = 0;
+	for(size_t i=0;i<lits.size();i++){
+		if(coefs[i] < 0) lits[i]*=-1,coefs[i]*=-1,opt_normalize_add+=coefs[i];
+		opt_coef_sum+=coefs[i];
+		lits[i]=-lits[i];
+		if (opt_coef_sum > (int) 1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
+	}
+	opt_K = 0; while ((1<<opt_K) <= opt_coef_sum) opt_K++;
+	for(int i=0;i<opt_K;i++)lits.push_back(n+1+i),coefs.push_back(1<<i);
+	setNbVariables(n+opt_K);
+
+	if(lits.size()==0) {
+		// Add dummy objective that evaluates to 0
+		objective = ca.alloc({0, 0}, {0, 0}, 0, true);
+	}else{
+		objective = ca.alloc(lits, coefs, opt_coef_sum, true);
+	}
+	Clause& C = ca[objective];
+	C.lbd = lits.size();
+	attachClause(objective);
+	learnts.push_back(objective);
+}
+
+void solveLinearAssumps() {
+	assert(objective_func.vars.size() > 0);
+	addObjectiveAssumps(objective_func);
+
+	for (int m = opt_coef_sum; m >= 0; m--) {
+		vector<int> aux;
+		for (int i = 0; i < opt_K; i++) {
+			if (m & (1 << i)) aux.push_back(n - opt_K + 1 + i);
+			else aux.push_back(-(n - opt_K + 1 + i));
+		}
+		if (solve(aux)) {
+			if (optimizing()) {
+				int s = 0;
+				Clause& C = ca[objective];
+				for (int i = 0; i < (int) C.size(); i++)
+					if (abs(C.lits()[i]) <= n - opt_K) {
+						if (~Level[C.lits()[i]]) s += C.coefs()[i];
+					}
+				assert(opt_coef_sum - s <= m);
+				m = opt_coef_sum - s;
+				last_sol_obj_val = m - opt_normalize_add;
+				cout << "o " << last_sol_obj_val << endl;
+			}
+		} else break;
 	}
 }
 
@@ -1438,33 +1472,12 @@ int main(int argc, char**argv){
 	signal(SIGXCPU,SIGINT_interrupt);
 
 	std::cout << "c #variables=" << orig_n << " #constraints=" << clauses.size() << std::endl;
-	for (int m = opt_coef_sum; m >= 0; m--) {
-		vector<int> aux;
-		for (int i = 0; i < opt_K; i++) {
-			if (m & (1 << i)) aux.push_back(  n-opt_K+1 + i);
-			else              aux.push_back(-(n-opt_K+1 + i));
-		}
-		if (solve(aux)) {
-			last_sol.resize(n+1-opt_K);
-			for (int i=1;i<=n-opt_K;i++)if(~Level[i])last_sol[i]=true;else last_sol[i]=false;
-			if (optimizing()) {
-				// m + sum(coeff[i]*~ell[i]) >= opt_coef_sum possible.
-				// m + opt_coef_sum - sum(coeff[i]*ell[i]) >= opt_coef_sum possible.
-				// sum(coeff[i]*ell[i]) <= m possible.
-				// sum(coeff0[i]*x[i]) + opt_normalize_add <= m possible.
-				// sum(coeff0[i]*x[i]) <= m - opt_normalize_add possible.
-				int s = 0;
-				Clause & C = ca[objective];
-				for (int i=0; i<(int)C.size(); i++) if (abs(C.lits()[i]) <= n-opt_K) {
-					if (~Level[C.lits()[i]]) s += C.coefs()[i];
-				}
-				assert(opt_coef_sum - s <= m);
-				m = opt_coef_sum - s;
-				last_sol_value = m - opt_normalize_add;
-				cout << "o " << last_sol_value << endl;
-			}
-		} else break;
+
+	if(objective_func.vars.size() > 0){
+		solveLinearAssumps();
+		exit_OPT();
+	}else{
+		if(solve({})) exit_SAT();
+		else exit_UNSAT();
 	}
-	if (!optimizing()) exit_SAT();
-	else exit_OPT();
 }
