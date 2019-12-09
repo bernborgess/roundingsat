@@ -59,7 +59,7 @@ template <class T, class S> inline bool greater_than(const T& x, const S& y){
 template <class T, class S> inline bool greater_than_eq(const T& x, const S& y){
 	if(x<y){std::cerr << x << ">=" << y << std::endl;} return x>=y; }
 
-void exit_SAT(),exit_UNSAT(),exit_INDETERMINATE(),exit_OPT(),exit_ERROR(const std::initializer_list<std::string>&);
+void exit_SAT(),exit_UNSAT(),exit_INDETERMINATE(),exit_ERROR(const std::initializer_list<std::string>&);
 
 // Minisat cpuTime function
 #include <sys/time.h>
@@ -263,9 +263,22 @@ struct Constraint{
 		saturate();
 	}
 
-	void cleanUp(){
+	long long removeUnits(){
 		for(int i=0; i<(int)vars.size(); ++i){
-			int v =vars[i];
+			int v=vars[i];
+			if(Level[v]==0) addRhs(-coefs[v]);
+			if(Level[v]==0 || Level[-v]==0){
+				coefs[v]=_unused_();
+				swapErase(vars,i);
+				--i;
+			}
+		}
+		return saturate();
+	}
+
+	void removeZeroes(){
+		for(int i=0; i<(int)vars.size(); ++i){
+			int v=vars[i];
 			if(coefs[v]==0){
 				coefs[v]=_unused_();
 				swapErase(vars,i);
@@ -392,8 +405,8 @@ struct Constraint{
 
 	// NOTE: only equivalence preserving operations here!
 	void postProcess(){
-		cleanUp();
-		LARGE degree = saturate();
+		LARGE degree = removeUnits();
+		removeZeroes();
 		assert(degree<=1e9); // we assume int coefficients in the rest of this method
 		if(degree<=1 || vars.size()==0) return;
 		int w=(int)degree;
@@ -454,7 +467,7 @@ struct Constraint{
 
 	int getAssertionLevel(){
 		// compute an assertion level
-		cleanUp(); // ensures getLit is never 0
+		removeZeroes(); // ensures getLit is never 0
 		std::sort(vars.begin(),vars.end(),[&](int v1,int v2){
 			return Pos[-getLit(v1)]>Pos[-getLit(v2)];
 		});
@@ -493,7 +506,7 @@ struct Constraint{
 	LARGE weakenNonImplying(SMALL propCoef, LARGE slack){
 		LARGE wiggle_room = propCoef-slack-1;
 		if(wiggle_room<=0) return slack;
-		cleanUp(); // ensures getLit(v)!=0
+		removeZeroes(); // ensures getLit(v)!=0
 		int j=0;
 		for(int i=0; i<(int)vars.size(); ++i){
 			int v = vars[i];
@@ -1238,10 +1251,17 @@ void exit_SAT() {
 }
 
 void exit_UNSAT() {
-	if(foundSolution()) exit_OPT();
 	print_stats();
-	puts("s UNSATISFIABLE");
-	exit(20);
+	if(foundSolution()){
+		assert(checksol());
+		cout << "s OPTIMUM FOUND" << endl;
+		cout << "c objective function value " << last_sol_obj_val << endl;
+		//printf("v");for(int i=1;i<=orig_n;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
+		exit(30);
+	}else{
+		puts("s UNSATISFIABLE");
+		exit(20);
+	}
 }
 
 void exit_INDETERMINATE() {
@@ -1249,15 +1269,6 @@ void exit_INDETERMINATE() {
 	print_stats();
 	puts("s UNKNOWN");
 	exit(0);
-}
-
-void exit_OPT() {
-	assert(checksol());
-	print_stats();
-	cout << "s OPTIMUM FOUND" << endl;
-	cout << "c objective function value " << last_sol_obj_val << endl;
-	//printf("v");for(int i=1;i<=orig_n;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
-	exit(30);
 }
 
 void exit_ERROR(const std::initializer_list<std::string>& messages){
@@ -1326,7 +1337,8 @@ long long nconfl_to_restart=0;
 //reduceDB:
 int cnt_reduceDB=1;
 
-bool solve(vector<int> assumptions) {
+// NOTE: returned CRef is only valid until the next garbage collection phase
+CRef solve(vector<int> assumptions) {
 	backjumpTo(0); // ensures assumptions are reset
 	std::vector<unsigned int> assumptions_lim={0};
 	assumptions_lim.reserve(assumptions.size());
@@ -1335,9 +1347,7 @@ bool solve(vector<int> assumptions) {
 		if (confl != CRef_Undef) {
 			varDecayActivity();
 			claDecayActivity();
-			if (decisionLevel() == 0) {
-				exit_UNSAT();
-			}
+			if (decisionLevel() == 0) exit_UNSAT();
 			NCONFL++; nconfl_to_restart--;
 			if(NCONFL%1000==0){
 				if (verbosity > 0) {
@@ -1372,7 +1382,7 @@ bool solve(vector<int> assumptions) {
 			if(assumptions_lim.size()>(unsigned int) decisionLevel()+1)assumptions_lim.resize(decisionLevel()+1);
 			while(assumptions_lim.back()<assumptions.size()){
 				int l = assumptions[assumptions_lim.back()];
-				if (~Level[-l]) return false;
+				if (~Level[-l]) return Reason[-l];
 				if (~Level[l]){
 					++assumptions_lim.back();
 				}else{
@@ -1386,7 +1396,7 @@ bool solve(vector<int> assumptions) {
 				assert(order_heap.empty());
 				for (int i = 1; i <= orig_n; ++i)last_sol[i] = (~Level[i]);
 				last_sol_obj_val=1e9;
-				return true;
+				return CRef_Undef;
 			}
 			newDecisionLevel();
 			NDECIDE++;
@@ -1436,7 +1446,7 @@ void solveLinearAssumps() {
 			if (m & (1 << i)) aux.push_back(n - opt_K + 1 + i);
 			else aux.push_back(-(n - opt_K + 1 + i));
 		}
-		if (solve(aux)) {
+		if (solve(aux)==CRef_Undef) {
 			if (optimizing()) {
 				int s = 0;
 				Clause& C = ca[objective];
@@ -1451,6 +1461,7 @@ void solveLinearAssumps() {
 			}
 		} else break;
 	}
+	exit_UNSAT();
 }
 
 void solveLinear(){
@@ -1469,7 +1480,7 @@ void solveLinear(){
 	attachClause(objective);
 	learnts.push_back(objective);
 
-	while(solve({})){
+	while(solve({})==CRef_Undef){
 		last_sol_obj_val = 0;
 		for(int v: objective_func.vars){
 			last_sol_obj_val+=objective_func.coefs[v]*last_sol[v];
@@ -1512,10 +1523,9 @@ int main(int argc, char**argv){
 	if(objective_func.vars.size() > 0){
 		//solveLinearAssumps();
 		solveLinear();
-		exit_OPT();
 	}else{
 		// TODO: fix empty objective function
-		if(solve({})) exit_SAT();
+		if(solve({})==CRef_Undef) exit_SAT();
 		else exit_UNSAT();
 	}
 }
