@@ -72,27 +72,36 @@ static inline double cpuTime(void) {
 
 struct Clause {
 	struct {
+		unsigned locked       : 1;
+		unsigned cleanup      : 1;
+		unsigned lbd          : 30;
 		unsigned markedfordel : 1;
 		unsigned learnt       : 1;
-		unsigned size         : 30; } header;
+		unsigned size         : 30;
+	} header;
+	float act;
 	// watch data
 	int nwatch;
 	long long sumwatchcoefs;
 	long long minsumwatch;
 	// ordinary data
 	int w;
-	float act;
-	int lbd;
 	int data[0];
 
-	size_t size() const { return header.size; }
-	
-	int * lits() { return data; }
-	int * coefs() { return (int*)(data+header.size); }
-	
-	bool learnt() const { return header.learnt; }
-	bool markedfordel() const { return header.markedfordel; }
-	void markfordel() { header.markedfordel=1; }
+	inline size_t size() const { return header.size; }
+	inline int * lits() { return data; }
+	inline int * coefs() { return (int*)(data+header.size); }
+
+	inline unsigned int lbd() const { return header.lbd; }
+	inline void setLBD(unsigned int lbd){ header.lbd=min(header.lbd,lbd); }
+	inline bool learnt() const { return header.learnt; }
+	inline bool markedfordel() const { return header.markedfordel; }
+	inline void markfordel() { header.markedfordel=1; }
+	inline bool locked() const { return header.locked; }
+	inline void lock() { header.locked=1; }
+	inline void unlock() { header.locked=0; }
+	inline bool forcedToClean() const { return header.cleanup; }
+	inline void forceCleanup() { header.cleanup=1; }
 };
 
 // ---------------------------------------------------------------------
@@ -116,8 +125,8 @@ static inline void* xrealloc(void *ptr, size_t size)
 }
 struct {
 	uint32_t* memory;
-	uint32_t at, cap;
-	uint32_t wasted; // for GC
+	uint32_t at=0, cap=0;
+	uint32_t wasted=0; // for GC
 	void capacity(uint32_t min_cap)
 	{
 		if (cap >= min_cap) return;
@@ -140,20 +149,21 @@ struct {
 		memory = (uint32_t*) xrealloc(memory, sizeof(uint32_t) * cap);
 	}
 	int sz_clause(int length) { return (sizeof(Clause)+sizeof(int)*length+sizeof(int)*length)/sizeof(uint32_t); }
-	CRef alloc(vector<int> lits, vector<int> coefs, int w, bool learnt){ // TODO: take Constraint
+	// TODO: pass Constraint as input to alloc
+	CRef alloc(const vector<int>& lits, const vector<int>& coefs, int w, bool learnt, bool locked=false){
 		assert(!lits.empty());
-		int length = (int) lits.size();
+		unsigned int length = lits.size();
 		// note: coefficients can be arbitrarily ordered (we don't sort them in descending order for example)
 		// during maintenance of watches the order will be shuffled.
 		capacity(at + sz_clause(length));
 		Clause * clause = (Clause*)(memory+at);
 		new (clause) Clause;
 		at += sz_clause(length);
-		clause->header = {0, learnt, (unsigned)length};
+		clause->header = {locked,0,(unsigned)lits.size(),0,learnt,(unsigned)length};
 		clause->w = w;
 		clause->act = 0;
-		for(int i=0;i<length;i++)clause->lits()[i]=lits[i];
-		for(int i=0;i<length;i++)clause->coefs()[i]=coefs[i];
+		for(unsigned int i=0;i<length;i++)clause->lits()[i]=lits[i];
+		for(unsigned int i=0;i<length;i++)clause->coefs()[i]=coefs[i];
 		return {(uint32_t)(at-sz_clause(length))};
 	}
 	Clause& operator[](CRef cr) { return (Clause&)*(memory+cr.ofs); }
@@ -678,16 +688,11 @@ void attachClause(CRef cr){
 	}
 }
 
-inline bool locked(CRef cr){
-	assert(decisionLevel()==0);
-	return objective==cr;
-}
-
 void removeClause(CRef cr){
 	assert(decisionLevel()==0);
 	Clause& c = ca[cr];
 	assert(!c.markedfordel());
-	assert(!locked(cr));
+	assert(!c.locked());
 	c.markfordel();
 	ca.wasted += ca.sz_clause(c.size());
 }
@@ -700,7 +705,7 @@ void uncheckedEnqueue(int p, CRef from){
 	Pos[p] = (int) trail.size();
 	if(decisionLevel()==0 && from!=CRef_Undef){
 		Reason[p]=CRef_Undef; // avoid locked clauses for unit literals
-		ca[from].lbd=1; // but do keep these clauses around!
+		ca[from].setLBD(1); // but do keep these clauses around!
 	}else Reason[p]=from;
 	trail.push_back(p);
 }
@@ -726,19 +731,18 @@ void backjumpTo(int level){
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 
-int computeLBD(CRef cr) {
-	Clause & C = ca[cr];
+unsigned int computeLBD(Clause& C) {
 	set<int> levels;
 	int * lits = C.lits();
 	for (int i=0; i<(int)C.size(); i++) if (Level[-lits[i]] != -1) levels.insert(Level[-lits[i]]);
-	return (int) levels.size();
+	return levels.size();
 }
 
 void analyze(CRef confl){
 	Clause & C = ca[confl];
 	if (C.learnt()) {
 		claBumpActivity(C);
-		if (C.lbd > 2) C.lbd = min(C.lbd, computeLBD(confl));
+		if (C.lbd() > 2) C.setLBD(computeLBD(C));
 	}
 
 	confl_data.init(C);
@@ -761,7 +765,7 @@ void analyze(CRef confl){
 				Clause& reasonC = ca[Reason[l]];
 				if (reasonC.learnt()) {
 					claBumpActivity(reasonC);
-					if (reasonC.lbd > 2) reasonC.lbd = min(reasonC.lbd, computeLBD(Reason[l]));
+					if (reasonC.lbd() > 2) reasonC.setLBD(computeLBD(reasonC));
 				}
 				tmpConstraint.init(reasonC);
 				tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack());
@@ -909,9 +913,9 @@ void learnConstraint(Constraint<long long,__int128>& c){
 	assert(degree>0);
 	assert(degree<=1e9);
 	int w = (int)degree;
-	CRef cr = ca.alloc(lits,coefs,w, true);
+	CRef cr = ca.alloc(lits,coefs,w,true);
 	Clause & C = ca[cr];
-	C.lbd = computeLBD(cr);
+	C.setLBD(computeLBD(C));
 	attachClause(cr);
 	learnts.push_back(cr);
 
@@ -946,7 +950,7 @@ void addConstraint(Constraint<int, long long>& c){
 	if(degree<=0) return; // already satisfied.
 	int w=(int)degree;
 
-	CRef cr = ca.alloc(lits, coefs, w, false);
+	CRef cr = ca.alloc(lits, coefs, w, false, true);
 	attachClause(cr);
 	clauses.push_back(cr);
 	//TODO: have attachClause perform this propagation, similar to Stephan's XOR-branch
@@ -1145,8 +1149,8 @@ struct reduceDB_lt {
     if(ca[x].size()==2 && ca[y].size()==2) return 0;
     
     // Second one  based on literal block distance
-    if(ca[x].lbd> ca[y].lbd) return 1;
-    if(ca[x].lbd< ca[y].lbd) return 0;    
+    if(ca[x].lbd() > ca[y].lbd()) return 1;
+    if(ca[x].lbd() < ca[y].lbd()) return 0;
     
     
     // Finally we can use old activity or size, we choose the last one
@@ -1161,12 +1165,15 @@ void reduceDB(){
 	size_t i, j;
 
 	sort(learnts.begin(), learnts.end(), reduceDB_lt());
-	if(ca[learnts[learnts.size() / 2]].lbd<=3) nbclausesbeforereduce += 1000;
+	if(ca[learnts[learnts.size() / 2]].lbd()<=3) nbclausesbeforereduce += 1000;
 	// Don't delete binary or locked clauses. From the rest, delete clauses from the first half
 	// and clauses with activity smaller than 'extra_lim':
 	for (i = j = 0; i < learnts.size(); i++){
 		Clause& c = ca[learnts[i]];
-		if (c.lbd>2 && c.size() > 2 && !locked(learnts[i]) && i < learnts.size() / 2)
+		if (c.forcedToClean()){
+			assert(!c.locked());
+			removeClause(learnts[i]);
+		}else if (c.lbd()>2 && c.size() > 2 && !c.locked() && i < learnts.size() / 2)
 			removeClause(learnts[i]);
 		else
 			learnts[j++] = learnts[i];
@@ -1427,13 +1434,7 @@ void solveLinearAssumps() {
 	for(int i=0;i<opt_K;i++)lits.push_back(n+1+i),coefs.push_back(1<<i);
 	setNbVariables(n+opt_K);
 
-	if(lits.size()==0) {
-		// Add dummy objective that evaluates to 0
-		objective = ca.alloc({0, 0}, {0, 0}, 0, true);
-	}else{
-		objective = ca.alloc(lits, coefs, opt_coef_sum, true);
-	}
-	ca[objective].lbd = lits.size();
+	objective = ca.alloc(lits, coefs, opt_coef_sum, true, true);
 	attachClause(objective);
 	learnts.push_back(objective);
 
@@ -1481,8 +1482,9 @@ void solveLinear(){
 			if(degree>0 || solve({})!=CRef_Undef) exit_UNSAT();
 			exit_SAT();
 		}
-		objective = ca.alloc(lits, coefs, degree, true);
-		ca[objective].lbd=lits.size();
+		if(objective!=CRef_Undef) ca[objective].unlock(), ca[objective].forceCleanup();
+		objective = ca.alloc(lits, coefs, degree, true, true);
+		assert(ca[objective].locked());
 		attachClause(objective);
 		learnts.push_back(objective);
 	}
