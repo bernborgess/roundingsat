@@ -70,12 +70,13 @@ static inline double cpuTime(void) {
 	getrusage(RUSAGE_SELF, &ru);
 	return (double)ru.ru_utime.tv_sec + (double)ru.ru_utime.tv_usec / 1000000; }
 
+enum DeletionStatus { LOCKED, UNLOCKED, FORCEDELETE, MARKEDFORDELETE };
+
 struct Clause {
 	struct {
-		unsigned locked       : 1;
-		unsigned cleanup      : 1;
+		unsigned status       : 2;
 		unsigned lbd          : 30;
-		unsigned markedfordel : 1;
+		unsigned unused       : 1;
 		unsigned learnt       : 1;
 		unsigned size         : 30;
 	} header;
@@ -92,16 +93,11 @@ struct Clause {
 	inline int * lits() { return data; }
 	inline int * coefs() { return (int*)(data+header.size); }
 
-	inline unsigned int lbd() const { return header.lbd; }
+	inline void setStatus(DeletionStatus ds){ header.status=(unsigned) ds; }
+	inline DeletionStatus getStatus(){ return (DeletionStatus) header.status; }
 	inline void setLBD(unsigned int lbd){ header.lbd=min(header.lbd,lbd); }
+	inline unsigned int lbd() const { return header.lbd; }
 	inline bool learnt() const { return header.learnt; }
-	inline bool markedfordel() const { return header.markedfordel; }
-	inline void markfordel() { header.markedfordel=1; }
-	inline bool locked() const { return header.locked; }
-	inline void lock() { header.locked=1; }
-	inline void unlock() { header.locked=0; }
-	inline bool forcedToClean() const { return header.cleanup; }
-	inline void forceCleanup() { header.cleanup=1; }
 };
 
 // ---------------------------------------------------------------------
@@ -159,7 +155,7 @@ struct {
 		Clause * clause = (Clause*)(memory+at);
 		new (clause) Clause;
 		at += sz_clause(length);
-		clause->header = {locked,0,(unsigned)lits.size(),0,learnt,(unsigned)length};
+		clause->header = {(unsigned) (locked?LOCKED:UNLOCKED),length,0,learnt,length};
 		clause->w = w;
 		clause->act = 0;
 		for(unsigned int i=0;i<length;i++)clause->lits()[i]=lits[i];
@@ -175,8 +171,7 @@ int verbosity = 1;
 // currently, the maximum number of variables is hardcoded (variable N), and most arrays are of fixed size.
 int n = 0;
 int orig_n = 0;
-vector<CRef> clauses, learnts;
-CRef objective=CRef_Undef;
+vector<CRef> clauses, learnts, external;
 struct Watch {
 	CRef cref;
 };
@@ -475,7 +470,10 @@ struct Constraint{
 	}
 
 	int getAssertionLevel(){
-		// compute an assertion level
+		if(decisionLevel()==0) return 0;
+		// TODO: compute least deep assertion level
+
+		// compute deepest assertion level
 		removeZeroes(); // ensures getLit is never 0
 		std::sort(vars.begin(),vars.end(),[&](int v1,int v2){
 			return Pos[-getLit(v1)]>Pos[-getLit(v2)];
@@ -691,9 +689,9 @@ void attachClause(CRef cr){
 void removeClause(CRef cr){
 	assert(decisionLevel()==0);
 	Clause& c = ca[cr];
-	assert(!c.markedfordel());
-	assert(!c.locked());
-	c.markfordel();
+	assert(c.getStatus()!=MARKEDFORDELETE);
+	assert(c.getStatus()!=LOCKED);
+	c.setStatus(MARKEDFORDELETE);
 	ca.wasted += ca.sz_clause(c.size());
 }
 
@@ -801,7 +799,7 @@ CRef propagate() {
 			CRef cr = i->cref;
 			i++;
 			Clause & C = ca[cr];
-			if(C.header.markedfordel)continue;
+			if(C.getStatus()>=FORCEDELETE) continue; // NOTE: does make a difference in performance!
 			int * lits = C.lits();
 			int * coefs = C.coefs();
 			bool watchlocked = false;
@@ -1117,7 +1115,7 @@ void garbage_collect(){
 		size_t i, j;
 		for(i=0,j=0;i<adj[l].size();i++){
 			CRef cr = adj[l][i].cref;
-			if(!ca[cr].markedfordel())adj[l][j++]=adj[l][i];
+			if(ca[cr].getStatus()!=MARKEDFORDELETE) adj[l][j++]=adj[l][i];
 		}
 		adj[l].erase(adj[l].begin()+j,adj[l].end());
 	}
@@ -1134,8 +1132,8 @@ void garbage_collect(){
 		ca.at += ca.sz_clause(length);
 	}
 	#define update_ptr(cr) if(cr.ofs>=ofs_learnts)cr=learnts[lower_bound(learnts_old.begin(), learnts_old.end(), cr)-learnts_old.begin()]
-	for(int l=-n;l<=n;l++) for(size_t i=0;i<adj[l].size();i++) update_ptr(adj[l][i].cref);
-	if(objective!=CRef_Undef) update_ptr(objective);
+	for(int l=-n;l<=n;l++) for(size_t i=0;i<adj[l].size();i++) update_ptr(adj[l][i].cref); // TODO: this is a quadratic operation? Maybe use an unordered_map instead?
+	for(CRef& ext: external) update_ptr(ext);
 	#undef update_ptr
 }
 
@@ -1170,10 +1168,9 @@ void reduceDB(){
 	// and clauses with activity smaller than 'extra_lim':
 	for (i = j = 0; i < learnts.size(); i++){
 		Clause& c = ca[learnts[i]];
-		if (c.forcedToClean()){
-			assert(!c.locked());
+		if (c.getStatus()==FORCEDELETE){
 			removeClause(learnts[i]);
-		}else if (c.lbd()>2 && c.size() > 2 && !c.locked() && i < learnts.size() / 2)
+		}else if (c.lbd()>2 && c.size() > 2 && c.getStatus()==UNLOCKED && i < learnts.size() / 2)
 			removeClause(learnts[i]);
 		else
 			learnts[j++] = learnts[i];
@@ -1434,9 +1431,9 @@ void solveLinearAssumps() {
 	for(int i=0;i<opt_K;i++)lits.push_back(n+1+i),coefs.push_back(1<<i);
 	setNbVariables(n+opt_K);
 
-	objective = ca.alloc(lits, coefs, opt_coef_sum, true, true);
-	attachClause(objective);
-	learnts.push_back(objective);
+	external.push_back(ca.alloc(lits, coefs, opt_coef_sum, true, true));
+	attachClause(external.back());
+	learnts.push_back(external.back());
 
 	for (int m = opt_coef_sum; m >= 0; m--) {
 		vector<int> aux;
@@ -1446,7 +1443,7 @@ void solveLinearAssumps() {
 		}
 		if (solve(aux)==CRef_Undef) {
 			int s = 0;
-			Clause& C = ca[objective];
+			Clause& C = ca[external.back()];
 			for (int i = 0; i < (int) C.size(); i++)
 				if (abs(C.lits()[i]) <= n - opt_K && ~Level[C.lits()[i]])
 					s += C.coefs()[i];
@@ -1482,11 +1479,15 @@ void solveLinear(){
 			if(degree>0 || solve({})!=CRef_Undef) exit_UNSAT();
 			exit_SAT();
 		}
-		if(objective!=CRef_Undef) ca[objective].unlock(), ca[objective].forceCleanup();
-		objective = ca.alloc(lits, coefs, degree, true, true);
-		assert(ca[objective].locked());
-		attachClause(objective);
-		learnts.push_back(objective);
+		if(external.size()>0){
+			assert(external.size()==1);
+			ca[external[0]].setStatus(FORCEDELETE);
+			external.pop_back();
+		}
+		external.push_back(ca.alloc(lits, coefs, degree, true, true));
+		assert(ca[external[0]].getStatus()==LOCKED);
+		attachClause(external[0]);
+		learnts.push_back(external[0]);
 	}
 	exit_UNSAT();
 }
