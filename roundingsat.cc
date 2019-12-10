@@ -167,7 +167,6 @@ int n = 0;
 int orig_n = 0;
 vector<CRef> clauses, learnts;
 CRef objective=CRef_Undef;
-bool optimizing(){ return objective!=CRef_Undef; }
 struct Watch {
 	CRef cref;
 };
@@ -233,11 +232,11 @@ vector<int> _Pos; vector<int>::iterator Pos; // TODO: could be var-map instead o
 vector<int> trail_lim;
 int qhead; // for unit propagation
 int last_sol_obj_val = 1e9+1;
-bool foundSolution(){return last_sol_obj_val<=1e9;}
+inline bool foundSolution(){return last_sol_obj_val<=1e9;}
 vector<bool> last_sol;
 vector<int> phase; // TODO: should be bool?
-void newDecisionLevel() { trail_lim.push_back(trail.size()); }
-int decisionLevel() { return trail_lim.size(); }
+inline void newDecisionLevel() { trail_lim.push_back(trail.size()); }
+inline int decisionLevel() { return trail_lim.size(); }
 
 template<class SMALL, class LARGE> // LARGE should be able to fit sums of SMALL
 struct Constraint{
@@ -679,16 +678,13 @@ void attachClause(CRef cr){
 	}
 }
 
-bool locked(CRef cr){
-	if(objective==cr) return true;
-	Clause & c = ca[cr];
-	for(size_t idx=0;idx<c.size();idx++){
-		if(Reason[c.lits()[idx]] == cr) return true;
-	}
-	return false;
+inline bool locked(CRef cr){
+	assert(decisionLevel()==0);
+	return objective==cr;
 }
 
 void removeClause(CRef cr){
+	assert(decisionLevel()==0);
 	Clause& c = ca[cr];
 	assert(!c.markedfordel());
 	assert(!locked(cr));
@@ -702,7 +698,10 @@ void uncheckedEnqueue(int p, CRef from){
 	assert(Level[p]==-1 && Level[-p]==-1);
 	Level[p] = -2; // TODO: ask Jan why this happens
 	Pos[p] = (int) trail.size();
-	Reason[p] = from;
+	if(decisionLevel()==0 && from!=CRef_Undef){
+		Reason[p]=CRef_Undef; // avoid locked clauses for unit literals
+		ca[from].lbd=1; // but do keep these clauses around!
+	}else Reason[p]=from;
 	trail.push_back(p);
 }
 
@@ -1034,7 +1033,7 @@ void opb_read(istream & in) {
 }
 
 void wcnf_read(istream & in, long long top) {
-	std::vector<int> weights; // TODO: refactor to remove weights: work directly with objective_func
+	objective_func.reset();
 	for (string line; getline(in, line);) {
 		if (line.empty() || line[0] == 'c') continue;
 		else {
@@ -1048,16 +1047,14 @@ void wcnf_read(istream & in, long long top) {
 			if(weight<top){ // soft clause
 				if(weight>1e9) exit_ERROR({"Clause weight exceeds 10^9: ",std::to_string(weight)});
 				if(weight<0) exit_ERROR({"Negative clause weight: ",std::to_string(weight)});
-				weights.push_back(weight);
 				setNbVariables(n+1); // increases n to n+1
+				objective_func.addLhs(weight,n);
 				tmpConstraint.addLhs(1,n);
 			} // else hard clause
 			addConstraint(tmpConstraint);
 		}
 	}
-	orig_n = n-weights.size();
-	objective_func.reset();
-	for(int i=0; i<(int) weights.size(); ++i) objective_func.addLhs(weights[i],orig_n+1+i);
+	orig_n = n-objective_func.vars.size();
 }
 
 void cnf_read(istream & in) {
@@ -1110,6 +1107,7 @@ void file_read(istream & in) {
 // We assume in the garbage collection method that reduceDB() is the
 // only place where clauses are deleted.
 void garbage_collect(){
+	assert(decisionLevel()==0); // so we don't need to update the pointer of Reason<CRef>
 	if (verbosity > 0) puts("c GARBAGE COLLECT");
 	for(int l=-n; l<=n; l++) {
 		size_t i, j;
@@ -1133,8 +1131,7 @@ void garbage_collect(){
 	}
 	#define update_ptr(cr) if(cr.ofs>=ofs_learnts)cr=learnts[lower_bound(learnts_old.begin(), learnts_old.end(), cr)-learnts_old.begin()]
 	for(int l=-n;l<=n;l++) for(size_t i=0;i<adj[l].size();i++) update_ptr(adj[l][i].cref);
-	for(int l=-n;l<=n;l++) if(Reason[l]!=CRef_Undef) update_ptr(Reason[l]);
-	if(optimizing()) update_ptr(objective);
+	if(objective!=CRef_Undef) update_ptr(objective);
 	#undef update_ptr
 }
 
@@ -1160,6 +1157,7 @@ struct reduceDB_lt {
     }    
 };
 void reduceDB(){
+	assert(decisionLevel()==0);
 	size_t i, j;
 
 	sort(learnts.begin(), learnts.end(), reduceDB_lt());
@@ -1253,9 +1251,9 @@ void exit_SAT() {
 void exit_UNSAT() {
 	print_stats();
 	if(foundSolution()){
-		assert(checksol());
 		cout << "s OPTIMUM FOUND" << endl;
 		cout << "c objective function value " << last_sol_obj_val << endl;
+		assert(checksol());
 		//printf("v");for(int i=1;i<=orig_n;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
 		exit(30);
 	}else{
@@ -1371,12 +1369,11 @@ CRef solve(vector<int> assumptions) {
 				backjumpTo(0);
 				double rest_base = luby(rinc, curr_restarts++);
 				nconfl_to_restart = (long long) rest_base * rfirst;
-			}
-			//if ((int)learnts.size()-(int)trail.size() >= max_learnts)
-			if(NCONFL >= cnt_reduceDB * nbclausesbeforereduce) {
-				reduceDB();
-				cnt_reduceDB++;
-				nbclausesbeforereduce += incReduceDB;
+				if(NCONFL >= cnt_reduceDB * nbclausesbeforereduce) {
+					reduceDB();
+					cnt_reduceDB++;
+					nbclausesbeforereduce += incReduceDB;
+				}
 			}
 			int next = 0;
 			if(assumptions_lim.size()>(unsigned int) decisionLevel()+1)assumptions_lim.resize(decisionLevel()+1);
@@ -1394,7 +1391,7 @@ CRef solve(vector<int> assumptions) {
 			if(next==0) next = pickBranchLit();
 			if(next==0) {
 				assert(order_heap.empty());
-				for (int i = 1; i <= orig_n; ++i)last_sol[i] = (~Level[i]);
+				for (int i = 1; i <= n; ++i)last_sol[i] = (~Level[i]);
 				last_sol_obj_val=1e9;
 				return CRef_Undef;
 			}
@@ -1447,18 +1444,15 @@ void solveLinearAssumps() {
 			else aux.push_back(-(n - opt_K + 1 + i));
 		}
 		if (solve(aux)==CRef_Undef) {
-			if (optimizing()) {
-				int s = 0;
-				Clause& C = ca[objective];
-				for (int i = 0; i < (int) C.size(); i++)
-					if (abs(C.lits()[i]) <= n - opt_K) {
-						if (~Level[C.lits()[i]]) s += C.coefs()[i];
-					}
-				assert(opt_coef_sum - s <= m);
-				m = opt_coef_sum - s;
-				last_sol_obj_val = m - opt_normalize_add;
-				cout << "o " << last_sol_obj_val << endl;
-			}
+			int s = 0;
+			Clause& C = ca[objective];
+			for (int i = 0; i < (int) C.size(); i++)
+				if (abs(C.lits()[i]) <= n - opt_K && ~Level[C.lits()[i]])
+					s += C.coefs()[i];
+			assert(opt_coef_sum - s <= m);
+			m = opt_coef_sum - s;
+			last_sol_obj_val = m - opt_normalize_add;
+			cout << "o " << last_sol_obj_val << endl;
 		} else break;
 	}
 	exit_UNSAT();
@@ -1473,24 +1467,20 @@ void solveLinear(){
 	std::vector<int> lits;
 	std::vector<int> coefs;
 	long long degree;
-	objective_func.getInverted(tmpConstraint);
-	tmpConstraint.getNormalForm(lits,coefs,degree);
-	objective = ca.alloc(lits, coefs, 0, true);
-	ca[objective].lbd=lits.size();
-	attachClause(objective);
-	learnts.push_back(objective);
-
 	while(solve({})==CRef_Undef){
 		last_sol_obj_val = 0;
-		for(int v: objective_func.vars){
-			last_sol_obj_val+=objective_func.coefs[v]*last_sol[v];
-		}
+		for(int v: objective_func.vars) last_sol_obj_val+=objective_func.coefs[v]*last_sol[v];
 		cout << "o " << last_sol_obj_val << endl;
 
 		objective_func.getInverted(tmpConstraint);
 		tmpConstraint.addRhs(-last_sol_obj_val+1);
 		tmpConstraint.postProcess();
 		tmpConstraint.getNormalForm(lits,coefs,degree);
+		assert(degree<=1e9); assert(degree>=0);
+		if(lits.size()==0){
+			if(degree>0 || solve({})!=CRef_Undef) exit_UNSAT();
+			exit_SAT();
+		}
 		objective = ca.alloc(lits, coefs, degree, true);
 		ca[objective].lbd=lits.size();
 		attachClause(objective);
