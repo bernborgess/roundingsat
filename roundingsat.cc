@@ -271,7 +271,7 @@ struct Constraint{
 		saturate();
 	}
 
-	long long removeUnits(){
+	long long removeUnits(bool doSaturation=true){
 		for(int i=0; i<(int)vars.size(); ++i){
 			int v=vars[i];
 			if(Level[v]==0) addRhs(-coefs[v]);
@@ -281,7 +281,11 @@ struct Constraint{
 				--i;
 			}
 		}
-		return saturate();
+		if(doSaturation){
+			return saturate();
+		}else{
+			return getDegree();
+		}
 	}
 
 	void removeZeroes(){
@@ -381,10 +385,11 @@ struct Constraint{
 
 	// TODO: weaken non-implying falsifieds! e.g. 1x1 2x2 4x3 8x4 16x5 <- smaller terms will get rounded up when dividing by 16
 	template<class S, class L>
-	void add(const Constraint<S,L>& c, SMALL mult=1){
+	void add(const Constraint<S,L>& c, SMALL mult=1, bool doRoundToOne=true){
 		assert(mult>0);
 		for(int v: c.vars) addLhs(mult*c.coefs[v],v);
 		addRhs(mult*c.rhs);
+		if(!doRoundToOne) return;
 		LARGE deg = saturate();
 		if (deg > (int) 1e9) roundToOne(ceildiv<LARGE>(deg,1e9),!originalRoundToOne);
 		assert(getDegree() <= (int)1e9);
@@ -958,12 +963,12 @@ void learnConstraint(Constraint<long long,__int128>& c){
 	else ++NGENERALSLEARNED;
 }
 
-void addConstraint(Constraint<int, long long>& c){
+void addInputConstraint(Constraint<int, long long>& c){
 	assert(decisionLevel()==0);
 	assert(learnts.size()==0);
 	c.postProcess();
 	long long slack = c.getSlack();
-	if(slack < 0)puts("c UNSAT trivially inconsistent constraint"),exit_UNSAT();
+	if(slack < 0)puts("c UNSAT trivially inconsistent input constraint"),exit_UNSAT();
 
 	std::vector<int> lits; std::vector<int> coefs; long long degree;
 	c.getNormalForm(lits,coefs,degree);
@@ -978,7 +983,29 @@ void addConstraint(Constraint<int, long long>& c){
 	for (int i=0; i<(int)lits.size(); i++)
 		if (Level[-lits[i]] == -1 && Level[lits[i]] == -1 && coefs[i]>slack) uncheckedEnqueue(lits[i], cr);
 
-	if (propagate() != CRef_Undef)puts("c UNSAT initial conflict"),exit_UNSAT();
+	if (propagate() != CRef_Undef)puts("c UNSAT input conflict"),exit_UNSAT();
+}
+
+void addAuxiliaryConstraint(Constraint<int, long long>& c){
+	assert(decisionLevel()==0);
+	c.postProcess();
+	long long slack = c.getSlack();
+	if(slack < 0)puts("c UNSAT trivially inconsistent auxiliary constraint"),exit_UNSAT();
+
+	std::vector<int> lits; std::vector<int> coefs; long long degree;
+	c.getNormalForm(lits,coefs,degree);
+	if(degree > (long long) 1e9) exit_ERROR({"Normalization of an auxiliary constraint causes degree to exceed 10^9."});
+	if(degree<=0) return; // already satisfied.
+	int w=(int)degree;
+
+	CRef cr = ca.alloc(lits, coefs, w, true, true);
+	attachClause(cr);
+	learnts.push_back(cr);
+	//TODO: have attachClause perform this propagation, similar to Stephan's XOR-branch
+	for (int i=0; i<(int)lits.size(); i++)
+		if (Level[-lits[i]] == -1 && Level[lits[i]] == -1 && coefs[i]>slack) uncheckedEnqueue(lits[i], cr);
+
+	if (propagate() != CRef_Undef)puts("c UNSAT auxiliary conflict"),exit_UNSAT();
 }
 
 // ---------------------------------------------------------------------
@@ -1048,9 +1075,9 @@ void opb_read(istream & in) {
 				// Handle equality case with two constraints
 				if (line0.find(" = ") != string::npos) {
 					tmpConstraint.getInverted(inverted);
-					addConstraint(inverted);
+					addInputConstraint(inverted);
 				}
-				addConstraint(tmpConstraint); // NOTE: addConstraint modifies tmpConstraint, so invert should be called first
+				addInputConstraint(tmpConstraint); // NOTE: addInputConstraint modifies tmpConstraint, so invert should be called first
 			}
 		}
 	}
@@ -1076,7 +1103,7 @@ void wcnf_read(istream & in, long long top) {
 				objective_func.addLhs(weight,n);
 				tmpConstraint.addLhs(1,n);
 			} // else hard clause
-			addConstraint(tmpConstraint);
+			addInputConstraint(tmpConstraint);
 		}
 	}
 	orig_n = n-objective_func.vars.size();
@@ -1091,7 +1118,7 @@ void cnf_read(istream & in) {
 			tmpConstraint.addRhs(1);
 			int l;
 			while (is >> l, l) tmpConstraint.addLhs(1,l);
-			addConstraint(tmpConstraint);
+			addInputConstraint(tmpConstraint);
 		}
 	}
 	orig_n=n;
@@ -1286,7 +1313,7 @@ void exit_UNSAT() {
 		cout << "s OPTIMUM FOUND" << endl;
 		cout << "c objective function value " << last_sol_obj_val << endl;
 		assert(checksol());
-		//printf("v");for(int i=1;i<=orig_n;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
+		printf("v");for(int i=1;i<=orig_n;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
 		exit(30);
 	}else{
 		puts("s UNSATISFIABLE");
@@ -1514,17 +1541,69 @@ void solveLinear(const Constraint<int,long long>& objective){
 	exit_UNSAT();
 }
 
-void coreGuided(const Constraint<int,long long>& objective){
+void coreGuided(Constraint<int,long long>& objective){
+	Constraint<int, long long> auxConstraint;
 	std::vector<int> assumps;
-	for(int v: objective.vars){
-		assumps.push_back(objective.getLit(v));
-	}
-	CRef core = solve(assumps);
-	if(core==CRef_Undef) exit_SAT();
-	else{
+	assumps.reserve(objective.vars.size());
+	assert(objective.getDegree()==0);
+	int lower_bound = -objective.removeUnits(false);
+	objective.removeZeroes();
+	std::cout << "c LB: " << lower_bound << std::endl;
+
+	while(true){
+		assumps.clear();
+		for(int v: objective.vars) assumps.push_back(-objective.getLit(v));
+		CRef core = solve(assumps);
+		if(core==CRef_Undef){
+			last_sol_obj_val = lower_bound;
+			exit_UNSAT();
+		}	else if(assumps.size()==0) exit_UNSAT();
+
+		backjumpTo(0);
+		tmpConstraint.resize(n+1);
 		tmpConstraint.init(ca[core]);
+		std::cout << "CORE INITIAL: " << tmpConstraint << std::endl;
+		for(int v: tmpConstraint.vars){
+			if(objective.getLit(v)==0 || (tmpConstraint.coefs[v]<0)!=(objective.coefs[v]<0)){
+				tmpConstraint.weaken(-tmpConstraint.coefs[v],v);
+			}
+		}
+		tmpConstraint.removeUnits();
+		tmpConstraint.removeZeroes();
+		tmpConstraint.saturate();
 		tmpConstraint.simplifyToCardinality(false);
-		std::cout << tmpConstraint << std::endl;
+		std::cout << "CORE: " << tmpConstraint << std::endl;
+
+		long long degree = tmpConstraint.getDegree();
+		assert(degree<=1e9); assert(degree>0);
+		int mult = 1e9;
+		for(int v: tmpConstraint.vars){
+			assert(objective.getLit(v)!=0);
+			mult=min(mult,abs(objective.coefs[v]));
+		}
+		lower_bound+=degree*mult;
+
+		int nbAuxVars = tmpConstraint.vars.size()-degree;
+		int oldN = n;
+		setNbVariables(n+nbAuxVars);
+		tmpConstraint.addRhs(-tmpConstraint.getDegree());
+		for(int v=oldN+1; v<=n; ++v){
+			tmpConstraint.addLhs(-1,v);
+		}
+		auxConstraint=tmpConstraint;
+		auxConstraint.saturate();
+		addAuxiliaryConstraint(auxConstraint);
+		tmpConstraint.getInverted(auxConstraint);
+		auxConstraint.saturate();
+		addAuxiliaryConstraint(auxConstraint);
+
+		tmpConstraint.getInverted(auxConstraint);
+		std::cout << objective << std::endl;
+		objective.add(auxConstraint,mult,false);
+		lower_bound += objective.getDegree() - objective.removeUnits(false);
+		std::cout << "c LB: " << lower_bound << std::endl;
+		objective.removeZeroes();
+		std::cout << objective << std::endl;
 	}
 }
 
