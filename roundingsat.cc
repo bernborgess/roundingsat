@@ -187,7 +187,11 @@ double rinc = 2;
 int rfirst = 100;
 int nbclausesbeforereduce=2000;
 int incReduceDB=300;
+int cnt_reduceDB=0;
 bool originalRoundToOne=false;
+int curr_restarts=0;
+long long nconfl_to_restart=0;
+
 
 template <class T>
 inline T ceildiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return (p+q-1)/q; }
@@ -407,52 +411,76 @@ struct Constraint{
 		saturate();
 	}
 
-	// NOTE: only equivalence preserving operations here!
-	void postProcess(){
+	bool isCardinality() const {
+		for(int v: vars) if(abs(coefs[v])>1) return false;
+		return true;
+	}
+
+	bool simplifyToCardinality(bool equivalencePreserving){
+		if(isCardinality()) return false;
+		sort(vars.begin(),vars.end(),[&](int v1, int v2){return abs(coefs[v1])<abs(coefs[v2]);});
+		LARGE degree = getDegree();
+
+		int largeCoefsNeeded=1;
+		LARGE largeCoefSum=0;
+		for(; largeCoefsNeeded<=(int)vars.size(); ++largeCoefsNeeded){
+			largeCoefSum+=abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
+			if(largeCoefSum>=degree) break;
+		}
+		if(largeCoefSum<degree){ // trivially unsatisfiable constraint
+			reset(); rhs=1; return true;
+		}
+
+		int skippable=0;
+		if(equivalencePreserving){
+			LARGE smallCoefSum=0;
+			for(int i=0; i<largeCoefsNeeded; ++i) smallCoefSum+=abs(coefs[vars[i]]);
+			if(smallCoefSum<degree) return false;
+			// else, we have an equivalent cardinality constraint
+		}else{
+			LARGE wiggleroom=degree-largeCoefSum+abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
+			assert(wiggleroom>0);
+			for(; skippable<(int)vars.size(); ++skippable){
+				wiggleroom-=abs(coefs[vars[skippable]]);
+				if(wiggleroom<=0) break;
+			}
+			assert(skippable<(int)vars.size());
+		}
+
+		rhs=largeCoefsNeeded;
+		for(int i=0; i<skippable; ++i) coefs[vars[i]]=0;
+		for(int i=skippable; i<(int)vars.size(); ++i){
+			int v = vars[i];
+			if(coefs[v]<0){
+				coefs[v]=-1;
+				--rhs;
+			}else coefs[v]=1;
+		}
+		removeZeroes();
+		return true;
+	}
+
+	bool divideByGCD(){
 		LARGE degree = removeUnits();
 		removeZeroes();
-		assert(degree<=1e9); // we assume int coefficients in the rest of this method
-		if(degree<=1 || vars.size()==0) return;
-		int w=(int)degree;
+		if(degree<=1 || isCardinality()) return false;
 		sort(vars.begin(),vars.end(),[&](int v1, int v2){return abs(coefs[v1])<abs(coefs[v2]);});
-		if(abs(coefs[vars.back()])==1) return; // already a cardinality constraint
-		// divide by greatest common divisor
+		if(abs(coefs[vars.back()])>1e9) return false; // TODO: large coefs currently unsupported
+		// assume every coeff fits in an int from this point onwards
 		int _gcd = abs(coefs[vars.front()]);
 		for(int v: vars){
 			if(_gcd==1) break;
 			_gcd = gcd(_gcd,(int) abs(coefs[v]));
 		}
-		if(_gcd>1) {
-			++NGCD;
-			divide(_gcd);
-			w=ceildiv(w,_gcd);
-		}
-		// detect whether constraint is a hidden cardinality constraint
-		int largeCoefsNeeded=0;
-		int largeCoefSum=0;
-		for(; largeCoefsNeeded<(int)vars.size() && largeCoefSum<w; ++largeCoefsNeeded){
-			largeCoefSum+=abs(coefs[vars[vars.size()-1-largeCoefsNeeded]]);
-		}
-		if(largeCoefSum<w){ // trivially unsatisfiable constraint
-			reset();
-			rhs=1;
-			return;
-		}
-		int smallCoefsNeeded=0;
-		int smallCoefSum=0;
-		for(; smallCoefsNeeded<largeCoefsNeeded; ++smallCoefsNeeded){
-			smallCoefSum+=abs(coefs[vars[smallCoefsNeeded]]);
-		}
-		if(smallCoefSum>w){
-			assert(largeCoefsNeeded==smallCoefsNeeded);
-			++NCARDDETECT;
-			rhs=smallCoefsNeeded;
-			for(int v: vars){
-				int l = getLit(v);
-				coefs[v]=0;
-				addLhs(1,l);
-			}
-		}
+		if(_gcd<=1) return false;
+		divide(_gcd); // NOTE: safe, because we know every coefficient divides
+		return true;
+	}
+
+	// NOTE: only equivalence preserving operations here!
+	void postProcess(){
+		if(divideByGCD()) ++NGCD;
+		if(simplifyToCardinality(true)) ++NCARDDETECT;
 	}
 
 	bool falsifiedCurrentLvlIsOne(){
@@ -926,13 +954,8 @@ void learnConstraint(Constraint<long long,__int128>& c){
 	LEARNEDLENGTHSUM+=lits.size();
 	LEARNEDDEGREESUM+=w;
 	if(w==1) ++NCLAUSESLEARNED;
-	else{
-		int c=coefs[0];
-		bool isCardinality = true;
-		for(int i=1; i<(int) coefs.size() && isCardinality; ++i) isCardinality=(coefs[i]==c);
-		if(isCardinality) ++NCARDINALITIESLEARNED;
-		else ++NGENERALSLEARNED;
-	}
+	else if(c.isCardinality()) ++NCARDINALITIESLEARNED;
+	else ++NGENERALSLEARNED;
 }
 
 void addConstraint(Constraint<int, long long>& c){
@@ -1159,6 +1182,9 @@ struct reduceDB_lt {
     }    
 };
 void reduceDB(){
+	cnt_reduceDB++;
+	if (verbosity > 0) puts("c INPROCESSING");
+
 	assert(decisionLevel()==0);
 	size_t i, j;
 
@@ -1212,14 +1238,16 @@ static void SIGINT_exit(int signum){
 
 void print_stats() {
 	printf("c CPU time			  : %g s\n", cpuTime()-initial_time);
+	printf("d propagations %lld\n", NPROP);
 	printf("d decisions %lld\n", NDECIDE);
 	printf("d conflicts %lld\n", NCONFL);
-	printf("d propagations %lld\n", NPROP);
-	printf("d average learned constraint length %.2f\n", NCONFL==0?0:(double)LEARNEDLENGTHSUM/NCONFL);
-	printf("d average learned constraint degree %.2f\n", NCONFL==0?0:(double)LEARNEDDEGREESUM/NCONFL);
+	printf("d restarts %d\n", curr_restarts);
+	printf("d inprocessing phases %d\n", cnt_reduceDB);
 	printf("d clauses learned %lld\n", NCLAUSESLEARNED);
 	printf("d cardinalities learned %lld\n", NCARDINALITIESLEARNED);
 	printf("d general constraints learned %lld\n", NGENERALSLEARNED);
+	printf("d average learned constraint length %.2f\n", NCONFL==0?0:(double)LEARNEDLENGTHSUM/NCONFL);
+	printf("d average learned constraint degree %.2f\n", NCONFL==0?0:(double)LEARNEDDEGREESUM/NCONFL);
 	printf("d gcd simplifications %lld\n", NGCD);
 	printf("d detected cardinalities %lld\n", NCARDDETECT);
 	printf("d weakened non-implied lits %lld\n", NWEAKENEDNONIMPLIED);
@@ -1334,13 +1362,8 @@ void read_options(int argc, char**argv) {
 	getOption(opt_val,"original-rto",[](double x)->bool{return x==0 || x==1;},originalRoundToOne);
 }
 
-int curr_restarts=0;
-long long nconfl_to_restart=0;
-//reduceDB:
-int cnt_reduceDB=1;
-
 // NOTE: returned CRef is only valid until the next garbage collection phase
-CRef solve(vector<int> assumptions) {
+CRef solve(const vector<int>& assumptions) {
 	backjumpTo(0); // ensures assumptions are reset
 	std::vector<unsigned int> assumptions_lim={0};
 	assumptions_lim.reserve(assumptions.size());
@@ -1373,9 +1396,8 @@ CRef solve(vector<int> assumptions) {
 				backjumpTo(0);
 				double rest_base = luby(rinc, curr_restarts++);
 				nconfl_to_restart = (long long) rest_base * rfirst;
-				if(NCONFL >= cnt_reduceDB * nbclausesbeforereduce) {
+				if(NCONFL >= (cnt_reduceDB+1) * nbclausesbeforereduce) {
 					reduceDB();
-					cnt_reduceDB++;
 					nbclausesbeforereduce += incReduceDB;
 				}
 			}
@@ -1406,8 +1428,8 @@ CRef solve(vector<int> assumptions) {
 	}
 }
 
-void solveLinearAssumps() {
-	assert(objective_func.vars.size() > 0);
+void solveLinearAssumps(const Constraint<int,long long>& objective) {
+	assert(objective.vars.size() > 0);
 	// NOTE: objective constraint must be added after adding the original constraints,
 	// as we implement the objective as a learnt constraint
 
@@ -1415,9 +1437,9 @@ void solveLinearAssumps() {
 	long long opt_normalize_add = 0, opt_coef_sum = 0;
 
 	std::vector<int> lits; std::vector<int> coefs;
-	for(int v: objective_func.vars) if(objective_func.coefs[v]!=0) {
+	for(int v: objective.vars) if(objective.coefs[v]!=0) {
 			lits.push_back(v);
-			coefs.push_back(objective_func.coefs[v]);
+			coefs.push_back(objective.coefs[v]);
 		}
 	opt_coef_sum = 0;
 	opt_normalize_add = 0;
@@ -1456,10 +1478,10 @@ void solveLinearAssumps() {
 	exit_UNSAT();
 }
 
-void solveLinear(){
-	assert(objective_func.vars.size() > 0);
+void solveLinear(const Constraint<int,long long>& objective){
+	assert(objective.vars.size() > 0);
 	long long opt_coef_sum = 0;
-	for (int v: objective_func.vars) opt_coef_sum+=abs(objective_func.coefs[v]);
+	for (int v: objective.vars) opt_coef_sum+=abs(objective.coefs[v]);
 	if (opt_coef_sum > (int) 1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
 
 	std::vector<int> lits;
@@ -1467,10 +1489,10 @@ void solveLinear(){
 	long long degree;
 	while(solve({})==CRef_Undef){
 		last_sol_obj_val = 0;
-		for(int v: objective_func.vars) last_sol_obj_val+=objective_func.coefs[v]*last_sol[v];
+		for(int v: objective.vars) last_sol_obj_val+=objective.coefs[v]*last_sol[v];
 		cout << "o " << last_sol_obj_val << endl;
 
-		objective_func.getInverted(tmpConstraint);
+		objective.getInverted(tmpConstraint);
 		tmpConstraint.addRhs(-last_sol_obj_val+1);
 		tmpConstraint.postProcess();
 		tmpConstraint.getNormalForm(lits,coefs,degree);
@@ -1490,6 +1512,20 @@ void solveLinear(){
 		learnts.push_back(external[0]);
 	}
 	exit_UNSAT();
+}
+
+void coreGuided(const Constraint<int,long long>& objective){
+	std::vector<int> assumps;
+	for(int v: objective.vars){
+		assumps.push_back(objective.getLit(v));
+	}
+	CRef core = solve(assumps);
+	if(core==CRef_Undef) exit_SAT();
+	else{
+		tmpConstraint.init(ca[core]);
+		tmpConstraint.simplifyToCardinality(false);
+		std::cout << tmpConstraint << std::endl;
+	}
 }
 
 int main(int argc, char**argv){
@@ -1514,8 +1550,9 @@ int main(int argc, char**argv){
 	std::cout << "c #variables=" << orig_n << " #constraints=" << clauses.size() << std::endl;
 
 	if(objective_func.vars.size() > 0){
-		//solveLinearAssumps();
-		solveLinear();
+		//solveLinearAssumps(objective_func);
+		//solveLinear(objective_func);
+		coreGuided(objective_func);
 	}else{
 		// TODO: fix empty objective function
 		if(solve({})==CRef_Undef) exit_SAT();
