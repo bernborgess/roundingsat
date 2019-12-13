@@ -1431,18 +1431,13 @@ bool solve(const vector<int>& assumptions) {
 			while(assumptions_lim.back()<assumptions.size()){
 				int l_assump = assumptions[assumptions_lim.back()];
 				if (~Level[-l_assump]){ // found conflicting assumptions
-					if(decisionLevel()==0) { confl_data.reset(); return false; } // assumptions are violated at root level
+					for(int l: assumptions) if(Level[-l]==0) { confl_data.reset(); return false; } // assumption violated at root
+					assert(Reason[-l_assump]!=CRef_Undef);
 					confl_data.init(ca[Reason[-l_assump]]);
 					while(decisionLevel()>0){ // erase falsified non-assumptions
 						int l = trail.back();
 						int confl_coef_l = confl_data.getCoef(-l);
 						if(confl_coef_l>0 && assumpSet.count(l)==0) { // part of the core constraint, but not the assumptions
-							if(Reason[l] == CRef_Undef){
-								std::cout << l << std::endl;
-								std::cout << confl_data << std::endl;
-								for(int x: assumpSet) std::cout << x << " ";
-								std::cout << std::endl;
-							}
 							assert(Reason[l] != CRef_Undef);
 							Clause& reasonC = ca[Reason[l]];
 							tmpConstraint.init(reasonC);
@@ -1566,7 +1561,6 @@ void coreGuided(Constraint<int,long long>& objective){
 	Constraint<int, long long> auxConstraint;
 	std::vector<int> assumps;
 	assumps.reserve(objective.vars.size());
-	assert(objective.getDegree()==0);
 	long long lower_bound = -objective.removeUnits(false);
 	objective.removeZeroes();
 	std::cout << "c LB: " << lower_bound << std::endl;
@@ -1581,7 +1575,7 @@ void coreGuided(Constraint<int,long long>& objective){
 
 		// take care of derived unit lits
 		//std::cout << objective << std::endl;
-		lower_bound += objective.getDegree() - objective.removeUnits(false);
+		lower_bound = -objective.removeUnits(false);
 		//std::cout << "c LB: " << lower_bound << std::endl;
 
 		if(confl_data.getDegree()==0) continue; // apparently only unit assumptions were derived
