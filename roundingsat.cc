@@ -756,7 +756,8 @@ void undoOne(){
 void backjumpTo(int level){
 	assert(level>=0);
 	while(decisionLevel()>level) undoOne();
-	qhead = trail.size();
+	qhead = min(qhead,(int)trail.size());
+	for(int i=0; i<qhead; ++i) assert(Level[trail[i]]>=0);
 }
 
 // ---------------------------------------------------------------------
@@ -808,6 +809,7 @@ void analyze(CRef confl){
 		}
 		undoOne();
 	}
+	qhead=min(qhead,(int)trail.size());
 	assert(greater_than(0,confl_data.getSlack()));
 
 	for(int x:confl_data.vars){
@@ -1411,10 +1413,8 @@ bool solve(const vector<int>& assumptions) {
 					}
 				}
 			}
-
 			analyze(confl);
 			learnConstraint(confl_data);
-
 		} else {
 			if(asynch_interrupt)exit_INDETERMINATE();
 			if(nconfl_to_restart <= 0){
@@ -1431,7 +1431,11 @@ bool solve(const vector<int>& assumptions) {
 			while(assumptions_lim.back()<assumptions.size()){
 				int l_assump = assumptions[assumptions_lim.back()];
 				if (~Level[-l_assump]){ // found conflicting assumptions
-					for(int l: assumptions) if(Level[-l]==0) { confl_data.reset(); return false; } // assumption violated at root
+					for(int l: assumptions) if(Level[-l]==0) { // assumption violated at root
+						confl_data.reset();
+						backjumpTo(0);
+						return false;
+					}
 					assert(Reason[-l_assump]!=CRef_Undef);
 					confl_data.init(ca[Reason[-l_assump]]);
 					while(decisionLevel()>0){ // erase falsified non-assumptions
@@ -1447,6 +1451,7 @@ bool solve(const vector<int>& assumptions) {
 						}
 						undoOne();
 					}
+					qhead=min(qhead,(int)trail.size());
 					return false;
 				}
 				if (~Level[l_assump]){ // assumption already propagated
@@ -1462,6 +1467,7 @@ bool solve(const vector<int>& assumptions) {
 				assert(order_heap.empty());
 				for (int i = 1; i <= n; ++i)last_sol[i] = (~Level[i]);
 				last_sol_obj_val=1e9;
+				backjumpTo(0);
 				return true;
 			}
 			newDecisionLevel();
@@ -1572,27 +1578,29 @@ void coreGuided(Constraint<int,long long>& objective){
 			last_sol_obj_val = lower_bound;
 			exit_UNSAT();
 		}	else if(assumps.size()==0) exit_UNSAT();
+		assert(decisionLevel()==0);
 
 		// take care of derived unit lits
 		//std::cout << objective << std::endl;
 		lower_bound = -objective.removeUnits(false);
 		//std::cout << "c LB: " << lower_bound << std::endl;
 
-		if(confl_data.getDegree()==0) continue; // apparently only unit assumptions were derived
-
 		// figure out the right implied core
-		assert(decisionLevel()==0);
 		confl_data.getCopy(tmpConstraint);
+		//std::cout << "INITIAL: " << tmpConstraint << std::endl;
 		for(int v: tmpConstraint.vars){
-			if(objective.getLit(v)==0 || (tmpConstraint.coefs[v]<0)!=(objective.coefs[v]<0)){
+			if(tmpConstraint.coefs[v]!=0 && (objective.getLit(v)==0 || (tmpConstraint.coefs[v]<0)!=(objective.coefs[v]<0))){
 				tmpConstraint.weaken(-tmpConstraint.coefs[v],v);
 			}
 		}
 		tmpConstraint.removeUnits();
+		if(confl_data.getDegree()==0) continue; // apparently only unit assumptions were derived
+
 		tmpConstraint.removeZeroes();
 		tmpConstraint.saturate();
+//		std::cout << "BEFORE CARD: " << tmpConstraint << std::endl;
 		tmpConstraint.simplifyToCardinality(false);
-		//std::cout << "CORE: " << tmpConstraint << std::endl;
+//		std::cout << "AFTER CARD: " << tmpConstraint << std::endl;
 
 		// adjust the lower bound
 		long long degree = tmpConstraint.getDegree();
@@ -1648,8 +1656,8 @@ int main(int argc, char**argv){
 	std::cout << "c #variables=" << orig_n << " #constraints=" << clauses.size() << std::endl;
 
 	if(objective_func.vars.size() > 0){
-		//solveLinearAssumps(objective_func);
-		//solveLinear(objective_func);
+//		solveLinearAssumps(objective_func);
+//		solveLinear(objective_func);
 		coreGuided(objective_func);
 	}else{
 		// TODO: fix empty objective function
