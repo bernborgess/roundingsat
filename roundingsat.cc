@@ -39,7 +39,6 @@ using namespace std;
 #include <cstring>
 #include <csignal>
 #include <map>
-#include <set>
 
 #define _unused(x) ((void)(x)) // marks variables unused in release mode
 
@@ -615,6 +614,33 @@ ostream & operator<<(ostream & o, Clause & C) {
 	return o;
 }
 
+struct IntSet{
+private:
+	vector<bool> _values={false};
+	vector<bool>::iterator values=_values.begin();
+	vector<int> keys;
+	constexpr bool _unused_(){ return false; }
+
+public:
+	void reset(){
+		for(int k: keys) values[k]=_unused_();
+		keys.clear();
+	}
+
+	inline void resize(int size){ resizeLitMap(_values,values,size,_unused_()); }
+	inline int size() const { return keys.size(); }
+
+	inline bool has(int key) const { return values[key]!=_unused_(); }
+	void add(int key){
+		if(has(key)) return;
+		values[key]=true;
+		keys.push_back(key);
+	}
+	inline std::vector<int>& getKeys(){ return keys; }
+};
+
+IntSet tmpSet;
+
 // VSIDS ---------------------------------------------------------------
 double var_decay=0.95;
 double var_inc=1.0;
@@ -772,10 +798,10 @@ void decide(int l){
 // ---------------------------------------------------------------------
 
 unsigned int computeLBD(Clause& C) {
-	set<int> levels; // TODO: check whether unordered_set would be faster
+	tmpSet.reset();
 	int * lits = C.lits();
-	for (int i=0; i<(int)C.size(); i++) if (Level[-lits[i]] != -1) levels.insert(Level[-lits[i]]);
-	return levels.size();
+	for (int i=0; i<(int)C.size(); i++) if (Level[-lits[i]] != -1) tmpSet.add(Level[-lits[i]]);
+	return tmpSet.size();
 }
 
 void analyze(CRef confl){
@@ -786,6 +812,8 @@ void analyze(CRef confl){
 	}
 
 	confl_data.init(C);
+	tmpSet.reset();
+	for(int v: confl_data.vars) tmpSet.add(confl_data.getLit(v));
 	while(1){
 		if (decisionLevel() == 0) {
 			assert(0>confl_data.getSlack());
@@ -810,6 +838,7 @@ void analyze(CRef confl){
 				tmpConstraint.init(reasonC);
 				tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack());
 				tmpConstraint.roundToOne(tmpConstraint.getCoef(l),!originalRoundToOne);
+				for(int v: tmpConstraint.vars) tmpSet.add(tmpConstraint.getLit(v));
 				confl_data.add(tmpConstraint,confl_coef_l);
 				assert(confl_data.getCoef(-l)==0);
 				assert(0>confl_data.getSlack());
@@ -820,10 +849,7 @@ void analyze(CRef confl){
 	qhead=min(qhead,(int)trail.size());
 	assert(0>confl_data.getSlack());
 
-	for(int x:confl_data.vars){
-		varBumpActivity(x);
-		//if (confl_data.used[x] == 2) varBumpActivity(x); // TODO: fix
-	}
+	for(int l: tmpSet.getKeys()) varBumpActivity(abs(l));
 }
 
 /**
@@ -930,6 +956,7 @@ void setNbVariables(long long nvars){
 	objective_func.resize(nvars+1);
 	tmpConstraint.resize(nvars+1);
 	confl_data.resize(nvars+1);
+	tmpSet.resize(nvars+1);
 	order_heap.resize(nvars);
 	for(int i=n+1;i<=nvars;++i) phase[i] = -i, order_heap.insert(i);
 	n = nvars;
@@ -1396,11 +1423,11 @@ void read_options(int argc, char**argv) {
 }
 
 template<class SMALL, class LARGE>
-LARGE assumpSlack(const std::set<int>& assumptions, const Constraint<SMALL, LARGE>& core){
+LARGE assumpSlack(const IntSet& assumptions, const Constraint<SMALL, LARGE>& core){
 	LARGE slack = -core.getDegree();
 	for(int v: core.vars){
 		int l=core.getLit(v);
-		if(!assumptions.count(-l)) slack+=core.getCoef(l);
+		if(!assumptions.has(-l)) slack+=core.getCoef(l);
 	}
 	return slack;
 }
@@ -1412,8 +1439,9 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions){
 		return;
 	}
 
-	std::set<int> assumpSet;
-	assumpSet.insert(assumptions.cbegin(),assumptions.cend());
+	IntSet assumpSet;
+	assumpSet.resize(n+1);
+	for(int l: assumptions) assumpSet.add(l);
 
 	// gather set of conflicting assumptions
 	std::vector<int> conflictingAssumps;
@@ -1425,7 +1453,7 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions){
 		int stack_l = stack.back();
 		stack.pop_back();
 		if(Reason[stack_l]==CRef_Undef){
-			assert(assumpSet.count(stack_l)>0);
+			assert(assumpSet.has(stack_l));
 			conflictingAssumps.push_back(stack_l);
 		}else{
 			Clause& C = ca[Reason[stack_l]];
@@ -1441,7 +1469,7 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions){
 	backjumpTo(0);
 
 	// create conflict
-	for(int conflicting_l: conflictingAssumps){ assert(assumpSet.count(conflicting_l)>0); decide(conflicting_l); }
+	for(int conflicting_l: conflictingAssumps){ assert(assumpSet.has(conflicting_l)); decide(conflicting_l); }
 	CRef confl = propagate();
 
 	if(confl==CRef_Undef){
@@ -1460,7 +1488,7 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions){
 	while(Reason[trail.back()]!=CRef_Undef){
 		int l = trail.back();
 		int confl_coef_l = confl_data.getCoef(-l);
-		if(confl_coef_l>0 && assumpSet.count(l)==0) {
+		if(confl_coef_l>0 && !assumpSet.has(l)) {
 			Clause& reasonC = ca[Reason[l]];
 			tmpConstraint.init(reasonC);
 			tmpConstraint.roundToOne(tmpConstraint.getCoef(l),false);
@@ -1474,7 +1502,7 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions){
 	assert(assumpSlack(assumpSet,confl_data)<0);
 
 	for(int v: confl_data.vars){
-		if(assumpSet.count(-confl_data.getLit(v))>0) continue;
+		if(assumpSet.has(-confl_data.getLit(v))) continue;
 		assert(Level[-confl_data.getLit(v)]==-1);
 		confl_data.weaken(-confl_data.coefs[v],v);
 	}
