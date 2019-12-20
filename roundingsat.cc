@@ -561,7 +561,7 @@ private:
 	vector<bool> _values={false};
 	vector<bool>::iterator values=_values.begin();
 	vector<int> keys;
-	constexpr bool _unused_(){ return false; }
+	static constexpr bool _unused_(){ return false; }
 
 public:
 	void reset(){
