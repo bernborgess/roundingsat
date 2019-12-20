@@ -50,15 +50,6 @@ template <class T> inline void swapErase(T& indexable, size_t index){
 	indexable.pop_back();
 }
 
-template <class T, class S> inline bool equals(const T& x, const S& y){
-	if(x!=y){std::cerr << x << "==" << y << std::endl;} return x==y; }
-template <class T, class S> inline bool not_equals(const T& x, const S& y){
-	if(x==y){std::cerr << x << "!=" << y << std::endl;} return x!=y; }
-template <class T, class S> inline bool greater_than(const T& x, const S& y){
-	if(x<=y){std::cerr << x << ">" << y << std::endl;} return x>y; }
-template <class T, class S> inline bool greater_than_eq(const T& x, const S& y){
-	if(x<y){std::cerr << x << ">=" << y << std::endl;} return x>=y; }
-
 void exit_SAT(),exit_UNSAT(),exit_INDETERMINATE(),exit_ERROR(const std::initializer_list<std::string>&);
 
 // Minisat cpuTime function
@@ -797,7 +788,7 @@ void analyze(CRef confl){
 	confl_data.init(C);
 	while(1){
 		if (decisionLevel() == 0) {
-			assert(greater_than(0,confl_data.getSlack()));
+			assert(0>confl_data.getSlack());
 			exit_UNSAT();
 		}
 		int l = trail.back();
@@ -820,14 +811,14 @@ void analyze(CRef confl){
 				tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack());
 				tmpConstraint.roundToOne(tmpConstraint.getCoef(l),!originalRoundToOne);
 				confl_data.add(tmpConstraint,confl_coef_l);
-				assert(equals(confl_data.getCoef(-l),0));
-				assert(greater_than(0,confl_data.getSlack()));
+				assert(confl_data.getCoef(-l)==0);
+				assert(0>confl_data.getSlack());
 			}
 		}
 		undoOne();
 	}
 	qhead=min(qhead,(int)trail.size());
-	assert(greater_than(0,confl_data.getSlack()));
+	assert(0>confl_data.getSlack());
 
 	for(int x:confl_data.vars){
 		varBumpActivity(x);
@@ -953,7 +944,7 @@ void learnConstraint(Constraint<long long,__int128>& c){
 
 	__int128 slack = c.heuristicWeakening();
 	if(slack < 0) {
-		assert(equals(decisionLevel(), 0));
+		assert(decisionLevel()==0);
 		exit_UNSAT();
 	}
 	c.postProcess();
@@ -1475,7 +1466,7 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions){
 			tmpConstraint.roundToOne(tmpConstraint.getCoef(l),false);
 			tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack());
 			confl_data.add(tmpConstraint,confl_coef_l);
-			assert(equals(confl_data.getCoef(-l),0));
+			assert(confl_data.getCoef(-l)==0);
 		}
 		undoOne();
 	}
