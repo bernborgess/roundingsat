@@ -90,8 +90,6 @@ struct Clause {
 	inline bool learnt() const { return header.learnt; }
 };
 
-// ---------------------------------------------------------------------
-// memory. maximum supported size of learnt clause database is 16GB
 struct CRef {
 	uint32_t ofs;
 	bool operator==(CRef const&o)const{return ofs==o.ofs;}
@@ -100,61 +98,6 @@ struct CRef {
 };
 const CRef CRef_Undef = { UINT32_MAX };
 
-class OutOfMemoryException{};
-static inline void* xrealloc(void *ptr, size_t size)
-{
-	void* mem = realloc(ptr, size);
-	if (mem == NULL && errno == ENOMEM){
-		throw OutOfMemoryException();
-	}else
-		return mem;
-}
-struct {
-	uint32_t* memory;
-	uint32_t at=0, cap=0;
-	uint32_t wasted=0; // for GC
-	void capacity(uint32_t min_cap)
-	{
-		if (cap >= min_cap) return;
-
-		uint32_t prev_cap = cap;
-		while (cap < min_cap){
-			// NOTE: Multiply by a factor (13/8) without causing overflow, then add 2 and make the
-			// result even by clearing the least significant bit. The resulting sequence of capacities
-			// is carefully chosen to hit a maximum capacity that is close to the '2^32-1' limit when
-			// using 'uint32_t' as indices so that as much as possible of this space can be used.
-			uint32_t delta = ((cap >> 1) + (cap >> 3) + 2) & ~1;
-			cap += delta;
-
-			if (cap <= prev_cap)
-				throw OutOfMemoryException();
-		}
-		// printf(" .. (%p) cap = %u\n", this, cap);
-
-		assert(cap > 0);
-		memory = (uint32_t*) xrealloc(memory, sizeof(uint32_t) * cap);
-	}
-	int sz_clause(int length) { return (sizeof(Clause)+sizeof(int)*length+sizeof(int)*length)/sizeof(uint32_t); }
-	// TODO: pass Constraint as input to alloc
-	CRef alloc(const vector<int>& lits, const vector<int>& coefs, int w, bool learnt, bool locked=false){
-		assert(!lits.empty());
-		unsigned int length = lits.size();
-		// note: coefficients can be arbitrarily ordered (we don't sort them in descending order for example)
-		// during maintenance of watches the order will be shuffled.
-		capacity(at + sz_clause(length));
-		Clause * clause = (Clause*)(memory+at);
-		new (clause) Clause;
-		at += sz_clause(length);
-		clause->header = {(unsigned) (locked?LOCKED:UNLOCKED),length,0,learnt,length};
-		clause->w = w;
-		clause->act = 0;
-		for(unsigned int i=0;i<length;i++)clause->lits()[i]=lits[i];
-		for(unsigned int i=0;i<length;i++)clause->coefs()[i]=coefs[i];
-		return {(uint32_t)(at-sz_clause(length))};
-	}
-	Clause& operator[](CRef cr) { return (Clause&)*(memory+cr.ofs); }
-	const Clause& operator[](CRef cr) const { return (Clause&)*(memory+cr.ofs); }
-} ca;
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 int verbosity = 1;
@@ -608,7 +551,7 @@ ostream & operator<<(ostream & o, const Constraint<S,L>& C) {
 ostream & operator<<(ostream & o, Clause & C) {
 	// TODO: improve performance
 	Constraint<int,long long> aux;
-	aux.resize(n);
+	aux.resize(n+1);
 	aux.init(C);
 	o << aux;
 	return o;
@@ -640,6 +583,73 @@ public:
 };
 
 IntSet tmpSet;
+
+// ---------------------------------------------------------------------
+// memory. maximum supported size of learnt clause database is 16GB
+
+class OutOfMemoryException{};
+static inline void* xrealloc(void *ptr, size_t size)
+{
+	void* mem = realloc(ptr, size);
+	if (mem == NULL && errno == ENOMEM){
+		throw OutOfMemoryException();
+	}else
+		return mem;
+}
+struct {
+	uint32_t* memory;
+	uint32_t at=0, cap=0;
+	uint32_t wasted=0; // for GC
+	void capacity(uint32_t min_cap)
+	{
+		if (cap >= min_cap) return;
+
+		uint32_t prev_cap = cap;
+		while (cap < min_cap){
+			// NOTE: Multiply by a factor (13/8) without causing overflow, then add 2 and make the
+			// result even by clearing the least significant bit. The resulting sequence of capacities
+			// is carefully chosen to hit a maximum capacity that is close to the '2^32-1' limit when
+			// using 'uint32_t' as indices so that as much as possible of this space can be used.
+			uint32_t delta = ((cap >> 1) + (cap >> 3) + 2) & ~1;
+			cap += delta;
+
+			if (cap <= prev_cap)
+				throw OutOfMemoryException();
+		}
+		// printf(" .. (%p) cap = %u\n", this, cap);
+
+		assert(cap > 0);
+		memory = (uint32_t*) xrealloc(memory, sizeof(uint32_t) * cap);
+	}
+	int sz_clause(int length) { return (sizeof(Clause)+sizeof(int)*length+sizeof(int)*length)/sizeof(uint32_t); }
+	template<class SMALL, class LARGE>
+	CRef alloc(const Constraint<SMALL,LARGE>& constraint, bool learnt, bool locked=false){
+		LARGE degree = constraint.getDegree();
+		assert(degree>0);
+		assert(degree<=1e9);
+		int w = (int)degree;
+
+		assert(!constraint.vars.empty());
+		unsigned int length = constraint.vars.size();
+		// note: coefficients can be arbitrarily ordered (we don't sort them in descending order for example)
+		// during maintenance of watches the order will be shuffled.
+		capacity(at + sz_clause(length));
+		Clause * clause = (Clause*)(memory+at);
+		new (clause) Clause;
+		at += sz_clause(length);
+		clause->header = {(unsigned) (locked?LOCKED:UNLOCKED),length,0,learnt,length};
+		clause->w = w;
+		clause->act = 0;
+		for(unsigned int i=0;i<length;i++){
+			assert(constraint.getLit(constraint.vars[i])!=0);
+			clause->lits()[i]=constraint.getLit(constraint.vars[i]);
+		}
+		for(unsigned int i=0;i<length;i++) clause->coefs()[i]=abs(constraint.coefs[constraint.vars[i]]);
+		return {(uint32_t)(at-sz_clause(length))};
+	}
+	Clause& operator[](CRef cr) { return (Clause&)*(memory+cr.ofs); }
+	const Clause& operator[](CRef cr) const { return (Clause&)*(memory+cr.ofs); }
+} ca;
 
 // VSIDS ---------------------------------------------------------------
 double var_decay=0.95;
@@ -719,6 +729,7 @@ template<class A,class B> long long slack(int length,A const& lits,B const& coef
 	return s;
 }
 
+//TODO: refactor together by combining with alloc
 void attachClause(CRef cr){
 	Clause & C = ca[cr];
 	// sort literals by the decision level at which they were falsified, descending order (never falsified = level infinity)
@@ -976,73 +987,46 @@ void learnConstraint(Constraint<long long,__int128>& c){
 	}
 	c.postProcess();
 
-	vector<int>lits;vector<int>coefs;__int128 degree;
-	confl_data.getNormalForm(lits,coefs,degree);
-	assert(degree>0);
-	assert(degree<=1e9);
-	int w = (int)degree;
-	CRef cr = ca.alloc(lits,coefs,w,true);
+	CRef cr = ca.alloc(confl_data,true);
 	Clause & C = ca[cr];
-	C.setLBD(computeLBD(C));
 	attachClause(cr);
 	learnts.push_back(cr);
+	C.setLBD(computeLBD(C));
 
 	slack = confl_data.getSlack();
 	assert(slack>=0);
 	//TODO: have attachClause perform this propagation, similar to Stephan's XOR-branch
-	for (int i=0; i<(int)lits.size(); i++)
-		if (Level[-lits[i]] == -1 && Level[lits[i]] == -1 && coefs[i]>slack) uncheckedEnqueue(lits[i], cr);
+	for (int i=0; i<(int)C.size(); i++)
+		if (Level[-C.lits()[i]] == -1 && Level[C.lits()[i]] == -1 && C.coefs()[i]>slack) uncheckedEnqueue(C.lits()[i], cr);
 
-	LEARNEDLENGTHSUM+=lits.size();
-	LEARNEDDEGREESUM+=w;
-	if(w==1) ++NCLAUSESLEARNED;
+	LEARNEDLENGTHSUM+=C.size();
+	LEARNEDDEGREESUM+=C.w;
+	if(C.w==1) ++NCLAUSESLEARNED;
 	else if(c.isCardinality()) ++NCARDINALITIESLEARNED;
 	else ++NGENERALSLEARNED;
 }
 
-void addInputConstraint(Constraint<int, long long>& c){
+void addInputConstraint(Constraint<int, long long>& c, bool initial){
 	assert(decisionLevel()==0);
-	assert(learnts.size()==0);
-	c.postProcess();
+	assert(learnts.size()==0 || !initial);
+	c.removeZeroes();
+	long long degree = c.saturate();
+	if(degree > (long long) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
+	if(degree<=0) return; // already satisfied.
+
 	long long slack = c.getSlack();
 	if(slack < 0)puts("c UNSAT trivially inconsistent input constraint"),exit_UNSAT();
 
-	std::vector<int> lits; std::vector<int> coefs; long long degree;
-	c.getNormalForm(lits,coefs,degree);
-	if(degree > (long long) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
-	if(degree<=0) return; // already satisfied.
-	int w=(int)degree;
-
-	CRef cr = ca.alloc(lits, coefs, w, false, true);
+	CRef cr = ca.alloc(c,!initial,true);
+	Clause & C = ca[cr];
 	attachClause(cr);
-	clauses.push_back(cr);
+	if(initial) clauses.push_back(cr);
+	else learnts.push_back(cr);
 	//TODO: have attachClause perform this propagation, similar to Stephan's XOR-branch
-	for (int i=0; i<(int)lits.size(); i++)
-		if (Level[-lits[i]] == -1 && Level[lits[i]] == -1 && coefs[i]>slack) uncheckedEnqueue(lits[i], cr);
+	for (int i=0; i<(int)C.size(); i++)
+		if (Level[-C.lits()[i]] == -1 && Level[C.lits()[i]] == -1 && C.coefs()[i]>slack) uncheckedEnqueue(C.lits()[i], cr);
 
 	if (propagate() != CRef_Undef)puts("c UNSAT input conflict"),exit_UNSAT();
-}
-
-void addAuxiliaryConstraint(Constraint<int, long long>& c){
-	assert(decisionLevel()==0);
-	c.postProcess();
-	long long slack = c.getSlack();
-	if(slack < 0)puts("c UNSAT trivially inconsistent auxiliary constraint"),exit_UNSAT();
-
-	std::vector<int> lits; std::vector<int> coefs; long long degree;
-	c.getNormalForm(lits,coefs,degree);
-	if(degree > (long long) 1e9) exit_ERROR({"Normalization of an auxiliary constraint causes degree to exceed 10^9."});
-	if(degree<=0) return; // already satisfied.
-	int w=(int)degree;
-
-	CRef cr = ca.alloc(lits, coefs, w, true, true);
-	attachClause(cr);
-	learnts.push_back(cr);
-	//TODO: have attachClause perform this propagation, similar to Stephan's XOR-branch
-	for (int i=0; i<(int)lits.size(); i++)
-		if (Level[-lits[i]] == -1 && Level[lits[i]] == -1 && coefs[i]>slack) uncheckedEnqueue(lits[i], cr);
-
-	if (propagate() != CRef_Undef)puts("c UNSAT auxiliary conflict"),exit_UNSAT();
 }
 
 // ---------------------------------------------------------------------
@@ -1112,9 +1096,9 @@ void opb_read(istream & in) {
 				// Handle equality case with two constraints
 				if (line0.find(" = ") != string::npos) {
 					tmpConstraint.getCopy(inverted,-1);
-					addInputConstraint(inverted);
+					addInputConstraint(inverted,true);
 				}
-				addInputConstraint(tmpConstraint); // NOTE: addInputConstraint modifies tmpConstraint, so invert should be called first
+				addInputConstraint(tmpConstraint,true); // NOTE: addInputConstraint modifies tmpConstraint, so invert should be called first
 			}
 		}
 	}
@@ -1139,7 +1123,7 @@ void wcnf_read(istream & in, long long top) {
 				objective_func.addLhs(weight,n);
 				tmpConstraint.addLhs(1,n);
 			} // else hard clause
-			addInputConstraint(tmpConstraint);
+			addInputConstraint(tmpConstraint,true);
 		}
 	}
 	orig_n = n-objective_func.vars.size();
@@ -1153,7 +1137,7 @@ void cnf_read(istream & in) {
 			tmpConstraint.reset(1);
 			int l;
 			while (is >> l, l) tmpConstraint.addLhs(1,l);
-			addInputConstraint(tmpConstraint);
+			addInputConstraint(tmpConstraint,true);
 		}
 	}
 	orig_n=n;
@@ -1471,16 +1455,6 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions){
 	// create conflict
 	for(int conflicting_l: conflictingAssumps){ assert(assumpSet.has(conflicting_l)); decide(conflicting_l); }
 	CRef confl = propagate();
-
-	if(confl==CRef_Undef){
-		std::cout << "confl assumps: ";
-		for(int l: conflictingAssumps) std::cout << l << ":" << Level[l] << " ";
-		std::cout << std::endl;
-		std::cout << "trail: ";
-		for(int l: trail) std::cout << l << ":" << Level[l] << " ";
-		std::cout << std::endl;
-	}
-
 	assert(confl!=CRef_Undef);
 
 	// analyze conflict
@@ -1581,65 +1555,12 @@ bool solve(const vector<int>& assumptions) {
 	}
 }
 
-void solveLinearAssumps(const Constraint<int,long long>& objective) {
-	assert(objective.vars.size() > 0);
-	// NOTE: objective constraint must be added after adding the original constraints,
-	// as we implement the objective as a learnt constraint
-
-	int opt_K = 0;
-	long long opt_normalize_add = 0, opt_coef_sum = 0;
-
-	std::vector<int> lits; std::vector<int> coefs;
-	for(int v: objective.vars) if(objective.coefs[v]!=0) {
-			lits.push_back(v);
-			coefs.push_back(objective.coefs[v]);
-		}
-	opt_coef_sum = 0;
-	opt_normalize_add = 0;
-	for(size_t i=0;i<lits.size();i++){
-		if(coefs[i] < 0) lits[i]*=-1,coefs[i]*=-1,opt_normalize_add+=coefs[i];
-		opt_coef_sum+=coefs[i];
-		lits[i]=-lits[i];
-		if (opt_coef_sum > (int) 1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
-	}
-	opt_K = 0; while ((1<<opt_K) <= opt_coef_sum) opt_K++;
-	for(int i=0;i<opt_K;i++)lits.push_back(n+1+i),coefs.push_back(1<<i);
-	setNbVariables(n+opt_K);
-
-	external.push_back(ca.alloc(lits, coefs, opt_coef_sum, true, true));
-	attachClause(external.back());
-	learnts.push_back(external.back());
-
-	for (int m = opt_coef_sum; m >= 0; m--) {
-		vector<int> aux;
-		for (int i = 0; i < opt_K; i++) {
-			if (m & (1 << i)) aux.push_back(n - opt_K + 1 + i);
-			else aux.push_back(-(n - opt_K + 1 + i));
-		}
-		if (solve(aux)) {
-			int s = 0;
-			Clause& C = ca[external.back()];
-			for (int i = 0; i < (int) C.size(); i++)
-				if (abs(C.lits()[i]) <= n - opt_K && ~Level[C.lits()[i]])
-					s += C.coefs()[i];
-			assert(opt_coef_sum - s <= m);
-			m = opt_coef_sum - s;
-			last_sol_obj_val = m - opt_normalize_add;
-			cout << "o " << last_sol_obj_val << endl;
-		} else break;
-	}
-	exit_UNSAT();
-}
-
 void solveLinear(const Constraint<int,long long>& objective){
 	assert(objective.vars.size() > 0);
 	long long opt_coef_sum = 0;
 	for (int v: objective.vars) opt_coef_sum+=abs(objective.coefs[v]);
 	if (opt_coef_sum > (int) 1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
 
-	std::vector<int> lits;
-	std::vector<int> coefs;
-	long long degree;
 	while(solve({})){
 		last_sol_obj_val = 0;
 		for(int v: objective.vars) last_sol_obj_val+=objective.coefs[v]*last_sol[v];
@@ -1647,10 +1568,12 @@ void solveLinear(const Constraint<int,long long>& objective){
 
 		objective.getCopy(tmpConstraint,-1);
 		tmpConstraint.addRhs(-last_sol_obj_val+1);
+		tmpConstraint.removeZeroes();
 		tmpConstraint.postProcess();
-		tmpConstraint.getNormalForm(lits,coefs,degree);
-		assert(degree<=1e9); assert(degree>=0);
-		if(lits.size()==0){
+		long long degree = tmpConstraint.saturate();
+		assert(degree<=1e9);
+		assert(degree>=0);
+		if(tmpConstraint.vars.size()==0){
 			if(degree>0 || !solve({})) exit_UNSAT();
 			exit_SAT();
 		}
@@ -1659,7 +1582,7 @@ void solveLinear(const Constraint<int,long long>& objective){
 			ca[external[0]].setStatus(FORCEDELETE);
 			external.pop_back();
 		}
-		external.push_back(ca.alloc(lits, coefs, degree, true, true));
+		external.push_back(ca.alloc(tmpConstraint,true,true));
 		assert(ca[external[0]].getStatus()==LOCKED);
 		attachClause(external[0]);
 		learnts.push_back(external[0]);
@@ -1712,10 +1635,10 @@ void coreGuided(Constraint<int,long long>& objective){
 		}
 		confl_data.getCopy(tmpConstraint);
 		tmpConstraint.saturate();
-		addAuxiliaryConstraint(tmpConstraint);
+		addInputConstraint(tmpConstraint,false);
 		confl_data.getCopy(tmpConstraint,-1);
 		tmpConstraint.saturate();
-		addAuxiliaryConstraint(tmpConstraint);
+		addInputConstraint(tmpConstraint,false);
 
 		// reformulate the objective
 		confl_data.getCopy(tmpConstraint,-1);
@@ -1747,8 +1670,7 @@ int main(int argc, char**argv){
 	std::cout << "c #variables=" << orig_n << " #constraints=" << clauses.size() << std::endl;
 
 	if(objective_func.vars.size() > 0){
-//		solveLinearAssumps(objective_func);
-//		solveLinear(objective_func);
+		solveLinear(objective_func);
 		coreGuided(objective_func);
 	}else{
 		// TODO: fix empty objective function
