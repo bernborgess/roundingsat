@@ -1488,7 +1488,8 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions){
 	while(Reason[trail.back()]!=CRef_Undef){
 		int l = trail.back();
 		int confl_coef_l = confl_data.getCoef(-l);
-		if(confl_coef_l>0 && !assumpSet.has(l)) {
+//		if(confl_coef_l>0 && !assumpSet.has(l)) {
+			if(confl_coef_l>0) {
 			Clause& reasonC = ca[Reason[l]];
 			tmpConstraint.init(reasonC);
 			tmpConstraint.roundToOne(tmpConstraint.getCoef(l),false);
