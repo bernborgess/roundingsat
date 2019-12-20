@@ -125,7 +125,6 @@ bool originalRoundToOne=false;
 int curr_restarts=0;
 long long nconfl_to_restart=0;
 
-
 template <class T>
 inline T ceildiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return (p+q-1)/q; }
 template <class T>
@@ -623,7 +622,7 @@ struct {
 	}
 	int sz_clause(int length) { return (sizeof(Clause)+sizeof(int)*length+sizeof(int)*length)/sizeof(uint32_t); }
 	template<class SMALL, class LARGE>
-	CRef alloc(const Constraint<SMALL,LARGE>& constraint, bool learnt, bool locked=false){
+	CRef alloc(const Constraint<SMALL,LARGE>& constraint, bool learnt, bool locked){
 		LARGE degree = constraint.getDegree();
 		assert(degree>0);
 		assert(degree<=1e9);
@@ -729,7 +728,6 @@ template<class A,class B> long long slack(int length,A const& lits,B const& coef
 	return s;
 }
 
-//TODO: refactor together by combining with alloc
 void attachClause(CRef cr){
 	Clause & C = ca[cr];
 	// sort literals by the decision level at which they were falsified, descending order (never falsified = level infinity)
@@ -747,9 +745,9 @@ void attachClause(CRef cr){
 	}
 	C.sumwatchcoefs = 0;
 	C.nwatch = 0;
-	int mxcoef = 0; for(int i=0;i<(int)C.size();i++) mxcoef = max(mxcoef, C.coefs()[i]);
-	// TODO: ask Jan about code below
+	// TODO: ask Jan about old opt_K code below
 	// int mxcoef = 0; for(int i=0;i<(int)C.size();i++) if (abs(C.lits()[i]) <= n - opt_K) mxcoef = max(mxcoef, C.coefs()[i]);
+	int mxcoef = 0; for(int i=0;i<(int)C.size();i++) mxcoef = max(mxcoef, C.coefs()[i]);
 	C.minsumwatch = (long long) C.w + mxcoef;
 	for(int i=0;i<(int)C.size();i++) {
 		C.sumwatchcoefs += C.coefs()[i];
@@ -779,6 +777,46 @@ void uncheckedEnqueue(int p, CRef from){
 		ca[from].setLBD(1); // but do keep these clauses around!
 	}else Reason[p]=from;
 	trail.push_back(p);
+}
+
+template<class SMALL, class LARGE>
+CRef attachConstraint(Constraint<SMALL,LARGE>& constraint, bool learnt, bool locked=false){
+	// sort variables in constraint so that resulting CRef will have them in correct order for calculating watches
+//	std::sort(constraint.vars.begin(),constraint.vars.end(),[&](int v1,int v2){
+//		int lvl1 = Level[-constraint.getLit(v1)]; if(lvl1==-1)lvl1=1+1e9;
+//		int lvl2 = Level[-constraint.getLit(v2)]; if(lvl2==-1)lvl2=1+1e9;
+//		return lvl1 > lvl2;
+//	});
+
+	// allocate constraint in memory
+	CRef cr = ca.alloc(constraint,learnt,locked);
+	if(learnt) learnts.push_back(cr);
+	else clauses.push_back(cr);
+
+	// set watches for constraint
+	Clause& C = ca[cr];
+//	C.sumwatchcoefs = 0;
+//	C.nwatch = 0;
+//	// TODO: ask Jan about old opt_K code below
+//	// int mxcoef = 0; for(int i=0;i<(int)C.size();i++) if (abs(C.lits()[i]) <= n - opt_K) mxcoef = max(mxcoef, C.coefs()[i]);
+//	int mxcoef = 0; for(int i=0;i<(int)C.size();i++) mxcoef = max(mxcoef, C.coefs()[i]);
+//	C.minsumwatch = (long long) C.w + mxcoef;
+//	for(int i=0;i<(int)C.size();i++) {
+//		C.sumwatchcoefs += C.coefs()[i];
+//		C.nwatch++;
+//		adj[C.lits()[i]].push_back({cr});
+//		if (C.sumwatchcoefs >= C.minsumwatch) break;
+//	}
+
+	attachClause(cr); // TODO: incorporate code in this method
+
+	// perform initial propagation
+	LARGE slack = constraint.getSlack();
+	assert(slack>=0);
+	for (int i=0; i<(int)C.size(); i++)
+		if (Level[-C.lits()[i]] == -1 && Level[C.lits()[i]] == -1 && C.coefs()[i]>slack) uncheckedEnqueue(C.lits()[i], cr);
+
+	return cr;
 }
 
 void undoOne(){
@@ -987,17 +1025,9 @@ void learnConstraint(Constraint<long long,__int128>& c){
 	}
 	c.postProcess();
 
-	CRef cr = ca.alloc(confl_data,true);
+	CRef cr = attachConstraint(confl_data,true);
 	Clause & C = ca[cr];
-	attachClause(cr);
-	learnts.push_back(cr);
 	C.setLBD(computeLBD(C));
-
-	slack = confl_data.getSlack();
-	assert(slack>=0);
-	//TODO: have attachClause perform this propagation, similar to Stephan's XOR-branch
-	for (int i=0; i<(int)C.size(); i++)
-		if (Level[-C.lits()[i]] == -1 && Level[C.lits()[i]] == -1 && C.coefs()[i]>slack) uncheckedEnqueue(C.lits()[i], cr);
 
 	LEARNEDLENGTHSUM+=C.size();
 	LEARNEDDEGREESUM+=C.w;
@@ -1009,7 +1039,10 @@ void learnConstraint(Constraint<long long,__int128>& c){
 void addInputConstraint(Constraint<int, long long>& c, bool initial){
 	assert(decisionLevel()==0);
 	assert(learnts.size()==0 || !initial);
+	// TODO: check all simplification operations on Constraints
 	c.removeZeroes();
+	c.saturate();
+	c.postProcess();
 	long long degree = c.saturate();
 	if(degree > (long long) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
 	if(degree<=0) return; // already satisfied.
@@ -1017,14 +1050,7 @@ void addInputConstraint(Constraint<int, long long>& c, bool initial){
 	long long slack = c.getSlack();
 	if(slack < 0)puts("c UNSAT trivially inconsistent input constraint"),exit_UNSAT();
 
-	CRef cr = ca.alloc(c,!initial,true);
-	Clause & C = ca[cr];
-	attachClause(cr);
-	if(initial) clauses.push_back(cr);
-	else learnts.push_back(cr);
-	//TODO: have attachClause perform this propagation, similar to Stephan's XOR-branch
-	for (int i=0; i<(int)C.size(); i++)
-		if (Level[-C.lits()[i]] == -1 && Level[C.lits()[i]] == -1 && C.coefs()[i]>slack) uncheckedEnqueue(C.lits()[i], cr);
+	attachConstraint(c,!initial,true);
 
 	if (propagate() != CRef_Undef)puts("c UNSAT input conflict"),exit_UNSAT();
 }
@@ -1480,8 +1506,8 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions){
 		assert(Level[-confl_data.getLit(v)]==-1);
 		confl_data.weaken(-confl_data.coefs[v],v);
 	}
-	confl_data.saturate();
 	confl_data.removeZeroes();
+	confl_data.saturate();
 	confl_data.postProcess();
 
 	assert(assumpSlack(assumpSet,confl_data)<0);
@@ -1569,6 +1595,7 @@ void solveLinear(const Constraint<int,long long>& objective){
 		objective.getCopy(tmpConstraint,-1);
 		tmpConstraint.addRhs(-last_sol_obj_val+1);
 		tmpConstraint.removeZeroes();
+		tmpConstraint.saturate();
 		tmpConstraint.postProcess();
 		long long degree = tmpConstraint.saturate();
 		assert(degree<=1e9);
@@ -1582,14 +1609,14 @@ void solveLinear(const Constraint<int,long long>& objective){
 			ca[external[0]].setStatus(FORCEDELETE);
 			external.pop_back();
 		}
-		external.push_back(ca.alloc(tmpConstraint,true,true));
-		assert(ca[external[0]].getStatus()==LOCKED);
-		attachClause(external[0]);
-		learnts.push_back(external[0]);
+		CRef cr = attachConstraint(tmpConstraint,true,true);
+		external.push_back(cr);
+		assert(ca[cr].getStatus()==LOCKED);
 	}
 	exit_UNSAT();
 }
 
+//TODO: output number of auxiliary for coreGuided
 void coreGuided(Constraint<int,long long>& objective){
 	std::vector<int> assumps;
 	assumps.reserve(objective.vars.size());
@@ -1670,7 +1697,7 @@ int main(int argc, char**argv){
 	std::cout << "c #variables=" << orig_n << " #constraints=" << clauses.size() << std::endl;
 
 	if(objective_func.vars.size() > 0){
-		solveLinear(objective_func);
+//		solveLinear(objective_func);
 		coreGuided(objective_func);
 	}else{
 		// TODO: fix empty objective function
