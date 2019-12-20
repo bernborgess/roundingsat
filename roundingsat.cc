@@ -501,35 +501,44 @@ struct Constraint{
 		return foundOne;
 	}
 
+	// @return: earliest decision level that propagates a variable
 	int getAssertionLevel(){
+		assert(getSlack()<0);
 		if(decisionLevel()==0) return 0;
-		// TODO: compute least deep assertion level
-
-		// compute deepest assertion level
 		removeZeroes(); // ensures getLit is never 0
-		std::sort(vars.begin(),vars.end(),[&](int v1,int v2){
-			return Pos[-getLit(v1)]>Pos[-getLit(v2)];
-		});
-		LARGE slk = getSlack();
-		if(slk>=0) return decisionLevel();
-		int lvl = 0;
-		int skip_lvl=0;
+
+		// calculate default slack
+		LARGE slack = -rhs;
+		for(int v: vars) if(coefs[v]>0) slack+=coefs[v];
+		if(slack<0) return 0;
+
+		// create useful datastructures
+		std::sort(vars.begin(),vars.end(),[&](int v1,int v2){ return abs(coefs[v1])>abs(coefs[v2]); });
+		int coefIndex = 0;
+		std::vector<int> litsByPos;
+		litsByPos.reserve(vars.size());
 		for(int v: vars){
 			int l = getLit(v);
-			assert(l!=0);
-			int current_lvl = Level[-l];
-			if(current_lvl<0) break;
-			slk+=getCoef(l);
-			if(slk>=0){
-				if(skip_lvl>current_lvl){
-					lvl=current_lvl;
-					break;
-				}
-				skip_lvl=current_lvl;
-			}
+			if(~Level[-l]) litsByPos.push_back(-l);
 		}
-		assert(greater_than(decisionLevel(),lvl));
-		return lvl;
+		std::sort(litsByPos.begin(),litsByPos.end(),[&](int l1,int l2){ return Pos[l1]<Pos[l2]; });
+		int posIndex = 0;
+
+		// calculate earliest propagating decision level by decreasing slack one decision level at a time
+		int assertionLevel = 0;
+		while(true){
+			while(posIndex<(int)litsByPos.size() && Level[litsByPos[posIndex]]<=assertionLevel){
+				slack-=abs(coefs[abs(litsByPos[posIndex])]);
+				++posIndex;
+			}
+			if(slack<0){ assertionLevel=max(assertionLevel-1,0); break; }
+			while(~Level[getLit(vars[coefIndex])]) ++coefIndex;
+			assert(coefIndex<(int)vars.size());
+			if(slack<abs(coefs[vars[coefIndex]])) break;
+			++assertionLevel;
+		}
+		assert(assertionLevel<decisionLevel());
+		return assertionLevel;
 	}
 
 	void weakenNonImplied(LARGE slack){
@@ -1437,7 +1446,7 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions){
 			}
 		}
 	}
-//	assert(conflictingAssumps.size()>1); // TODO: reactivate after fixing optimal backjump level
+	assert(conflictingAssumps.size()>1);
 	backjumpTo(0);
 
 	// create conflict
