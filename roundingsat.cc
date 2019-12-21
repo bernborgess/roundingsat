@@ -114,14 +114,14 @@ double initial_time;
 long long NCONFL=0, NDECIDE=0, NPROP=0, NIMPL=0;
 __int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
 long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
-long long NGCD=0, NCARDDETECT=0;
+long long NGCD=0, NCARDDETECT=0, NCORECARDINALITIES=0, NCORES=0;
 long long NWEAKENEDNONIMPLYING=0, NWEAKENEDNONIMPLIED=0;
 double rinc = 2;
 int rfirst = 100;
 int nbclausesbeforereduce=2000;
 int incReduceDB=300;
 int cnt_reduceDB=0;
-bool originalRoundToOne=false;
+bool originalRoundToOne=false, core_guided=true;
 int curr_restarts=0;
 long long nconfl_to_restart=0;
 
@@ -1322,6 +1322,11 @@ void print_stats() {
 	printf("d detected cardinalities %lld\n", NCARDDETECT);
 	printf("d weakened non-implied lits %lld\n", NWEAKENEDNONIMPLIED);
 	printf("d weakened non-implying lits %lld\n", NWEAKENEDNONIMPLYING);
+	printf("d auxiliary variables introduced %d\n", n-orig_n);
+	if(core_guided){
+		printf("d cores constructed %lld\n", NCORES);
+		printf("d core cardinality constraints returned %lld\n", NCORECARDINALITIES);
+	}
 }
 
 long long lhs(Clause& C, const std::vector<bool>& sol){
@@ -1389,6 +1394,7 @@ void usage(int argc, char**argv) {
 	printf("  --rinc=arg       Set the base of the Luby restart sequence (floating point number >=1; default %lf).\n",rinc);
 	printf("  --rfirst=arg     Set the interval of the Luby restart sequence (integer >=1; default %d).\n",rfirst);
 	printf("  --original-rto=arg Set whether to use RoundingSat's original round-to-one conflict analysis (0 or 1; default %d).\n",originalRoundToOne);
+	printf("  --core-guided=arg Use core-guided optimization instead of classic linear optimization (0 or 1; default %d).\n",core_guided);
 }
 
 char * filename = 0;
@@ -1410,7 +1416,7 @@ void read_options(int argc, char**argv) {
 			exit(1);
 		}
 	}
-	vector<string> opts = {"verbosity", "var-decay", "rinc", "rfirst", "original-rto"};
+	vector<string> opts = {"verbosity", "var-decay", "rinc", "rfirst", "original-rto", "core-guided"};
 	map<string, string> opt_val;
 	for(int i=1;i<argc;i++){
 		if (string(argv[i]).substr(0,2) != "--") filename = argv[i];
@@ -1430,6 +1436,7 @@ void read_options(int argc, char**argv) {
 	getOption(opt_val,"rinc",[](double x)->bool{return x>=1;},rinc);
 	getOption(opt_val,"rfirst",[](double x)->bool{return x>=1;},rfirst);
 	getOption(opt_val,"original-rto",[](double x)->bool{return x==0 || x==1;},originalRoundToOne);
+	getOption(opt_val,"core-guided",[](double x)->bool{return x==0 || x==1;},core_guided);
 }
 
 template<class SMALL, class LARGE>
@@ -1492,8 +1499,8 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions){
 			if(confl_coef_l>0) {
 			Clause& reasonC = ca[Reason[l]];
 			tmpConstraint.init(reasonC);
-			tmpConstraint.roundToOne(tmpConstraint.getCoef(l),false);
 			tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack());
+			tmpConstraint.roundToOne(tmpConstraint.getCoef(l),false);
 			confl_data.add(tmpConstraint,confl_coef_l);
 			assert(confl_data.getCoef(-l)==0);
 		}
@@ -1502,6 +1509,7 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions){
 	qhead=min(qhead,(int)trail.size());
 	assert(assumpSlack(assumpSet,confl_data)<0);
 
+	// weaken non-falsifieds
 	for(int v: confl_data.vars){
 		if(assumpSet.has(-confl_data.getLit(v))) continue;
 		assert(Level[-confl_data.getLit(v)]==-1);
@@ -1582,7 +1590,7 @@ bool solve(const vector<int>& assumptions) {
 	}
 }
 
-void solveLinear(const Constraint<int,long long>& objective){
+void linearOptimization(const Constraint<int,long long>& objective){
 	assert(objective.vars.size() > 0);
 	long long opt_coef_sum = 0;
 	for (int v: objective.vars) opt_coef_sum+=abs(objective.coefs[v]);
@@ -1591,7 +1599,7 @@ void solveLinear(const Constraint<int,long long>& objective){
 	while(solve({})){
 		last_sol_obj_val = 0;
 		for(int v: objective.vars) last_sol_obj_val+=objective.coefs[v]*last_sol[v];
-		cout << "o " << last_sol_obj_val << endl;
+		std::cout << "o " << last_sol_obj_val << std::endl;
 
 		objective.getCopy(tmpConstraint,-1);
 		tmpConstraint.addRhs(-last_sol_obj_val+1);
@@ -1617,8 +1625,7 @@ void solveLinear(const Constraint<int,long long>& objective){
 	exit_UNSAT();
 }
 
-//TODO: output number of auxiliary for coreGuided
-void coreGuided(Constraint<int,long long>& objective){
+void coreGuidedOptimization(Constraint<int,long long>& objective){
 	std::vector<int> assumps;
 	assumps.reserve(objective.vars.size());
 	long long lower_bound = -objective.removeUnits(false);
@@ -1631,9 +1638,11 @@ void coreGuided(Constraint<int,long long>& objective){
 		std::sort(assumps.begin(),assumps.end(),[&](int l1,int l2){ return objective.getCoef(-l1)>objective.getCoef(-l2); });
 		if(solve(assumps)){
 			last_sol_obj_val = lower_bound;
+			std::cout << "o " << last_sol_obj_val << std::endl;
 			exit_UNSAT();
 		}	else if(assumps.size()==0) exit_UNSAT();
 		assert(decisionLevel()==0);
+		++NCORES;
 
 		// take care of derived unit lits
 		lower_bound = -objective.removeUnits(false);
@@ -1646,6 +1655,7 @@ void coreGuided(Constraint<int,long long>& objective){
 
 		// adjust the lower bound
 		long long degree = confl_data.getDegree();
+		if(degree>1) ++NCORECARDINALITIES;
 		assert(degree<=1e9); assert(degree>0);
 		int mult = 1e9;
 		for(int v: confl_data.vars){
@@ -1698,8 +1708,8 @@ int main(int argc, char**argv){
 	std::cout << "c #variables=" << orig_n << " #constraints=" << clauses.size() << std::endl;
 
 	if(objective_func.vars.size() > 0){
-//		solveLinear(objective_func);
-		coreGuided(objective_func);
+		if(core_guided) coreGuidedOptimization(objective_func);
+		else linearOptimization(objective_func);
 	}else{
 		// TODO: fix empty objective function
 		if(solve({})) exit_SAT();
