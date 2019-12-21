@@ -293,7 +293,7 @@ struct Constraint{
 	}
 
 	template<class S, class L>
-	void getCopy(Constraint<S,L>& out, SMALL mult=1) const {
+	void copyTo(Constraint<S,L>& out, S mult=1) const {
 		out.reset();
 		out.resize(coefs.size());
 		out.vars=vars;
@@ -301,7 +301,7 @@ struct Constraint{
 		out.rhs=mult*rhs;
 	}
 
-	void divide(SMALL d){
+	void divide(SMALL d){ // TODO: make this correct when d is not a divisor of all coefs and rhs
 		assert(d>0);
 		for (int v: vars) coefs[v] /= d;
 		rhs /= d;
@@ -1121,7 +1121,7 @@ void opb_read(istream & in) {
 				tmpConstraint.addRhs(read_number(line0.substr(line0.find("=") + 1)));
 				// Handle equality case with two constraints
 				if (line0.find(" = ") != string::npos) {
-					tmpConstraint.getCopy(inverted,-1);
+					tmpConstraint.copyTo(inverted,-1);
 					addInputConstraint(inverted,true);
 				}
 				addInputConstraint(tmpConstraint,true); // NOTE: addInputConstraint modifies tmpConstraint, so invert should be called first
@@ -1449,16 +1449,15 @@ LARGE assumpSlack(const IntSet& assumptions, const Constraint<SMALL, LARGE>& cor
 	return slack;
 }
 
-void extractCore(int propagated_assump, const std::vector<int>& assumptions){
+void extractCore(int propagated_assump, const std::vector<int>& assumptions, Constraint<int,long long>* out){
+	if(out == nullptr) { backjumpTo(0); return; }
 	for(int l: assumptions) if(Level[-l]==0) { // assumption violated at root
-		confl_data.reset();
-		backjumpTo(0);
-		return;
+		out->reset(); backjumpTo(0); return;
 	}
+	Constraint<int,long long>& outCore = *out;
 
-	IntSet assumpSet;
-	assumpSet.resize(n+1);
-	for(int l: assumptions) assumpSet.add(l);
+	tmpSet.reset();
+	for(int l: assumptions) tmpSet.add(l);
 
 	// gather set of conflicting assumptions
 	std::vector<int> conflictingAssumps;
@@ -1470,7 +1469,7 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions){
 		int stack_l = stack.back();
 		stack.pop_back();
 		if(Reason[stack_l]==CRef_Undef){
-			assert(assumpSet.has(stack_l));
+			assert(tmpSet.has(stack_l));
 			conflictingAssumps.push_back(stack_l);
 		}else{
 			Clause& C = ca[Reason[stack_l]];
@@ -1486,16 +1485,18 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions){
 	backjumpTo(0);
 
 	// create conflict
-	for(int conflicting_l: conflictingAssumps){ assert(assumpSet.has(conflicting_l)); decide(conflicting_l); }
+	for(int conflicting_l: conflictingAssumps){ assert(tmpSet.has(conflicting_l)); decide(conflicting_l); }
 	CRef confl = propagate();
 	assert(confl!=CRef_Undef);
 
 	// analyze conflict
 	confl_data.init(ca[confl]);
+	confl_data.copyTo(outCore);
+	double assumpSlk = assumpSlack(tmpSet,outCore)/(double)outCore.getDegree();
 	while(Reason[trail.back()]!=CRef_Undef){
 		int l = trail.back();
 		int confl_coef_l = confl_data.getCoef(-l);
-//		if(confl_coef_l>0 && !assumpSet.has(l)) {
+//		if(confl_coef_l>0 && !tmpSet.has(l)) {
 			if(confl_coef_l>0) {
 			Clause& reasonC = ca[Reason[l]];
 			tmpConstraint.init(reasonC);
@@ -1503,28 +1504,33 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions){
 			tmpConstraint.roundToOne(tmpConstraint.getCoef(l),false);
 			confl_data.add(tmpConstraint,confl_coef_l);
 			assert(confl_data.getCoef(-l)==0);
+			double tmpAssumpSlk = assumpSlack(tmpSet,confl_data)/(double)confl_data.getDegree();
+			if(tmpAssumpSlk<assumpSlk){
+				assumpSlk=tmpAssumpSlk;
+				confl_data.copyTo(outCore);
+			}
 		}
 		undoOne();
 	}
 	qhead=min(qhead,(int)trail.size());
-	assert(assumpSlack(assumpSet,confl_data)<0);
+	assert(assumpSlack(tmpSet,outCore)<0);
 
 	// weaken non-falsifieds
-	for(int v: confl_data.vars){
-		if(assumpSet.has(-confl_data.getLit(v))) continue;
-		assert(Level[-confl_data.getLit(v)]==-1);
-		confl_data.weaken(-confl_data.coefs[v],v);
+	for(int v: outCore.vars){
+		if(tmpSet.has(-outCore.getLit(v))) continue;
+		assert(Level[-outCore.getLit(v)]==-1);
+		outCore.weaken(-outCore.coefs[v],v);
 	}
-	confl_data.removeZeroes();
-	confl_data.saturate();
-	confl_data.postProcess();
+	outCore.removeZeroes();
+	outCore.saturate();
+	outCore.postProcess();
 
-	assert(assumpSlack(assumpSet,confl_data)<0);
+	assert(assumpSlack(tmpSet,outCore)<0);
 	backjumpTo(0);
 }
 
 // NOTE: core constraint stored in confl_data
-bool solve(const vector<int>& assumptions) {
+bool solve(const vector<int>& assumptions, Constraint<int,long long>* out=nullptr) {
 	backjumpTo(0); // ensures assumptions are reset
 	std::vector<unsigned int> assumptions_lim={0};
 	assumptions_lim.reserve(assumptions.size());
@@ -1565,7 +1571,7 @@ bool solve(const vector<int>& assumptions) {
 			while(assumptions_lim.back()<assumptions.size()){
 				int l_assump = assumptions[assumptions_lim.back()];
 				if (~Level[-l_assump]){ // found conflicting assumptions
-					extractCore(l_assump,assumptions);
+					extractCore(l_assump,assumptions,out);
 					return false;
 				}
 				if (~Level[l_assump]){ // assumption already propagated
@@ -1601,7 +1607,7 @@ void linearOptimization(const Constraint<int,long long>& objective){
 		for(int v: objective.vars) last_sol_obj_val+=objective.coefs[v]*last_sol[v];
 		std::cout << "o " << last_sol_obj_val << std::endl;
 
-		objective.getCopy(tmpConstraint,-1);
+		objective.copyTo(tmpConstraint,-1);
 		tmpConstraint.addRhs(-last_sol_obj_val+1);
 		tmpConstraint.removeZeroes();
 		tmpConstraint.saturate();
@@ -1632,11 +1638,12 @@ void coreGuidedOptimization(Constraint<int,long long>& objective){
 	objective.removeZeroes();
 	std::cout << "c LB: " << lower_bound << std::endl;
 
+	Constraint<int,long long> core;
 	while(true){
 		assumps.clear();
 		for(int v: objective.vars) assumps.push_back(-objective.getLit(v));
 		std::sort(assumps.begin(),assumps.end(),[&](int l1,int l2){ return objective.getCoef(-l1)>objective.getCoef(-l2); });
-		if(solve(assumps)){
+		if(solve(assumps,&core)){
 			last_sol_obj_val = lower_bound;
 			std::cout << "o " << last_sol_obj_val << std::endl;
 			exit_UNSAT();
@@ -1646,19 +1653,19 @@ void coreGuidedOptimization(Constraint<int,long long>& objective){
 
 		// take care of derived unit lits
 		lower_bound = -objective.removeUnits(false);
-		if(confl_data.getDegree()==0) continue; // apparently only unit assumptions were derived
+		if(core.getDegree()==0) continue; // apparently only unit assumptions were derived
 
 		// figure out an appropriate core
-//		std::cout << "BEFORE CARD: " << confl_data << std::endl;
-		confl_data.simplifyToCardinality(false);
-//		std::cout << "AFTER CARD: " << confl_data << std::endl;
+//		std::cout << "BEFORE CARD: " << core << std::endl;
+		core.simplifyToCardinality(false);
+//		std::cout << "AFTER CARD: " << core << std::endl;
 
 		// adjust the lower bound
-		long long degree = confl_data.getDegree();
+		long long degree = core.getDegree();
 		if(degree>1) ++NCORECARDINALITIES;
 		assert(degree<=1e9); assert(degree>0);
 		int mult = 1e9;
-		for(int v: confl_data.vars){
+		for(int v: core.vars){
 			assert(objective.getLit(v)!=0);
 			mult=min(mult,abs(objective.coefs[v]));
 		}
@@ -1667,19 +1674,17 @@ void coreGuidedOptimization(Constraint<int,long long>& objective){
 
 		// add auxiliary variables
 		int oldN = n;
-		setNbVariables(n-degree+confl_data.vars.size());
-		for(int v=oldN+1; v<=n; ++v){
-			confl_data.addLhs(-1,v);
-		}
-		confl_data.getCopy(tmpConstraint);
-		tmpConstraint.saturate();
+		int newN = oldN-degree+core.vars.size();
+		setNbVariables(newN);
+		core.resize(newN+1);
+		for(int v=oldN+1; v<=newN; ++v) core.addLhs(-1,v);
+		core.copyTo(tmpConstraint);
 		addInputConstraint(tmpConstraint,false);
-		confl_data.getCopy(tmpConstraint,-1);
-		tmpConstraint.saturate();
+		core.copyTo(tmpConstraint,-1);
 		addInputConstraint(tmpConstraint,false);
 
 		// reformulate the objective
-		confl_data.getCopy(tmpConstraint,-1);
+		core.copyTo(tmpConstraint,-1);
 		objective.add(tmpConstraint,mult,false);
 		objective.removeZeroes();
 		//std::cout << objective << std::endl;
