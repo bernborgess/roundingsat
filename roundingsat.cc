@@ -1678,16 +1678,24 @@ void coreGuidedOptimization(Constraint<int,long long>& objective){
 		setNbVariables(newN);
 		core.resize(newN+1);
 		for(int v=oldN+1; v<=newN; ++v) core.addLhs(-1,v);
-		core.copyTo(tmpConstraint);
-		addInputConstraint(tmpConstraint,false);
-		core.copyTo(tmpConstraint,-1);
-		addInputConstraint(tmpConstraint,false);
 
 		// reformulate the objective
 		core.copyTo(tmpConstraint,-1);
 		objective.add(tmpConstraint,mult,false);
 		objective.removeZeroes();
-		//std::cout << objective << std::endl;
+//		std::cout << objective << std::endl;
+
+		// add channeling constraints
+		addInputConstraint(tmpConstraint,false);
+		core.copyTo(tmpConstraint);
+		addInputConstraint(tmpConstraint,false);
+		for(int v=oldN+1; v<newN; ++v){
+			tmpConstraint.reset(1);
+			tmpConstraint.addLhs(1,-v);
+			tmpConstraint.addLhs(1,v+1);
+			addInputConstraint(tmpConstraint,false);
+		}
+
 	}
 }
 
