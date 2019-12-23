@@ -301,12 +301,6 @@ struct Constraint{
 		out.rhs=mult*rhs;
 	}
 
-	void divide(SMALL d){ // TODO: make this correct when d is not a divisor of all coefs and rhs
-		assert(d>0);
-		for (int v: vars) coefs[v] /= d;
-		rhs /= d;
-	}
-
 	LARGE getSlack() const {
 		LARGE slack = -rhs;
 		for(int v: vars) if(Level[v]!=-1 || (Level[-v]==-1 && coefs[v]>0)) slack+=coefs[v];
@@ -409,7 +403,9 @@ struct Constraint{
 			_gcd = gcd(_gcd,(int) abs(coefs[v]));
 		}
 		if(_gcd<=1) return false;
-		divide(_gcd); // NOTE: safe, because we know every coefficient divides
+		for (int v: vars) coefs[v] /= _gcd;
+		// NOTE: as all coefficients are divisible, we can ceildiv the rhs instead of the degree
+		rhs=ceildiv_safe<LARGE>(rhs,_gcd);
 		return true;
 	}
 
@@ -779,8 +775,7 @@ void uncheckedEnqueue(int p, CRef from){
 	trail.push_back(p);
 }
 
-template<class SMALL, class LARGE>
-CRef attachConstraint(Constraint<SMALL,LARGE>& constraint, bool learnt, bool locked=false){
+CRef attachConstraint(Constraint<int,long long>& constraint, bool learnt, bool locked=false){
 	// sort variables in constraint so that resulting CRef will have them in correct order for calculating watches
 //	std::sort(constraint.vars.begin(),constraint.vars.end(),[&](int v1,int v2){
 //		int lvl1 = Level[-constraint.getLit(v1)]; if(lvl1==-1)lvl1=1+1e9;
@@ -811,7 +806,7 @@ CRef attachConstraint(Constraint<SMALL,LARGE>& constraint, bool learnt, bool loc
 	attachClause(cr); // TODO: incorporate code in this method
 
 	// perform initial propagation
-	LARGE slack = constraint.getSlack();
+	long long slack = constraint.getSlack();
 	assert(slack>=0);
 	for (int i=0; i<(int)C.size(); i++)
 		if (Level[-C.lits()[i]] == -1 && Level[C.lits()[i]] == -1 && C.coefs()[i]>slack) uncheckedEnqueue(C.lits()[i], cr);
@@ -1015,44 +1010,49 @@ void setNbVariables(long long nvars){
 // ---------------------------------------------------------------------
 // Constraint addition
 
-void learnConstraint(Constraint<long long,__int128>& c){
-	backjumpTo(c.getAssertionLevel());
+void learnConstraint(Constraint<long long,__int128>& confl){
+	assert(confl.getDegree()>0);
+	assert(confl.getDegree()<=1e9);
 
-	__int128 slack = c.heuristicWeakening();
+	confl.copyTo(tmpConstraint);
+	backjumpTo(tmpConstraint.getAssertionLevel());
+
+	long long slack = tmpConstraint.heuristicWeakening();
 	if(slack < 0) {
 		assert(decisionLevel()==0);
 		exit_UNSAT();
 	}
-	c.postProcess();
+	tmpConstraint.postProcess();
 
-	CRef cr = attachConstraint(confl_data,true);
+	CRef cr = attachConstraint(tmpConstraint,true);
 	Clause & C = ca[cr];
 	C.setLBD(computeLBD(C));
 
 	LEARNEDLENGTHSUM+=C.size();
 	LEARNEDDEGREESUM+=C.w;
 	if(C.w==1) ++NCLAUSESLEARNED;
-	else if(c.isCardinality()) ++NCARDINALITIESLEARNED;
+	else if(tmpConstraint.isCardinality()) ++NCARDINALITIESLEARNED;
 	else ++NGENERALSLEARNED;
 }
 
-void addInputConstraint(Constraint<int, long long>& c, bool initial){
+CRef addInputConstraint(Constraint<int, long long>& c, bool initial){
 	assert(decisionLevel()==0);
 	assert(learnts.size()==0 || !initial);
 	// TODO: check all simplification operations on Constraints
 	c.removeZeroes();
 	c.saturate();
 	c.postProcess();
-	long long degree = c.saturate();
+	long long degree = c.getDegree();
 	if(degree > (long long) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
-	if(degree<=0) return; // already satisfied.
+	if(degree<=0) return CRef_Undef; // already satisfied.
 
 	long long slack = c.getSlack();
-	if(slack < 0)puts("c UNSAT trivially inconsistent input constraint"),exit_UNSAT();
+	if(slack < 0)puts("c Inconsistent input constraint"),exit_UNSAT();
 
-	attachConstraint(c,!initial,true);
+	CRef result = attachConstraint(c,!initial,true);
+	if (propagate() != CRef_Undef)puts("c Input conflict"),exit_UNSAT();
 
-	if (propagate() != CRef_Undef)puts("c UNSAT input conflict"),exit_UNSAT();
+	return result;
 }
 
 // ---------------------------------------------------------------------
@@ -1586,7 +1586,6 @@ bool solve(const vector<int>& assumptions, Constraint<int,long long>* out=nullpt
 			if(next==0) {
 				assert(order_heap.empty());
 				for (int i = 1; i <= n; ++i)last_sol[i] = (~Level[i]);
-				last_sol_obj_val=1e9;
 				backjumpTo(0);
 				return true;
 			}
@@ -1603,28 +1602,22 @@ void linearOptimization(const Constraint<int,long long>& objective){
 	if (opt_coef_sum > (int) 1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
 
 	while(solve({})){
+		int prev_val = last_sol_obj_val;
+		_unused(prev_val);
 		last_sol_obj_val = 0;
 		for(int v: objective.vars) last_sol_obj_val+=objective.coefs[v]*last_sol[v];
 		std::cout << "o " << last_sol_obj_val << std::endl;
+		assert(last_sol_obj_val<prev_val);
 
 		objective.copyTo(tmpConstraint,-1);
 		tmpConstraint.addRhs(-last_sol_obj_val+1);
-		tmpConstraint.removeZeroes();
-		tmpConstraint.saturate();
-		tmpConstraint.postProcess();
-		long long degree = tmpConstraint.saturate();
-		assert(degree<=1e9);
-		assert(degree>=0);
-		if(tmpConstraint.vars.size()==0){
-			if(degree>0 || !solve({})) exit_UNSAT();
-			exit_SAT();
-		}
+		CRef cr = addInputConstraint(tmpConstraint,false);
+		assert(cr!=CRef_Undef);
 		if(external.size()>0){
 			assert(external.size()==1);
 			ca[external[0]].setStatus(FORCEDELETE);
 			external.pop_back();
 		}
-		CRef cr = attachConstraint(tmpConstraint,true,true);
 		external.push_back(cr);
 		assert(ca[cr].getStatus()==LOCKED);
 	}
