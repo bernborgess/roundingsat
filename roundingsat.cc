@@ -350,6 +350,8 @@ struct Constraint{
 		if(isCardinality()) return false;
 		sort(vars.begin(),vars.end(),[&](int v1, int v2){return abs(coefs[v1])<abs(coefs[v2]);});
 		LARGE degree = getDegree();
+		assert(degree>0);
+		assert(coefs[vars[0]]!=0);
 
 		int largeCoefsNeeded=1;
 		LARGE largeCoefSum=0;
@@ -378,6 +380,7 @@ struct Constraint{
 		}
 
 		rhs=largeCoefsNeeded;
+		// TODO: sort vars from large to small to be able to simply pop skippable literals
 		for(int i=0; i<skippable; ++i) coefs[vars[i]]=0;
 		for(int i=skippable; i<(int)vars.size(); ++i){
 			int v = vars[i];
@@ -391,9 +394,7 @@ struct Constraint{
 	}
 
 	bool divideByGCD(){
-		LARGE degree = removeUnits();
-		removeZeroes();
-		if(degree<=1 || isCardinality()) return false;
+		if(isCardinality()) return false;
 		sort(vars.begin(),vars.end(),[&](int v1, int v2){return abs(coefs[v1])<abs(coefs[v2]);});
 		if(abs(coefs[vars.back()])>1e9) return false; // TODO: large coefs currently unsupported
 		// assume every coeff fits in an int from this point onwards
@@ -411,8 +412,10 @@ struct Constraint{
 
 	// NOTE: only equivalence preserving operations here!
 	void postProcess(){
-		if(divideByGCD()) ++NGCD;
-		if(simplifyToCardinality(true)) ++NCARDDETECT;
+		removeZeroes();
+		LARGE degree = removeUnits();
+		if(degree>1 && divideByGCD()) ++NGCD;
+		if(degree>1 && simplifyToCardinality(true)) ++NCARDDETECT;
 	}
 
 	bool falsifiedCurrentLvlIsOne(){
@@ -1038,9 +1041,6 @@ void learnConstraint(Constraint<long long,__int128>& confl){
 CRef addInputConstraint(Constraint<int, long long>& c, bool initial){
 	assert(decisionLevel()==0);
 	assert(learnts.size()==0 || !initial);
-	// TODO: check all simplification operations on Constraints
-	c.removeZeroes();
-	c.saturate();
 	c.postProcess();
 	long long degree = c.getDegree();
 	if(degree > (long long) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
@@ -1521,8 +1521,6 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions, Con
 		assert(Level[-outCore.getLit(v)]==-1);
 		outCore.weaken(-outCore.coefs[v],v);
 	}
-	outCore.removeZeroes();
-	outCore.saturate();
 	outCore.postProcess();
 
 	assert(assumpSlack(tmpSet,outCore)<0);
