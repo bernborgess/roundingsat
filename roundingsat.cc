@@ -111,7 +111,7 @@ struct Watch {
 const double resize_factor=1.5;
 
 double initial_time;
-long long NCONFL=0, NDECIDE=0, NPROP=0, NIMPL=0;
+long long NCONFL=0, NDECIDE=0, NPROP=0;
 __int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
 long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
 long long NGCD=0, NCARDDETECT=0, NCORECARDINALITIES=0, NCORES=0;
@@ -138,7 +138,7 @@ template<class T> void resizeLitMap(std::vector<T>& _map, typename std::vector<T
 	assert(size<(1<<28));
 	int oldmiddle = (_map.size()-1)/2;
 	int newmiddle = resize_factor*size;
-	assert(newmiddle>oldmiddle);
+	if(newmiddle<=oldmiddle) return;
 	_map.resize(2*newmiddle+1);
 	map=_map.begin()+newmiddle;
 	for(int i=_map.size()-1; i>newmiddle+oldmiddle; --i) _map[i]=init;
@@ -184,7 +184,7 @@ struct Constraint{
 	std::vector<int> vars;
 	vector<SMALL> coefs;
 	LARGE rhs = 0;
-	constexpr SMALL _unused_(){ return std::numeric_limits<SMALL>::max(); }
+	static constexpr SMALL _unused_(){ return std::numeric_limits<SMALL>::max(); }
 
 	inline void resize(int s){
 		coefs.resize(s,_unused_());
@@ -719,56 +719,6 @@ void claBumpActivity (Clause& c) {
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 
-template<class A,class B> long long slack(int length,A const& lits,B const& coefs,long long w){
-	long long s=-w;
-	for(int i=0;i<length;i++){
-		int l = lits[i];
-		int coef = coefs[i];
-		if(Level[-l]==-1)s+=coef;
-	}
-	return s;
-}
-
-void attachClause(CRef cr){
-	Clause & C = ca[cr];
-	// sort literals by the decision level at which they were falsified, descending order (never falsified = level infinity)
-	vector<pair<int,int>> order;
-	for(int i=0;i<(int)C.size();i++){
-		int lvl=Level[-C.lits()[i]]; if(lvl==-1)lvl=1e9;
-		order.emplace_back(-lvl,i);
-	}
-	sort(order.begin(),order.end());
-	vector<int>lits_old (C.lits(), C.lits()+C.size());
-	vector<int>coefs_old (C.coefs(), C.coefs()+C.size());
-	for(int i=0;i<(int)C.size();i++){
-		C.lits()[i] = lits_old[order[i].second];
-		C.coefs()[i] = coefs_old[order[i].second];
-	}
-	C.sumwatchcoefs = 0;
-	C.nwatch = 0;
-	int mxcoef = 0; for(int i=0;i<(int)C.size();i++) mxcoef = max(mxcoef, C.coefs()[i]);
-	// TODO: ask Jan about old opt_K code below
-	// int mxcoef = 0; for(int i=0;i<(int)C.size();i++) if (abs(C.lits()[i]) <= n - opt_K) mxcoef = max(mxcoef, C.coefs()[i]);
-	C.minsumwatch = (long long) C.w + mxcoef;
-	for(int i=0;i<(int)C.size();i++) {
-		C.sumwatchcoefs += C.coefs()[i];
-		C.nwatch++;
-		adj[C.lits()[i]].push_back({cr});
-		if (C.sumwatchcoefs >= C.minsumwatch) break;
-	}
-}
-
-void removeClause(CRef cr){
-	assert(decisionLevel()==0);
-	Clause& c = ca[cr];
-	assert(c.getStatus()!=MARKEDFORDELETE);
-	assert(c.getStatus()!=LOCKED);
-	c.setStatus(MARKEDFORDELETE);
-	ca.wasted += ca.sz_clause(c.size());
-}
-
-// ---------------------------------------------------------------------
-// ---------------------------------------------------------------------
 void uncheckedEnqueue(int p, CRef from){
 	assert(Level[p]==-1 && Level[-p]==-1);
 	Level[p] = -2; // TODO: ask Jan why this happens
@@ -782,11 +732,15 @@ void uncheckedEnqueue(int p, CRef from){
 
 CRef attachConstraint(Constraint<int,long long>& constraint, bool learnt, bool locked=false){
 	// sort variables in constraint so that resulting CRef will have them in correct order for calculating watches
-//	std::sort(constraint.vars.begin(),constraint.vars.end(),[&](int v1,int v2){
-//		int lvl1 = Level[-constraint.getLit(v1)]; if(lvl1==-1)lvl1=1+1e9;
-//		int lvl2 = Level[-constraint.getLit(v2)]; if(lvl2==-1)lvl2=1+1e9;
-//		return lvl1 > lvl2;
-//	});
+	std::vector<std::pair<int,int>> order;
+	order.reserve(constraint.vars.size());
+	for(int v: constraint.vars) {
+		int o = 1e9-Level[-constraint.getLit(v)];
+		if(o==1e9+1) o = -abs(constraint.coefs[v]);
+		order.emplace_back(o,v);
+	}
+	std::sort(order.begin(),order.end());
+	for(int i=0; i<(int)order.size(); ++i) constraint.vars[i]=order[i].second;
 
 	// allocate constraint in memory
 	CRef cr = ca.alloc(constraint,learnt,locked);
@@ -795,26 +749,26 @@ CRef attachConstraint(Constraint<int,long long>& constraint, bool learnt, bool l
 
 	// set watches for constraint
 	Clause& C = ca[cr];
-//	C.sumwatchcoefs = 0;
-//	C.nwatch = 0;
-//	// TODO: ask Jan about old opt_K code below
-//	// int mxcoef = 0; for(int i=0;i<(int)C.size();i++) if (abs(C.lits()[i]) <= n - opt_K) mxcoef = max(mxcoef, C.coefs()[i]);
-//	int mxcoef = 0; for(int i=0;i<(int)C.size();i++) mxcoef = max(mxcoef, C.coefs()[i]);
-//	C.minsumwatch = (long long) C.w + mxcoef;
-//	for(int i=0;i<(int)C.size();i++) {
-//		C.sumwatchcoefs += C.coefs()[i];
-//		C.nwatch++;
-//		adj[C.lits()[i]].push_back({cr});
-//		if (C.sumwatchcoefs >= C.minsumwatch) break;
-//	}
-
-	attachClause(cr); // TODO: incorporate code in this method
+	C.sumwatchcoefs = 0;
+	C.nwatch = 0;
+	// TODO: ask Jan about old opt_K code below
+	// int mxcoef = 0; for(int i=0;i<(int)C.size();i++) if (abs(C.lits()[i]) <= n - opt_K) mxcoef = max(mxcoef, C.coefs()[i]);
+	int mxcoef = 0; for(int i=0;i<(int)C.size();i++) mxcoef = max(mxcoef, C.coefs()[i]);
+	C.minsumwatch = (long long) C.w + mxcoef;
+	for(int i=0;i<(int)C.size();i++) {
+		C.sumwatchcoefs += C.coefs()[i];
+		C.nwatch++;
+		adj[C.lits()[i]].push_back({cr});
+		if (C.sumwatchcoefs >= C.minsumwatch) break;
+	}
 
 	// perform initial propagation
-	long long slack = constraint.getSlack();
-	assert(slack>=0);
-	for (int i=0; i<(int)C.size(); i++)
-		if (Level[-C.lits()[i]] == -1 && Level[C.lits()[i]] == -1 && C.coefs()[i]>slack) uncheckedEnqueue(C.lits()[i], cr);
+	long long slk=-C.w;
+	for(int i=0; i<C.nwatch; ++i) if(Level[-C.lits()[i]]==-1) slk+=C.coefs()[i];
+	assert(slk>=0);
+	for(int i=0; i<C.nwatch; ++i) if(Level[-C.lits()[i]]==-1 && Level[C.lits()[i]]==-1 && C.coefs()[i]>slk) {
+		uncheckedEnqueue(C.lits()[i], cr); ++NPROP;
+	}
 
 	return cr;
 }
@@ -944,18 +898,15 @@ CRef propagate() {
 				}
 			}
 			*j++ = {cr};
-			long long s = slack(C.nwatch,lits,coefs,C.w);
-			if(s<0){
+			long long slk=-C.w;
+			for(int i=0; i<C.nwatch; ++i) if(Level[-lits[i]]==-1) slk+=coefs[i];
+			if(slk<0){
 				confl = cr;
-				while (qhead < (int) trail.size()) Level[trail[qhead++]] = decisionLevel();
+				while(qhead < (int) trail.size()) Level[trail[qhead++]] = decisionLevel();
 				while(i<end)*j++=*i++;
 			}else{
-				for(int it=0;it<C.nwatch;it++)if(Level[-lits[it]]==-1 && coefs[it] > s){
-					NIMPL++;
-					if (Level[lits[it]]==-1) {
-						uncheckedEnqueue(lits[it], cr);
-						NPROP++;
-					}
+				for(int i=0; i<C.nwatch; ++i) if(Level[-lits[i]]==-1 && Level[lits[i]]==-1 && coefs[i]>slk) {
+					uncheckedEnqueue(lits[i], cr); ++NPROP;
 				}
 			}
 		}
@@ -1251,6 +1202,15 @@ struct reduceDB_lt {
 	}
 };
 
+void removeConstraint(CRef cr){
+	assert(decisionLevel()==0);
+	Clause& c = ca[cr];
+	assert(c.getStatus()!=MARKEDFORDELETE);
+	assert(c.getStatus()!=LOCKED);
+	c.setStatus(MARKEDFORDELETE);
+	ca.wasted += ca.sz_clause(c.size());
+}
+
 void reduceDB(){
 	cnt_reduceDB++;
 	if (verbosity > 0) puts("c INPROCESSING");
@@ -1265,9 +1225,9 @@ void reduceDB(){
 	for (i = j = 0; i < learnts.size(); i++){
 		Clause& c = ca[learnts[i]];
 		if (c.getStatus()==FORCEDELETE){
-			removeClause(learnts[i]);
+			removeConstraint(learnts[i]);
 		}else if (c.lbd()>2 && c.size() > 2 && c.getStatus()==UNLOCKED && i < learnts.size() / 2)
-			removeClause(learnts[i]);
+			removeConstraint(learnts[i]);
 		else
 			learnts[j++] = learnts[i];
 	}
@@ -1547,7 +1507,6 @@ bool solve(const vector<int>& assumptions, Constraint<int,long long>* out=nullpt
 						// memory usage
 						cout<<"c total clause space: "<<ca.cap*4/1024./1024.<<"MB"<<endl;
 						cout<<"c total #watches: ";{int cnt=0;for(int l=-n;l<=n;l++)cnt+=(int)adj[l].size();cout<<cnt<<endl;}
-						printf("c total #propagations: %lld / total #impl: %lld (eff. %.3lf)\n",NPROP,NIMPL,(double)NPROP/(double)NIMPL);
 					}
 				}
 			}
