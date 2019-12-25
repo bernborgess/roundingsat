@@ -581,6 +581,7 @@ public:
 };
 
 IntSet tmpSet;
+IntSet actSet;
 
 // ---------------------------------------------------------------------
 // memory. maximum supported size of learnt clause database is 16GB
@@ -695,6 +696,7 @@ struct{
 
 void varDecayActivity() { var_inc *= (1 / var_decay); }
 void varBumpActivity(int v){
+	assert(v>0);
 	if ( (activity[v] += var_inc) > 1e100 ) {
 		// Rescale:
 		for (int i = 1; i <= n; i++)
@@ -744,9 +746,9 @@ void attachClause(CRef cr){
 	}
 	C.sumwatchcoefs = 0;
 	C.nwatch = 0;
+	int mxcoef = 0; for(int i=0;i<(int)C.size();i++) mxcoef = max(mxcoef, C.coefs()[i]);
 	// TODO: ask Jan about old opt_K code below
 	// int mxcoef = 0; for(int i=0;i<(int)C.size();i++) if (abs(C.lits()[i]) <= n - opt_K) mxcoef = max(mxcoef, C.coefs()[i]);
-	int mxcoef = 0; for(int i=0;i<(int)C.size();i++) mxcoef = max(mxcoef, C.coefs()[i]);
 	C.minsumwatch = (long long) C.w + mxcoef;
 	for(int i=0;i<(int)C.size();i++) {
 		C.sumwatchcoefs += C.coefs()[i];
@@ -859,8 +861,8 @@ void analyze(CRef confl){
 	}
 
 	confl_data.init(C);
-	tmpSet.reset();
-	for(int v: confl_data.vars) tmpSet.add(confl_data.getLit(v));
+	actSet.reset();
+	for(int v: confl_data.vars) actSet.add(confl_data.getLit(v));
 	while(1){
 		if (decisionLevel() == 0) {
 			assert(0>confl_data.getSlack());
@@ -885,7 +887,7 @@ void analyze(CRef confl){
 				tmpConstraint.init(reasonC);
 				tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack());
 				tmpConstraint.roundToOne(tmpConstraint.getCoef(l),!originalRoundToOne);
-				for(int v: tmpConstraint.vars) tmpSet.add(tmpConstraint.getLit(v));
+				for(int v: tmpConstraint.vars) actSet.add(tmpConstraint.getLit(v));
 				confl_data.add(tmpConstraint,confl_coef_l);
 				assert(confl_data.getCoef(-l)==0);
 				assert(0>confl_data.getSlack());
@@ -895,8 +897,7 @@ void analyze(CRef confl){
 	}
 	qhead=min(qhead,(int)trail.size());
 	assert(0>confl_data.getSlack());
-
-	for(int l: tmpSet.getKeys()) varBumpActivity(abs(l));
+	for(int l: actSet.getKeys()) if(l!=0) varBumpActivity(abs(l));
 }
 
 /**
@@ -1004,6 +1005,7 @@ void setNbVariables(long long nvars){
 	tmpConstraint.resize(nvars+1);
 	confl_data.resize(nvars+1);
 	tmpSet.resize(nvars+1);
+	actSet.resize(nvars+1);
 	order_heap.resize(nvars);
 	for(int i=n+1;i<=nvars;++i) phase[i] = -i, order_heap.insert(i);
 	n = nvars;
@@ -1233,22 +1235,20 @@ void garbage_collect(){
 }
 
 struct reduceDB_lt {
-    bool operator () (CRef x, CRef y) { 
- 
-    // Main criteria... Like in MiniSat we keep all binary clauses
-    if(ca[x].size()> 2 && ca[y].size()==2) return 1;
-    
-    if(ca[y].size()>2 && ca[x].size()==2) return 0;
-    if(ca[x].size()==2 && ca[y].size()==2) return 0;
-    
-    // Second one  based on literal block distance
-    if(ca[x].lbd() > ca[y].lbd()) return 1;
-    if(ca[x].lbd() < ca[y].lbd()) return 0;
+	bool operator () (CRef x, CRef y) {
+		// Main criteria... Like in MiniSat we keep all binary clauses
+		if(ca[x].size()> 2 && ca[y].size()==2) return 1;
 
-    // Finally we can use old activity or size, we choose the last one
-    return ca[x].act < ca[y].act;
-		//return ca[x].size() < ca[y].size();
-    }    
+		if(ca[y].size()>2 && ca[x].size()==2) return 0;
+		if(ca[x].size()==2 && ca[y].size()==2) return 0;
+
+		// Second one  based on literal block distance
+		if(ca[x].lbd() > ca[y].lbd()) return 1;
+		if(ca[x].lbd() < ca[y].lbd()) return 0;
+
+		// Finally we can use old activity or size, we choose the last one
+		return ca[x].act < ca[y].act;
+	}
 };
 
 void reduceDB(){
