@@ -166,16 +166,14 @@ unsigned int gcd(unsigned int u, unsigned int v){
 }
 
 vector<vector<Watch>> _adj; vector<vector<Watch>>::iterator adj;
-vector<CRef> _Reason; vector<CRef>::iterator Reason; // TODO: could be var-map instead of lit-map
-vector<int> trail;
 vector<int> _Level; vector<int>::iterator Level;
-vector<int> _Pos; vector<int>::iterator Pos; // TODO: could be var-map instead of lit-map
-vector<int> trail_lim;
+vector<int> trail, trail_lim, Pos;
+vector<CRef> Reason;
 int qhead; // for unit propagation
 int last_sol_obj_val = 1e9+1;
 inline bool foundSolution(){return last_sol_obj_val<=1e9;}
 vector<bool> last_sol;
-vector<int> phase; // TODO: should be bool?
+vector<int> phase;
 inline void newDecisionLevel() { trail_lim.push_back(trail.size()); }
 inline int decisionLevel() { return trail_lim.size(); }
 
@@ -307,7 +305,6 @@ struct Constraint{
 		return slack;
 	}
 
-	// TODO: weaken non-implying falsifieds! e.g. 1x1 2x2 4x3 8x4 16x5 <- smaller terms will get rounded up when dividing by 16
 	template<class S, class L>
 	void add(const Constraint<S,L>& c, SMALL mult=1, bool saturateAndReduce=true){
 		assert(mult>0);
@@ -452,7 +449,7 @@ struct Constraint{
 			int l = getLit(v);
 			if(~Level[-l]) litsByPos.push_back(-l);
 		}
-		std::sort(litsByPos.begin(),litsByPos.end(),[&](int l1,int l2){ return Pos[l1]<Pos[l2]; });
+		std::sort(litsByPos.begin(),litsByPos.end(),[&](int l1,int l2){ return Pos[abs(l1)]<Pos[abs(l2)]; });
 		int posIndex = 0;
 
 		// calculate earliest propagating decision level by decreasing slack one decision level at a time
@@ -492,11 +489,9 @@ struct Constraint{
 			if(abs(coefs[v])<=wiggle_room && !increasesSlack(v)) vars[i]=vars[j], vars[j]=v, ++j;
 		}
 		std::sort(vars.begin(),vars.begin()+j,[&](int v1,int v2){
-			int l1=getLit(v1); assert(l1!=0);
-			int l2=getLit(v2); assert(l2!=0);
 			int c1=abs(coefs[v1]); assert(c1<=wiggle_room);
 			int c2=abs(coefs[v2]); assert(c2<=wiggle_room);
-			return c1<c2 || (c1==c2 && Pos[-l1]>Pos[-l2]);
+			return c1<c2 || (c1==c2 && Pos[v1]>Pos[v2]);
 		});
 		for(int i=0; i<j; ++i){
 			int v = vars[i];
@@ -519,7 +514,7 @@ struct Constraint{
 		if (slk >= 0) {
 			for (int v: vars){
 				SMALL c = abs(coefs[v]);
-				if (Level[v]==-1 && Level[-v]==-1 && c>slk) {
+				if (Pos[v]==-1 && c>slk) {
 					smallestPropagated = min(smallestPropagated, c);
 				}
 			}
@@ -720,13 +715,14 @@ void claBumpActivity (Clause& c) {
 // ---------------------------------------------------------------------
 
 void uncheckedEnqueue(int p, CRef from){
-	assert(Level[p]==-1 && Level[-p]==-1);
+	assert(Pos[abs(p)]==-1);
+	int v = abs(p);
 	Level[p] = -2; // TODO: ask Jan why this happens
-	Pos[p] = (int) trail.size();
+	Pos[v] = (int) trail.size();
 	if(decisionLevel()==0 && from!=CRef_Undef){
-		Reason[p]=CRef_Undef; // avoid locked clauses for unit literals
+		Reason[v]=CRef_Undef; // avoid locked clauses for unit literals
 		ca[from].setLBD(1); // but do keep these clauses around!
-	}else Reason[p]=from;
+	}else Reason[v]=from;
 	trail.push_back(p);
 }
 
@@ -766,7 +762,7 @@ CRef attachConstraint(Constraint<int,long long>& constraint, bool learnt, bool l
 	long long slk=-C.w;
 	for(int i=0; i<C.nwatch; ++i) if(Level[-C.lits()[i]]==-1) slk+=C.coefs()[i];
 	assert(slk>=0);
-	for(int i=0; i<C.nwatch; ++i) if(Level[-C.lits()[i]]==-1 && Level[C.lits()[i]]==-1 && C.coefs()[i]>slk) {
+	for(int i=0; i<C.nwatch; ++i) if(Pos[abs(C.lits()[i])]==-1 && C.coefs()[i]>slk) {
 		uncheckedEnqueue(C.lits()[i], cr); ++NPROP;
 	}
 
@@ -776,20 +772,20 @@ CRef attachConstraint(Constraint<int,long long>& constraint, bool learnt, bool l
 void undoOne(){
 	assert(!trail.empty());
 	int l = trail.back();
+	int v = abs(l);
 	trail.pop_back();
 	Level[l] = -1;
-	Pos[l] = -1;
-	phase[abs(l)]=l;
+	Pos[v] = -1;
+	phase[v]=l;
 	if(!trail_lim.empty() && trail_lim.back() == (int)trail.size())trail_lim.pop_back();
-	Reason[l] = CRef_Undef;
-	order_heap.insert(abs(l));
+	Reason[v] = CRef_Undef;
+	order_heap.insert(v);
 }
 
 void backjumpTo(int level){
 	assert(level>=0);
 	while(decisionLevel()>level) undoOne();
 	qhead = min(qhead,(int)trail.size());
-	//for(int i=0; i<qhead; ++i) assert(Level[trail[i]]>=0);
 }
 
 void decide(int l){
@@ -803,7 +799,7 @@ void decide(int l){
 unsigned int computeLBD(Clause& C) {
 	tmpSet.reset();
 	int * lits = C.lits();
-	for (int i=0; i<(int)C.size(); i++) if (Level[-lits[i]] != -1) tmpSet.add(Level[-lits[i]]);
+	for (int i=0; i<(int)C.size(); i++) if (~Level[-lits[i]]) tmpSet.add(Level[-lits[i]]);
 	return tmpSet.size();
 }
 
@@ -828,12 +824,12 @@ void analyze(CRef confl){
 			if (confl_data.falsifiedCurrentLvlIsOne()) {
 				break;
 			} else {
-				assert(Reason[l] != CRef_Undef);
+				assert(Reason[abs(l)] != CRef_Undef);
 				if(originalRoundToOne){
 					confl_data.roundToOne(confl_coef_l,false);
 					confl_coef_l=1;
 				}
-				Clause& reasonC = ca[Reason[l]];
+				Clause& reasonC = ca[Reason[abs(l)]];
 				if (reasonC.learnt()) {
 					claBumpActivity(reasonC);
 					if (reasonC.lbd() > 2) reasonC.setLBD(computeLBD(reasonC));
@@ -905,7 +901,7 @@ CRef propagate() {
 				while(qhead < (int) trail.size()) Level[trail[qhead++]] = decisionLevel();
 				while(i<end)*j++=*i++;
 			}else{
-				for(int i=0; i<C.nwatch; ++i) if(Level[-lits[i]]==-1 && Level[lits[i]]==-1 && coefs[i]>slk) {
+				for(int i=0; i<C.nwatch; ++i) if(Pos[abs(lits[i])]==-1 && coefs[i]>slk) {
 					uncheckedEnqueue(lits[i], cr); ++NPROP;
 				}
 			}
@@ -919,7 +915,7 @@ int pickBranchLit(){
 	int next = 0;
 
 	// Activity based decision:
-	while (next == 0 || Level[next] != -1 || Level[-next] != -1)
+	while (next == 0 || Pos[next]!=-1)
 		if (order_heap.empty()){
 			next = 0;
 			break;
@@ -946,9 +942,9 @@ void setNbVariables(long long nvars){
 	if (nvars > 1e9) exit_ERROR({"Number of variables cannot exceed 1e9."});
 	if (nvars <= n) return;
 	resizeLitMap(_adj,adj,nvars,{});
-	resizeLitMap(_Reason,Reason,nvars,CRef_Undef);
 	resizeLitMap(_Level,Level,nvars,-1);
-	resizeLitMap(_Pos,Pos,nvars,-1);
+	Pos.resize(nvars+1,-1);
+	Reason.resize(nvars+1,CRef_Undef);
 	activity.resize(nvars+1,0);
 	phase.resize(nvars+1,false);
 	last_sol.resize(nvars+1,false);
@@ -1180,7 +1176,7 @@ void garbage_collect(){
 		ca.at += ca.sz_clause(length);
 	}
 	#define update_ptr(cr) if(cr.ofs>=ofs_learnts)cr=learnts[lower_bound(learnts_old.begin(), learnts_old.end(), cr)-learnts_old.begin()]
-	for(int l=-n;l<=n;l++) for(size_t i=0;i<adj[l].size();i++) update_ptr(adj[l][i].cref); // TODO: this is a quadratic operation? Maybe use an unordered_map instead?
+	for(int l=-n;l<=n;l++) for(size_t i=0;i<adj[l].size();i++) update_ptr(adj[l][i].cref);
 	for(CRef& ext: external) update_ptr(ext);
 	#undef update_ptr
 }
@@ -1428,11 +1424,11 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions, Con
 	while(stack.size()>0){
 		int stack_l = stack.back();
 		stack.pop_back();
-		if(Reason[stack_l]==CRef_Undef){
+		if(Reason[abs(stack_l)]==CRef_Undef){
 			assert(tmpSet.has(stack_l));
 			conflictingAssumps.push_back(stack_l);
 		}else{
-			Clause& C = ca[Reason[stack_l]];
+			Clause& C = ca[Reason[abs(stack_l)]];
 			for(int i=0; i<(int)C.size(); ++i){
 				int current_l = -C.lits()[i];
 				if(Level[current_l]<=0) continue;
@@ -1453,12 +1449,12 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions, Con
 	confl_data.init(ca[confl]);
 	confl_data.copyTo(outCore);
 	double assumpSlk = assumpSlack(tmpSet,outCore)/(double)outCore.getDegree();
-	while(Reason[trail.back()]!=CRef_Undef){
+	while(Reason[abs(trail.back())]!=CRef_Undef){
 		int l = trail.back();
 		int confl_coef_l = confl_data.getCoef(-l);
 //		if(confl_coef_l>0 && !tmpSet.has(l)) {
 			if(confl_coef_l>0) {
-			Clause& reasonC = ca[Reason[l]];
+			Clause& reasonC = ca[Reason[abs(l)]];
 			tmpConstraint.init(reasonC);
 			tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack());
 			tmpConstraint.roundToOne(tmpConstraint.getCoef(l),false);
@@ -1542,7 +1538,7 @@ bool solve(const vector<int>& assumptions, Constraint<int,long long>* out=nullpt
 			if(next==0) next = pickBranchLit();
 			if(next==0) {
 				assert(order_heap.empty());
-				for (int i = 1; i <= n; ++i)last_sol[i] = (~Level[i]);
+				for (int i = 1; i <= n; ++i)last_sol[i] = ~Level[i];
 				backjumpTo(0);
 				return true;
 			}
