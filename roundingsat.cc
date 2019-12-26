@@ -876,19 +876,20 @@ CRef propagate() {
 				int c = coefs[pos];
 				for(int it=C.nwatch;it<(int)C.size() && C.sumwatchcoefs-c < C.minsumwatch;it++)if(Level[-lits[it]]==-1){
 					adj[lits[it]].push_back({cr});
-					// swap(lits[it],lits[C.nwatch]),swap(coefs[it],coefs[C.nwatch]);
-					int middle = (it+C.nwatch)/2;
-					swap(lits[it],lits[middle]),swap(coefs[it],coefs[middle]);
-					swap(lits[middle],lits[C.nwatch]),swap(coefs[middle],coefs[C.nwatch]);
+					swap(lits[it],lits[C.nwatch]),swap(coefs[it],coefs[C.nwatch]);
+					// TODO: check efficacy of adaptive watches
+//					int middle = (it+C.nwatch)/2;
+//					swap(lits[it],lits[middle]),swap(coefs[it],coefs[middle]);
+//					swap(lits[middle],lits[C.nwatch]),swap(coefs[middle],coefs[C.nwatch]);
 					C.sumwatchcoefs += coefs[C.nwatch];
 					C.nwatch++;
 				}
 				if (C.sumwatchcoefs-c >= C.minsumwatch) {
 					C.nwatch--;
-					// swap(lits[pos],lits[C.nwatch]),swap(coefs[pos],coefs[C.nwatch]);
-					int middle = (pos+C.nwatch)/2;
-					swap(lits[pos],lits[middle]),swap(coefs[pos],coefs[middle]);
-					swap(lits[middle],lits[C.nwatch]),swap(coefs[middle],coefs[C.nwatch]);
+					swap(lits[pos],lits[C.nwatch]),swap(coefs[pos],coefs[C.nwatch]);
+//					int middle = (pos+C.nwatch)/2;
+//					swap(lits[pos],lits[middle]),swap(coefs[pos],coefs[middle]);
+//					swap(lits[middle],lits[C.nwatch]),swap(coefs[middle],coefs[C.nwatch]);
 					C.sumwatchcoefs-=coefs[C.nwatch];
 					continue;
 				}
