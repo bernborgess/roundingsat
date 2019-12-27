@@ -435,7 +435,7 @@ struct Constraint{
 		if(decisionLevel()==0) return 0;
 		removeZeroes(); // ensures getLit is never 0
 
-		// calculate default slack
+		// calculate slack at level -1
 		LARGE slack = -rhs;
 		for(int v: vars) if(coefs[v]>0) slack+=coefs[v];
 		if(slack<0) return 0;
@@ -460,7 +460,8 @@ struct Constraint{
 				++posIndex;
 			}
 			if(slack<0){ assertionLevel=max(assertionLevel-1,0); break; }
-			while(~Level[getLit(vars[coefIndex])]) ++coefIndex;
+			while((unsigned int)assertionLevel>=(unsigned int)Level[getLit(vars[coefIndex])]) ++coefIndex;
+			// NOTE: unsigned int cast ensures assertionLevel < -1
 			assert(coefIndex<(int)vars.size());
 			if(slack<abs(coefs[vars[coefIndex]])) break;
 			++assertionLevel;
