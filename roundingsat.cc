@@ -617,11 +617,11 @@ struct {
 		memory = (uint32_t*) xrealloc(memory, sizeof(uint32_t) * cap);
 	}
 	int sz_clause(int length) { return (sizeof(Clause)+sizeof(int)*length+sizeof(int)*length)/sizeof(uint32_t); }
-	template<class SMALL, class LARGE>
-	CRef alloc(const Constraint<SMALL,LARGE>& constraint, bool learnt, bool locked){
-		LARGE degree = constraint.getDegree();
+	CRef alloc(const Constraint<int,long long>& constraint, bool learnt, bool locked){
+		long long degree = constraint.getDegree();
 		assert(degree>0);
 		assert(degree<=1e9);
+		// as the constraint should be saturated, the coefficients are between 1 and 1e9 as well.
 		int w = (int)degree;
 
 		assert(!constraint.vars.empty());
@@ -636,10 +636,11 @@ struct {
 		clause->w = w;
 		clause->act = 0;
 		for(unsigned int i=0;i<length;i++){
-			assert(constraint.getLit(constraint.vars[i])!=0);
-			clause->lits()[i]=constraint.getLit(constraint.vars[i]);
+			int v = constraint.vars[i];
+			assert(constraint.getLit(v)!=0);
+			clause->lits()[i]=constraint.getLit(v);
+			clause->coefs()[i]=abs(constraint.coefs[v]);
 		}
-		for(unsigned int i=0;i<length;i++) clause->coefs()[i]=abs(constraint.coefs[constraint.vars[i]]);
 		return {(uint32_t)(at-sz_clause(length))};
 	}
 	Clause& operator[](CRef cr) { return (Clause&)*(memory+cr.ofs); }
