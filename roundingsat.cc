@@ -753,19 +753,18 @@ CRef attachConstraint(Constraint<int,long long>& constraint, bool learnt, bool l
 	// int mxcoef = 0; for(int i=0;i<(int)C.size();i++) if (abs(C.lits()[i]) <= n - opt_K) mxcoef = max(mxcoef, C.coefs()[i]);
 	int mxcoef = 0; for(int i=0;i<(int)C.size();i++) mxcoef = max(mxcoef, C.coefs()[i]);
 	C.minsumwatch = (long long) C.w + mxcoef;
+	long long slk=-C.w;
 	for(int i=0;i<(int)C.size();i++) {
 		C.sumwatchcoefs += C.coefs()[i];
+		if(Level[-C.lits()[i]]==-1) slk+=C.coefs()[i];
 		C.nwatch++;
 		adj[C.lits()[i]].push_back({cr});
 		if (C.sumwatchcoefs >= C.minsumwatch) break;
 	}
-
-	// perform initial propagation
-	long long slk=-C.w;
-	for(int i=0; i<C.nwatch; ++i) if(Level[-C.lits()[i]]==-1) slk+=C.coefs()[i];
 	assert(slk>=0);
-	for(int i=0; i<C.nwatch; ++i) if(Pos[abs(C.lits()[i])]==-1 && C.coefs()[i]>slk) {
-		uncheckedEnqueue(C.lits()[i], cr); ++NPROP;
+	// perform initial propagation
+	for(int i=0; i<C.nwatch && C.coefs()[i]>slk; ++i){
+		if(Pos[abs(C.lits()[i])]==-1){ uncheckedEnqueue(C.lits()[i], cr); ++NPROP; }
 	}
 
 	return cr;
@@ -872,7 +871,7 @@ CRef propagate() {
 			int * lits = C.lits();
 			int * coefs = C.coefs();
 			bool watchlocked = false;
-			for (int i=0; i<C.nwatch; i++) if (Level[-lits[i]] >= 0 && lits[i] != -p) watchlocked = true;
+			for (int i=0; i<C.nwatch && !watchlocked; ++i) watchlocked=(Level[-lits[i]] >= 0 && lits[i] != -p);
 			if (!watchlocked) {
 				int pos = 0; while (lits[pos] != -p) pos++;
 				int c = coefs[pos];
@@ -904,7 +903,7 @@ CRef propagate() {
 				while(qhead < (int) trail.size()) Level[trail[qhead++]] = decisionLevel();
 				while(i<end)*j++=*i++;
 			}else{
-				for(int i=0; i<C.nwatch; ++i) if(Pos[abs(lits[i])]==-1 && coefs[i]>slk) {
+				for(int i=0; i<C.nwatch; ++i) if(coefs[i]>slk && Pos[abs(lits[i])]==-1) {
 					uncheckedEnqueue(lits[i], cr); ++NPROP;
 				}
 			}
