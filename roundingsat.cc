@@ -861,8 +861,8 @@ CRef propagate() {
 		int p=trail[qhead++];
 		Level[p] = decisionLevel();
 		vector<Watch> & ws = adj[-p];
-		vector<Watch>::iterator i, j, end;
-		for(i = j = ws.begin(), end = ws.end(); i != end;){
+		vector<Watch>::iterator i=ws.begin(),j=ws.begin();
+		while(i != ws.end()){
 			CRef cr = i->cref;
 			i++;
 			Clause & C = ca[cr];
@@ -899,12 +899,12 @@ CRef propagate() {
 			if(slk<0){
 				confl = cr;
 				while(qhead < (int) trail.size()) Level[trail[qhead++]] = decisionLevel();
-				while(i<end)*j++=*i++;
+				while(i<ws.end())*j++=*i++;
 			}else for(int i=0; i<C.nwatch; ++i) if(coefs[i]>slk && Pos[abs(lits[i])]==-1) {
 					uncheckedEnqueue(lits[i], cr); ++NPROP;
 				}
 		}
-		ws.erase(j, end);
+		ws.erase(j, ws.end());
 	}
 	return confl;
 }
