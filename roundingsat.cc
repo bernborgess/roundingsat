@@ -1261,7 +1261,10 @@ static void SIGINT_exit(int signum){
 }
 
 void print_stats() {
-	printf("c CPU time			  : %g s\n", cpuTime()-initial_time);
+	double timespent = cpuTime()-initial_time;
+	printf("c CPU time			  : %g s\n", timespent);
+	printf("c props/sec %.2f\n", NPROP/timespent);
+	printf("c confls/sec %.2f\n", NCONFL/timespent);
 	printf("d propagations %lld\n", NPROP);
 	printf("d decisions %lld\n", NDECIDE);
 	printf("d conflicts %lld\n", NCONFL);
