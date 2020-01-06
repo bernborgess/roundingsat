@@ -1589,7 +1589,10 @@ void coreGuidedOptimization(Constraint<int,long long>& objective){
 	while(true){
 		assumps.clear();
 		for(int v: objective.vars) assumps.push_back(-objective.getLit(v));
-		std::sort(assumps.begin(),assumps.end(),[&](int l1,int l2){ return objective.getCoef(-l1)>objective.getCoef(-l2); });
+		std::sort(assumps.begin(),assumps.end(),[&](int l1,int l2){
+			return objective.getCoef(-l1)>objective.getCoef(-l2) ||
+			(objective.getCoef(-l1)==objective.getCoef(-l2) && abs(l1)<abs(l2));
+		});
 		if(solve(assumps,&core)){
 			last_sol_obj_val = lower_bound;
 			std::cout << "o " << last_sol_obj_val << std::endl;
@@ -1638,8 +1641,8 @@ void coreGuidedOptimization(Constraint<int,long long>& objective){
 		addInputConstraint(tmpConstraint,false);
 		for(int v=oldN+1; v<newN; ++v){
 			tmpConstraint.reset(1);
-			tmpConstraint.addLhs(1,-v);
-			tmpConstraint.addLhs(1,v+1);
+			tmpConstraint.addLhs(1,v);
+			tmpConstraint.addLhs(1,-v-1);
 			addInputConstraint(tmpConstraint,false);
 		}
 
