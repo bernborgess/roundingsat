@@ -160,15 +160,12 @@ unsigned int gcd(unsigned int u, unsigned int v){
 	assert(v!=0);
 	if (u%v==0) return v;
 	if (v%u==0) return u;
+	unsigned int t;
 	int shift = __builtin_ctz(u | v);
 	u >>= __builtin_ctz(u);
 	do {
 		v >>= __builtin_ctz(v);
-		if (u > v) {
-			unsigned int t = v;
-			v = u;
-			u = t;
-		}
+		if (u > v) { t = v; v = u; u = t; }
 		v = v - u;
 	} while (v != 0);
 	return u << shift;
@@ -399,16 +396,20 @@ struct Constraint{
 
 	bool divideByGCD(){
 		if(isCardinality()) return false;
-		sort(vars.begin(),vars.end(),[&](int v1, int v2){return abs(coefs[v1])<abs(coefs[v2]);});
-		if(abs(coefs[vars.back()])>1e9) return false; // TODO: large coefs currently unsupported
-		// assume every coeff fits in an int from this point onwards
-		int _gcd = abs(coefs[vars.front()]);
+		int mn=INF;
 		for(int v: vars){
-			if(_gcd==1) break;
-			_gcd = gcd(_gcd,(int) abs(coefs[v]));
+			SMALL c = abs(coefs[v]);
+			mn=min(mn,c);
+			if(c>1e9) return false; // TODO: large coefs currently unsupported
 		}
-		if(_gcd<=1) return false;
-		for (int v: vars) coefs[v] /= _gcd;
+		assert(mn<INF); assert(mn>0);
+		unsigned int _gcd = mn;
+		for(int v: vars){
+			_gcd = gcd(_gcd,(unsigned int) abs(coefs[v]));
+			if(_gcd==1) return false;
+		}
+		assert(_gcd>1);
+		for (int v: vars) coefs[v] /= (int)_gcd;
 		// NOTE: as all coefficients are divisible, we can ceildiv the rhs instead of the degree
 		rhs=ceildiv_safe<LARGE>(rhs,_gcd);
 		return true;
@@ -1658,7 +1659,6 @@ void coreGuidedOptimization(Constraint<int,long long>& objective){
 			tmpConstraint.addLhs(1,-v-1);
 			addInputConstraint(tmpConstraint,false);
 		}
-
 	}
 }
 
