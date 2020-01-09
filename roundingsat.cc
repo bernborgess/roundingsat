@@ -130,7 +130,8 @@ int rfirst = 100;
 int nbclausesbeforereduce=2000;
 int incReduceDB=300;
 int cnt_reduceDB=0;
-bool originalRoundToOne=false, core_guided=true;
+bool originalRoundToOne=false;
+int opt_mode=0;
 int curr_restarts=0;
 long long nconfl_to_restart=0;
 
@@ -1036,8 +1037,7 @@ int read_number(const string & s) {
 
 void opb_read(istream & in) {
 	Constraint<int,long long> inverted;
-	bool first_constraint = true;
-	_unused(first_constraint);
+	bool first_constraint = true; _unused(first_constraint);
 	for (string line; getline(in, line);) {
 		if (line.empty()) continue;
 		else if (line[0] == '*') continue;
@@ -1295,7 +1295,7 @@ void print_stats() {
 	printf("d weakened non-implied lits %lld\n", NWEAKENEDNONIMPLIED);
 	printf("d weakened non-implying lits %lld\n", NWEAKENEDNONIMPLYING);
 	printf("d auxiliary variables introduced %d\n", n-orig_n);
-	if(core_guided){
+	if(opt_mode>0){
 		printf("d cores constructed %lld\n", NCORES);
 		printf("d core cardinality constraints returned %lld\n", NCORECARDINALITIES);
 	}
@@ -1330,8 +1330,8 @@ void exit_SAT() {
 void exit_UNSAT() {
 	print_stats();
 	if(foundSolution()){
+		cout << "o " << last_sol_obj_val << endl;
 		cout << "s OPTIMUM FOUND" << endl;
-		cout << "c objective function value " << last_sol_obj_val << endl;
 		assert(checksol());
 		//printf("v");for(int i=1;i<=orig_n;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
 		exit(30);
@@ -1366,7 +1366,7 @@ void usage(int argc, char**argv) {
 	printf("  --rinc=arg       Set the base of the Luby restart sequence (floating point number >=1; default %lf).\n",rinc);
 	printf("  --rfirst=arg     Set the interval of the Luby restart sequence (integer >=1; default %d).\n",rfirst);
 	printf("  --original-rto=arg Set whether to use RoundingSat's original round-to-one conflict analysis (0 or 1; default %d).\n",originalRoundToOne);
-	printf("  --core-guided=arg Use core-guided optimization instead of classic linear optimization (0 or 1; default %d).\n",core_guided);
+	printf("  --opt-mode=arg   Set optimization mode: 0 linear, 1 core-guided, 2 hybrid (default %d).\n",opt_mode);
 }
 
 char * filename = 0;
@@ -1388,7 +1388,7 @@ void read_options(int argc, char**argv) {
 			exit(1);
 		}
 	}
-	vector<string> opts = {"verbosity", "var-decay", "rinc", "rfirst", "original-rto", "core-guided"};
+	vector<string> opts = {"verbosity", "var-decay", "rinc", "rfirst", "original-rto", "opt-mode"};
 	map<string, string> opt_val;
 	for(int i=1;i<argc;i++){
 		if (string(argv[i]).substr(0,2) != "--") filename = argv[i];
@@ -1408,7 +1408,7 @@ void read_options(int argc, char**argv) {
 	getOption(opt_val,"rinc",[](double x)->bool{return x>=1;},rinc);
 	getOption(opt_val,"rfirst",[](double x)->bool{return x>=1;},rfirst);
 	getOption(opt_val,"original-rto",[](double x)->bool{return x==0 || x==1;},originalRoundToOne);
-	getOption(opt_val,"core-guided",[](double x)->bool{return x==0 || x==1;},core_guided);
+	getOption(opt_val,"opt-mode",[](double x)->bool{return x==0 || x==1 || x==2;},opt_mode);
 }
 
 template<class SMALL, class LARGE>
@@ -1468,7 +1468,6 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions, Con
 	while(Reason[abs(trail.back())]!=CRef_Undef){
 		int l = trail.back();
 		int confl_coef_l = confl_data.getCoef(-l);
-//		if(confl_coef_l>0 && !tmpSet.has(l)) {
 			if(confl_coef_l>0) {
 			Clause& reasonC = ca[Reason[abs(l)]];
 			tmpConstraint.init(reasonC);
@@ -1562,102 +1561,111 @@ bool solve(const vector<int>& assumptions, Constraint<int,long long>* out=nullpt
 	}
 }
 
-void linearOptimization(const Constraint<int,long long>& objective){
-	assert(objective.vars.size() > 0);
-	long long opt_coef_sum = 0;
-	for (int v: objective.vars) opt_coef_sum+=abs(objective.coefs[v]);
-	if (opt_coef_sum > (int) 1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
-
-	while(solve({})){
-		int prev_val = last_sol_obj_val;
-		_unused(prev_val);
-		last_sol_obj_val = 0;
-		for(int v: objective.vars) last_sol_obj_val+=objective.coefs[v]*last_sol[v];
-		std::cout << "o " << last_sol_obj_val << std::endl;
-		assert(last_sol_obj_val<prev_val);
-
-		objective.copyTo(tmpConstraint,-1);
-		tmpConstraint.addRhs(-last_sol_obj_val+1);
-		CRef cr = addInputConstraint(tmpConstraint,false);
-		assert(cr!=CRef_Undef);
-		if(external.size()>0){
-			assert(external.size()==1);
-			ca[external[0]].setStatus(FORCEDELETE);
-			external.pop_back();
-		}
-		external.push_back(cr);
-		assert(ca[cr].getStatus()==LOCKED);
-	}
-	exit_UNSAT();
+inline void printObjBounds(long long lower, long long upper){
+	if(upper<INF) printf("o %10lld >= %10lld\n",upper,lower);
+	else printf("o          - >= %10lld\n",lower);
 }
 
-void coreGuidedOptimization(Constraint<int,long long>& objective){
+void optimize(Constraint<int,long long>& objective){
+	assert(objective.vars.size() > 0);
+	objective.removeZeroes();
+	objective.removeUnits(false);
+
+	long long opt_coef_sum = 0;
+	long long lower_bound = 0;
+	for (int v: objective.vars){
+		opt_coef_sum+=abs(objective.coefs[v]);
+		if(objective.coefs[v]<0) lower_bound += objective.coefs[v];
+	}
+	if (opt_coef_sum > (int) 1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
+	objective.addRhs(-objective.getRhs()-lower_bound); // ensure the rhs is the lower bound
+
 	std::vector<int> assumps;
 	assumps.reserve(objective.vars.size());
-	long long lower_bound = -objective.removeUnits(false);
-	objective.removeZeroes();
-	std::cout << "c LB: " << lower_bound << std::endl;
 
 	Constraint<int,long long> core;
+	long long upper_confls=0, lower_confls=0;
 	while(true){
+		long long current_confls=NCONFL;
+		printObjBounds(lower_bound,last_sol_obj_val);
 		assumps.clear();
-		for(int v: objective.vars) assumps.push_back(-objective.getLit(v));
-		std::sort(assumps.begin(),assumps.end(),[&](int l1,int l2){
-			return objective.getCoef(-l1)>objective.getCoef(-l2) ||
-			(objective.getCoef(-l1)==objective.getCoef(-l2) && abs(l1)<abs(l2));
-		});
-		if(solve(assumps,&core)){
-			last_sol_obj_val = lower_bound;
-			std::cout << "o " << last_sol_obj_val << std::endl;
-			exit_UNSAT();
-		}	else if(assumps.size()==0) exit_UNSAT();
-		assert(decisionLevel()==0);
-		++NCORES;
-
-		// take care of derived unit lits
-		lower_bound = -objective.removeUnits(false);
-		if(core.getDegree()==0) continue; // apparently only unit assumptions were derived
-
-		// figure out an appropriate core
-//		std::cout << "BEFORE CARD: " << core << std::endl;
-		core.simplifyToCardinality(false);
-//		std::cout << "AFTER CARD: " << core << std::endl;
-
-		// adjust the lower bound
-		long long degree = core.getDegree();
-		if(degree>1) ++NCORECARDINALITIES;
-		assert(degree<=1e9); assert(degree>0);
-		int mult = INF;
-		for(int v: core.vars){
-			assert(objective.getLit(v)!=0);
-			mult=min(mult,abs(objective.coefs[v]));
+		if(opt_mode==1 || (opt_mode==2 && lower_confls<upper_confls)){ // set up core-guided search
+			for(int v: objective.vars) assumps.push_back(-objective.getLit(v));
+			std::sort(assumps.begin(),assumps.end(),[&](int l1,int l2){
+				return objective.getCoef(-l1)>objective.getCoef(-l2) ||
+				       (objective.getCoef(-l1)==objective.getCoef(-l2) && abs(l1)<abs(l2));
+			});
 		}
-		assert(mult<INF);
-		lower_bound+=degree*mult;
-		std::cout << "c LB: " << lower_bound << std::endl;
+		if(solve(assumps,&core)){
+			int prev_val = last_sol_obj_val; _unused(prev_val);
+			last_sol_obj_val = lower_bound;
+			for(int v: objective.vars) last_sol_obj_val+=objective.coefs[v]*last_sol[v];
+			assert(last_sol_obj_val<prev_val);
+			if(last_sol_obj_val==lower_bound) exit_UNSAT();
 
-		// add auxiliary variables
-		int oldN = n;
-		int newN = oldN-degree+core.vars.size();
-		setNbVariables(newN);
-		core.resize(newN+1);
-		for(int v=oldN+1; v<=newN; ++v) core.addLhs(-1,v);
+			upper_confls+=NCONFL-current_confls;
+			objective.copyTo(tmpConstraint,-1);
+			tmpConstraint.addRhs(-last_sol_obj_val+1);
+			CRef cr = addInputConstraint(tmpConstraint,false);
+			assert(cr!=CRef_Undef);
+			if(external.size()>0){
+				assert(external.size()==1);
+				ca[external[0]].setStatus(FORCEDELETE);
+				external.pop_back();
+			}
+			external.push_back(cr);
+			assert(ca[cr].getStatus()==LOCKED);
+		}	else if(assumps.size()==0) exit_UNSAT();
+		else {
+			assert(decisionLevel()==0);
+			lower_confls+=NCONFL-current_confls;
+			++NCORES;
 
-		// reformulate the objective
-		core.copyTo(tmpConstraint,-1);
-		objective.add(tmpConstraint,mult,false);
-		objective.removeZeroes();
-//		std::cout << objective << std::endl;
+			// take care of derived unit lits
+			long long prev_lower = lower_bound; _unused(prev_lower);
+			lower_bound = -objective.removeUnits(false);
+			if(core.getDegree()==0){
+				assert(lower_bound>prev_lower);
+				continue; // apparently only unit assumptions were derived
+			}
 
-		// add channeling constraints
-		addInputConstraint(tmpConstraint,false);
-		core.copyTo(tmpConstraint);
-		addInputConstraint(tmpConstraint,false);
-		for(int v=oldN+1; v<newN; ++v){
-			tmpConstraint.reset(1);
-			tmpConstraint.addLhs(1,v);
-			tmpConstraint.addLhs(1,-v-1);
+			// figure out an appropriate core
+			core.simplifyToCardinality(false);
+
+			// adjust the lower bound
+			long long degree = core.getDegree();
+			if(degree>1) ++NCORECARDINALITIES;
+			assert(degree<=1e9); assert(degree>0);
+			int mult = INF;
+			for(int v: core.vars){
+				assert(objective.getLit(v)!=0);
+				mult=min(mult,abs(objective.coefs[v]));
+			}
+			assert(mult<INF);
+			lower_bound+=degree*mult;
+
+			// add auxiliary variables
+			int oldN = n;
+			int newN = oldN-degree+core.vars.size();
+			setNbVariables(newN);
+			core.resize(newN+1);
+			for(int v=oldN+1; v<=newN; ++v) core.addLhs(-1,v);
+
+			// reformulate the objective
+			core.copyTo(tmpConstraint,-1);
+			objective.add(tmpConstraint,mult,false);
+			objective.removeZeroes();
+
+			// add channeling constraints
 			addInputConstraint(tmpConstraint,false);
+			core.copyTo(tmpConstraint);
+			addInputConstraint(tmpConstraint,false);
+			for(int v=oldN+1; v<newN; ++v){
+				tmpConstraint.reset(1);
+				tmpConstraint.addLhs(1,v);
+				tmpConstraint.addLhs(1,-v-1);
+				addInputConstraint(tmpConstraint,false);
+			}
 		}
 	}
 }
@@ -1684,8 +1692,7 @@ int main(int argc, char**argv){
 	std::cout << "c #variables=" << orig_n << " #constraints=" << clauses.size() << std::endl;
 
 	if(objective_func.vars.size() > 0){
-		if(core_guided) coreGuidedOptimization(objective_func);
-		else linearOptimization(objective_func);
+		optimize(objective_func);
 	}else{
 		// TODO: fix empty objective function
 		if(solve({})) exit_SAT();
