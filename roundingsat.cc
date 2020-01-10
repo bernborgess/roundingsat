@@ -1568,21 +1568,16 @@ inline void printObjBounds(long long lower, long long upper){
 
 void optimize(Constraint<int,long long>& objective){
 	assert(objective.vars.size() > 0);
+	// NOTE: -objective.getRhs() keeps track of the offset of the reformulated objective (or after removing unit lits)
 	objective.removeZeroes();
-	objective.removeUnits(false);
+	long long lower_bound = -objective.removeUnits(false);
 
 	long long opt_coef_sum = 0;
-	long long lower_bound = 0;
-	for (int v: objective.vars){
-		opt_coef_sum+=abs(objective.coefs[v]);
-		if(objective.coefs[v]<0) lower_bound += objective.coefs[v];
-	}
+	for (int v: objective.vars) opt_coef_sum+=abs(objective.coefs[v]);
 	if (opt_coef_sum > (int) 1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
-	objective.addRhs(-objective.getRhs()-lower_bound); // ensure the rhs is the lower bound
 
 	std::vector<int> assumps;
 	assumps.reserve(objective.vars.size());
-
 	Constraint<int,long long> core;
 	long long upper_confls=0, lower_confls=0;
 	while(true){
@@ -1598,7 +1593,7 @@ void optimize(Constraint<int,long long>& objective){
 		}
 		if(solve(assumps,&core)){
 			int prev_val = last_sol_obj_val; _unused(prev_val);
-			last_sol_obj_val = lower_bound;
+			last_sol_obj_val = -objective.getRhs();
 			for(int v: objective.vars) last_sol_obj_val+=objective.coefs[v]*last_sol[v];
 			assert(last_sol_obj_val<prev_val);
 			if(last_sol_obj_val==lower_bound) exit_UNSAT();
@@ -1655,6 +1650,7 @@ void optimize(Constraint<int,long long>& objective){
 			core.copyTo(tmpConstraint,-1);
 			objective.add(tmpConstraint,mult,false);
 			objective.removeZeroes();
+			assert(lower_bound==-objective.getDegree());
 
 			// add channeling constraints
 			addInputConstraint(tmpConstraint,false);
