@@ -71,6 +71,7 @@ struct Clause {
 		unsigned size         : 30;
 	} header;
 	float act;
+	int w; // TODO: not needed in memory actually...
 	// watch data
 	unsigned int nbackjump;
 	int slack; // sum of non-falsified watches minus w.
@@ -78,7 +79,6 @@ struct Clause {
 	int watchIdx;
 	int propIdx;
 	// ordinary data
-	int w; // TODO: not needed in memory actually...
 	int data[0]; // TODO: data as pairs of coef-lit instead of list of all lits, then all coefs?
 
 	inline size_t size() const { return header.size; }
@@ -119,7 +119,7 @@ const double resize_factor=1.5;
 const int INF=1e9+1;
 
 double initial_time;
-size_t NBACKJUMP=0;
+size_t NBACKJUMP=0, DETERMINISTICTIME=0;
 long long NCONFL=0, NDECIDE=0, NPROP=0;
 __int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
 long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
@@ -191,8 +191,8 @@ struct Constraint{
 	LARGE rhs = 0;
 	static constexpr SMALL _unused_(){ return std::numeric_limits<SMALL>::max(); }
 
-	inline void resize(int s){
-		coefs.resize(s,_unused_());
+	inline void resize(size_t s){
+		if(s>coefs.size()) coefs.resize(s,_unused_());
 	}
 
 	void reset(LARGE r=0){
@@ -401,7 +401,7 @@ struct Constraint{
 		for(int v: vars){
 			SMALL c = abs(coefs[v]);
 			mn=min(mn,c);
-			if(c>1e9) return false; // TODO: large coefs currently unsupported
+			if(c==1 || c>1e9) return false; // TODO: large coefs currently unsupported
 		}
 		assert(mn<INF); assert(mn>0);
 		unsigned int _gcd = mn;
@@ -882,39 +882,53 @@ CRef propagate() {
 		int p=trail[qhead++];
 		vector<Watch> & ws = adj[-p];
 		for(int it_ws=0; it_ws<(int)ws.size(); ++it_ws){
+			++DETERMINISTICTIME;
 			CRef cr = ws[it_ws].cref;
 			int idx = ws[it_ws].idx;
 			Clause & C = ca[cr];
 			if(C.getStatus()>=FORCEDELETE){ swapErase(ws,it_ws--); continue; }
-			int * lits = C.lits(); int * coefs = C.coefs();
-			int c = coefs[idx];
 			if(C.nbackjump<NBACKJUMP) C.nbackjump=NBACKJUMP, C.propIdx=0, C.watchIdx=0;
+			const int * const lits = C.lits(); int * const coefs = C.coefs();
+			const int Csize = C.size(); const int ClargestCoef = C.largestCoef();
+			int Cslack = C.slack;
+			const int c = coefs[idx];
 			assert(c<0);
-			C.slack+=c;
-			if(C.slack-c>=C.largestCoef()){ // look for new watches
-				for(; C.watchIdx<(int)C.size() && C.slack<C.largestCoef(); ++C.watchIdx){
-					int l = lits[C.watchIdx];
-					int cf = abs(coefs[C.watchIdx]);
-					if(Level[-l]==-1 && !C.isWatched(C.watchIdx)){
-						C.slack+=cf;
-						coefs[C.watchIdx]=-cf;
-						adj[l].push_back({cr,C.watchIdx});
+			Cslack+=c;
+			if(Cslack-c>=ClargestCoef){ // look for new watches
+				int i=C.watchIdx;
+				DETERMINISTICTIME-=i;
+				for(; i<Csize && Cslack<ClargestCoef; ++i){ // NOTE: innermost loop of RoundingSat
+					const int l = lits[i];
+					const int cf = coefs[i];
+					if(Level[-l]==-1 && cf>0){
+						Cslack+=cf;
+						coefs[i]=-cf;
+						adj[l].push_back({cr,i});
 					}
 				}
+				DETERMINISTICTIME+=i;
+				C.watchIdx=i;
 			} // else we did not find enough watches last time, so we can skip looking for them now
+			C.slack=Cslack;
 
-			if(C.slack>=C.largestCoef()){ // new watches are sufficient, remove previous watch
+			if(Cslack>=ClargestCoef){ // new watches are sufficient, remove previous watch
 				coefs[idx]=-c;
 				swapErase(ws,it_ws--);
-			}else if(C.slack>=0){ // keep the watch, check for propagation
-				for(; C.propIdx<(int)C.size() && abs(coefs[C.propIdx])>C.slack; ++C.propIdx)
-					if(Pos[abs(lits[C.propIdx])]==-1) uncheckedEnqueue(lits[C.propIdx],cr);
+			}else if(Cslack>=0){ // keep the watch, check for propagation
+				int i=C.propIdx;
+				DETERMINISTICTIME-=i;
+				for(; i<Csize && abs(coefs[i])>Cslack; ++i){
+					const int l = lits[i];
+					if(Pos[abs(l)]==-1) uncheckedEnqueue(l,cr);
+				}
+				DETERMINISTICTIME+=i;
+				C.propIdx=i;
 			}else{ // conflict, clean up current level and stop propagation
 				confl=cr;
 				for(int i=0; i<=it_ws; ++i){
-					Clause& C = ca[ws[i].cref];
-					if(C.isClause()) continue;
-					C.slack += C.coef(ws[i].idx);
+					Clause& constraint = ca[ws[i].cref];
+					if(constraint.isClause()) continue;
+					constraint.slack += constraint.coef(ws[i].idx);
 				}
 				--qhead;
 				break;
@@ -1141,13 +1155,13 @@ void file_read(istream & in) {
 			int n; is >> n;
 			setNbVariables(n);
 			if(type=="cnf"){
-			  cnf_read(in);
-			  return;
+				cnf_read(in);
+				return;
 			}else if(type == "wcnf"){
 				is >> line; // skip nbConstraints
 				long long top; is >> top;
 				wcnf_read(in, top);
-			  return;
+				return;
 			}
 		} else if (line[0] == '*' && line.substr(0, 13) == "* #variable= ") {
 			istringstream is (line.substr(13));
@@ -1278,8 +1292,7 @@ static void SIGINT_exit(int signum){
 void print_stats() {
 	double timespent = cpuTime()-initial_time;
 	printf("c CPU time			  : %g s\n", timespent);
-	printf("c props/sec %.2f\n", NPROP/timespent);
-	printf("c confls/sec %.2f\n", NCONFL/timespent);
+	printf("c deterministic time %zu %.2e\n", DETERMINISTICTIME,(double)DETERMINISTICTIME);
 	printf("d propagations %lld\n", NPROP);
 	printf("d decisions %lld\n", NDECIDE);
 	printf("d conflicts %lld\n", NCONFL);
@@ -1468,7 +1481,7 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions, Con
 	while(Reason[abs(trail.back())]!=CRef_Undef){
 		int l = trail.back();
 		int confl_coef_l = confl_data.getCoef(-l);
-			if(confl_coef_l>0) {
+		if(confl_coef_l>0) {
 			Clause& reasonC = ca[Reason[abs(l)]];
 			tmpConstraint.init(reasonC);
 			tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack());
@@ -1566,6 +1579,75 @@ inline void printObjBounds(long long lower, long long upper){
 	else printf("o          - >= %10lld\n",lower);
 }
 
+void handleNewSolution(const Constraint<int,long long>& origObjective, long long lower_bound){
+	int prev_val = last_sol_obj_val; _unused(prev_val);
+	last_sol_obj_val = -origObjective.getRhs();
+	for(int v: origObjective.vars) last_sol_obj_val+=origObjective.coefs[v]*last_sol[v];
+	assert(last_sol_obj_val<prev_val);
+	if(last_sol_obj_val==lower_bound) exit_UNSAT();
+
+	origObjective.copyTo(tmpConstraint,-1);
+	tmpConstraint.addRhs(-last_sol_obj_val+1);
+	CRef cr = addInputConstraint(tmpConstraint,false);
+	assert(cr!=CRef_Undef);
+	if(external.size()>0){
+		assert(external.size()==1);
+		ca[external[0]].setStatus(FORCEDELETE);
+		external.pop_back();
+	}
+	external.push_back(cr);
+	assert(ca[cr].getStatus()==LOCKED);
+}
+
+void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,long long>& core, long long& lower_bound){
+	// take care of derived unit lits
+	long long prev_lower = lower_bound; _unused(prev_lower);
+	lower_bound = -objective.removeUnits(false);
+	if(core.getDegree()==0){
+		assert(lower_bound>prev_lower);
+		return; // apparently only unit assumptions were derived
+	}
+
+	// figure out an appropriate core
+	core.simplifyToCardinality(false);
+
+	// adjust the lower bound
+	long long degree = core.getDegree();
+	if(degree>1) ++NCORECARDINALITIES;
+	assert(degree<=1e9); assert(degree>0);
+	int mult = INF;
+	for(int v: core.vars){
+		assert(objective.getLit(v)!=0);
+		mult=min(mult,abs(objective.coefs[v]));
+	}
+	assert(mult<INF);
+	lower_bound+=degree*mult;
+
+	// add auxiliary variables
+	int oldN = n;
+	int newN = oldN-degree+core.vars.size();
+	setNbVariables(newN);
+	core.resize(newN+1);
+	for(int v=oldN+1; v<=newN; ++v) core.addLhs(-1,v);
+
+	// reformulate the objective
+	core.copyTo(tmpConstraint,-1);
+	objective.add(tmpConstraint,mult,false);
+	objective.removeZeroes();
+	assert(lower_bound==-objective.getDegree());
+
+	// add channeling constraints
+	addInputConstraint(tmpConstraint,false);
+	core.copyTo(tmpConstraint);
+	addInputConstraint(tmpConstraint,false);
+	for(int v=oldN+1; v<newN; ++v){
+		tmpConstraint.reset(1);
+		tmpConstraint.addLhs(1,v);
+		tmpConstraint.addLhs(1,-v-1);
+		addInputConstraint(tmpConstraint,false);
+	}
+}
+
 void optimize(Constraint<int,long long>& objective){
 	assert(objective.vars.size() > 0);
 	// NOTE: -objective.getRhs() keeps track of the offset of the reformulated objective (or after removing unit lits)
@@ -1576,15 +1658,18 @@ void optimize(Constraint<int,long long>& objective){
 	for (int v: objective.vars) opt_coef_sum+=abs(objective.coefs[v]);
 	if (opt_coef_sum > (int) 1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
 
+	Constraint<int,long long> origObjective;
+	objective.copyTo(origObjective);
+
 	std::vector<int> assumps;
 	assumps.reserve(objective.vars.size());
 	Constraint<int,long long> core;
-	long long upper_confls=0, lower_confls=0;
+	size_t upper_time=0, lower_time=0;
 	while(true){
-		long long current_confls=NCONFL;
+		size_t current_time=DETERMINISTICTIME;
 		printObjBounds(lower_bound,last_sol_obj_val);
 		assumps.clear();
-		if(opt_mode==1 || (opt_mode==2 && lower_confls<upper_confls)){ // set up core-guided search
+		if(opt_mode==1 || (opt_mode==2 && 10*lower_time<upper_time)){ // set up core-guided search
 			for(int v: objective.vars) assumps.push_back(-objective.getLit(v));
 			std::sort(assumps.begin(),assumps.end(),[&](int l1,int l2){
 				return objective.getCoef(-l1)>objective.getCoef(-l2) ||
@@ -1592,76 +1677,14 @@ void optimize(Constraint<int,long long>& objective){
 			});
 		}
 		if(solve(assumps,&core)){
-			int prev_val = last_sol_obj_val; _unused(prev_val);
-			last_sol_obj_val = -objective.getRhs();
-			for(int v: objective.vars) last_sol_obj_val+=objective.coefs[v]*last_sol[v];
-			assert(last_sol_obj_val<prev_val);
-			if(last_sol_obj_val==lower_bound) exit_UNSAT();
-
-			upper_confls+=NCONFL-current_confls;
-			objective.copyTo(tmpConstraint,-1);
-			tmpConstraint.addRhs(-last_sol_obj_val+1);
-			CRef cr = addInputConstraint(tmpConstraint,false);
-			assert(cr!=CRef_Undef);
-			if(external.size()>0){
-				assert(external.size()==1);
-				ca[external[0]].setStatus(FORCEDELETE);
-				external.pop_back();
-			}
-			external.push_back(cr);
-			assert(ca[cr].getStatus()==LOCKED);
-		}	else if(assumps.size()==0) exit_UNSAT();
-		else {
+			upper_time+=DETERMINISTICTIME-current_time;
+			handleNewSolution(origObjective,lower_bound);
+		}	else {
 			assert(decisionLevel()==0);
-			lower_confls+=NCONFL-current_confls;
+			lower_time+=DETERMINISTICTIME-current_time;
 			++NCORES;
-
-			// take care of derived unit lits
-			long long prev_lower = lower_bound; _unused(prev_lower);
-			lower_bound = -objective.removeUnits(false);
-			if(core.getDegree()==0){
-				assert(lower_bound>prev_lower);
-				continue; // apparently only unit assumptions were derived
-			}
-
-			// figure out an appropriate core
-			core.simplifyToCardinality(false);
-
-			// adjust the lower bound
-			long long degree = core.getDegree();
-			if(degree>1) ++NCORECARDINALITIES;
-			assert(degree<=1e9); assert(degree>0);
-			int mult = INF;
-			for(int v: core.vars){
-				assert(objective.getLit(v)!=0);
-				mult=min(mult,abs(objective.coefs[v]));
-			}
-			assert(mult<INF);
-			lower_bound+=degree*mult;
-
-			// add auxiliary variables
-			int oldN = n;
-			int newN = oldN-degree+core.vars.size();
-			setNbVariables(newN);
-			core.resize(newN+1);
-			for(int v=oldN+1; v<=newN; ++v) core.addLhs(-1,v);
-
-			// reformulate the objective
-			core.copyTo(tmpConstraint,-1);
-			objective.add(tmpConstraint,mult,false);
-			objective.removeZeroes();
-			assert(lower_bound==-objective.getDegree());
-
-			// add channeling constraints
-			addInputConstraint(tmpConstraint,false);
-			core.copyTo(tmpConstraint);
-			addInputConstraint(tmpConstraint,false);
-			for(int v=oldN+1; v<newN; ++v){
-				tmpConstraint.reset(1);
-				tmpConstraint.addLhs(1,v);
-				tmpConstraint.addLhs(1,-v-1);
-				addInputConstraint(tmpConstraint,false);
-			}
+			if(assumps.size()==0) exit_UNSAT();
+			handleInconsistency(objective,core,lower_bound);
 		}
 	}
 }
