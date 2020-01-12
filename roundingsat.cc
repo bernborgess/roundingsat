@@ -975,7 +975,6 @@ void setNbVariables(long long nvars){
 	activity.resize(nvars+1,0);
 	phase.resize(nvars+1,false);
 	last_sol.resize(nvars+1,false);
-	objective_func.resize(nvars+1);
 	tmpConstraint.resize(nvars+1);
 	confl_data.resize(nvars+1);
 	tmpSet.resize(nvars+1);
@@ -1122,6 +1121,7 @@ void wcnf_read(istream & in, long long top) {
 				if(weight>1e9) exit_ERROR({"Clause weight exceeds 10^9: ",std::to_string(weight)});
 				if(weight<0) exit_ERROR({"Negative clause weight: ",std::to_string(weight)});
 				setNbVariables(n+1); // increases n to n+1
+				objective_func.resize(n+1);
 				objective_func.addLhs(weight,n);
 				tmpConstraint.addLhs(1,n);
 			} // else hard clause
@@ -1600,6 +1600,7 @@ void handleNewSolution(const Constraint<int,long long>& origObjective, long long
 }
 
 struct LazyVar{
+	int mult;
 	int firstvar;
 	int idx;
 	int nvars;
@@ -1607,8 +1608,9 @@ struct LazyVar{
 	std::vector<int> lhs;
 	int rhs;
 
-	void init(const Constraint<int, long long>& core, int startvar){
+	void init(const Constraint<int, long long>& core, int startvar, int m){
 		assert(core.isCardinality());
+		mult=m;
 		rhs=core.getDegree();
 		lhs.reserve(core.vars.size());
 		for(int v: core.vars) lhs.push_back(core.getLit(v));
@@ -1679,39 +1681,45 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 	core.resize(newN+1);
 	tmpConstraint.resize(newN+1);
 	objective.resize(newN+1);
-	bool lazy = (opt_mode==2 || opt_mode==4) && core.vars.size()-degree>1;
 
-	if(lazy){ // add first lazy constraint
+	if((opt_mode==2 || opt_mode==4) && core.vars.size()-degree>1){
+		// reformulate the objective
+		core.copyTo(tmpConstraint,-1);
+		tmpConstraint.addLhs(1,oldN+1);
+		objective.add(tmpConstraint,mult,false);
+		objective.removeZeroes();
+		assert(lower_bound==-objective.getDegree());
+		// add first lazy constraint
 		lazyVars.push_back(LazyVar());
 		LazyVar& lv = lazyVars.back();
-		lv.init(core,oldN+1);
+		lv.init(core,oldN+1,mult);
 		lv.getAtLeastConstraint(tmpConstraint);
 		addInputConstraint(tmpConstraint);
 		lv.getAtMostConstraint(tmpConstraint);
 		addInputConstraint(tmpConstraint);
-	}
-
-	// reformulate the objective
-	for(int v=oldN+1; v<=newN; ++v) core.addLhs(-1,v);
-	core.copyTo(tmpConstraint,-1);
-	objective.add(tmpConstraint,mult,false);
-	objective.removeZeroes();
-	assert(lower_bound==-objective.getDegree());
-	for(int i=0; i<(int)lazyVars.size(); ++i){
-		LazyVar& lv=lazyVars[i];
-		while(objective.getCoef(lv.firstvar+lv.idx)==0){
-			lv.idx++;
-			if(lv.idx==lv.nvars){ swapErase(lazyVars,--i); break; }
-			lv.getAtLeastConstraint(tmpConstraint);
-			addInputConstraint(tmpConstraint);
-			lv.getAtMostConstraint(tmpConstraint);
-			addInputConstraint(tmpConstraint);
-			lv.getSymBreakingConstraint(tmpConstraint);
-			addInputConstraint(tmpConstraint);
+		// check for new lazy variables
+		for(int i=0; i<(int)lazyVars.size(); ++i){
+			LazyVar& lv=lazyVars[i];
+			if(objective.getCoef(lv.firstvar+lv.idx)==0){
+				lv.idx++;
+				if(lv.idx==lv.nvars){ swapErase(lazyVars,--i); break; }
+				objective.addLhs(lv.mult,lv.firstvar+lv.idx);
+				lv.getAtLeastConstraint(tmpConstraint);
+				addInputConstraint(tmpConstraint);
+				lv.getAtMostConstraint(tmpConstraint);
+				addInputConstraint(tmpConstraint);
+				lv.getSymBreakingConstraint(tmpConstraint);
+				addInputConstraint(tmpConstraint);
+			}
 		}
-	}
-
-	if(!lazy){ // add channeling constraints
+	}else{
+		// reformulate the objective
+		for(int v=oldN+1; v<=newN; ++v) core.addLhs(-1,v);
+		core.copyTo(tmpConstraint,-1);
+		objective.add(tmpConstraint,mult,false);
+		objective.removeZeroes();
+		assert(lower_bound==-objective.getDegree());
+		// add channeling constraints
 		addInputConstraint(tmpConstraint);
 		core.copyTo(tmpConstraint);
 		addInputConstraint(tmpConstraint);
