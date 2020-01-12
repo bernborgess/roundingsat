@@ -1015,7 +1015,7 @@ void learnConstraint(Constraint<long long,__int128>& confl){
 	else ++NGENERALSLEARNED;
 }
 
-CRef addInputConstraint(Constraint<int, long long>& c, bool initial){
+CRef addInputConstraint(Constraint<int, long long>& c, bool initial=false){
 	assert(decisionLevel()==0);
 	assert(learnts.size()==0 || !initial);
 	c.postProcess();
@@ -1379,7 +1379,7 @@ void usage(int argc, char**argv) {
 	printf("  --rinc=arg       Set the base of the Luby restart sequence (floating point number >=1; default %lf).\n",rinc);
 	printf("  --rfirst=arg     Set the interval of the Luby restart sequence (integer >=1; default %d).\n",rfirst);
 	printf("  --original-rto=arg Set whether to use RoundingSat's original round-to-one conflict analysis (0 or 1; default %d).\n",originalRoundToOne);
-	printf("  --opt-mode=arg   Set optimization mode: 0 linear, 1 core-guided, 2 hybrid (default %d).\n",opt_mode);
+	printf("  --opt-mode=arg   Set optimization mode: 0 linear, 1(2) (lazy) core-guided, 3(4) (lazy) hybrid (default %d).\n",opt_mode);
 }
 
 char * filename = 0;
@@ -1421,7 +1421,7 @@ void read_options(int argc, char**argv) {
 	getOption(opt_val,"rinc",[](double x)->bool{return x>=1;},rinc);
 	getOption(opt_val,"rfirst",[](double x)->bool{return x>=1;},rfirst);
 	getOption(opt_val,"original-rto",[](double x)->bool{return x==0 || x==1;},originalRoundToOne);
-	getOption(opt_val,"opt-mode",[](double x)->bool{return x==0 || x==1 || x==2;},opt_mode);
+	getOption(opt_val,"opt-mode",[](double x)->bool{return x==0 || x==1 || x==2 || x==3 || x==4;},opt_mode);
 }
 
 template<class SMALL, class LARGE>
@@ -1588,7 +1588,7 @@ void handleNewSolution(const Constraint<int,long long>& origObjective, long long
 
 	origObjective.copyTo(tmpConstraint,-1);
 	tmpConstraint.addRhs(-last_sol_obj_val+1);
-	CRef cr = addInputConstraint(tmpConstraint,false);
+	CRef cr = addInputConstraint(tmpConstraint);
 	assert(cr!=CRef_Undef);
 	if(external.size()>0){
 		assert(external.size()==1);
@@ -1597,6 +1597,54 @@ void handleNewSolution(const Constraint<int,long long>& origObjective, long long
 	}
 	external.push_back(cr);
 	assert(ca[cr].getStatus()==LOCKED);
+}
+
+struct LazyVar{
+	int firstvar;
+	int idx;
+	int nvars;
+	// core
+	std::vector<int> lhs;
+	int rhs;
+
+	void init(const Constraint<int, long long>& core, int startvar){
+		assert(core.isCardinality());
+		rhs=core.getDegree();
+		lhs.reserve(core.vars.size());
+		for(int v: core.vars) lhs.push_back(core.getLit(v));
+		firstvar=startvar;
+		idx=0;
+		nvars=lhs.size()-rhs;
+	}
+
+	void getAtLeastConstraint(Constraint<int, long long>& out){
+		// X >= (k+i+1)yi
+		out.reset();
+		for(int l: lhs) out.addLhs(1,l);
+		out.addLhs(-(rhs+idx+1),firstvar+idx);
+	}
+
+	void getAtMostConstraint(Constraint<int, long long>& out){
+		// ~X >= (n-k-i)~yi
+		out.reset();
+		for(int l: lhs) out.addLhs(1,-l);
+		out.addLhs(-(lhs.size()-rhs-idx),-(firstvar+idx));
+	}
+
+	void getSymBreakingConstraint(Constraint<int, long long>& out){
+		// yi>=yi++
+		assert(idx>0);
+		out.reset(1);
+		out.addLhs(1,firstvar+idx-1);
+		out.addLhs(1,-(firstvar+idx));
+	}
+};
+
+ostream & operator<<(ostream & o, LazyVar & lv) {
+	o << lv.firstvar << " " << lv.idx << " " << lv.nvars << " | ";
+	for(int l: lv.lhs) o << "+x" << l << " ";
+	o << ">= " << lv.rhs;
+	return o;
 }
 
 void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,long long>& core, long long& lower_bound){
@@ -1628,23 +1676,42 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 	int newN = oldN-degree+core.vars.size();
 	setNbVariables(newN);
 	core.resize(newN+1);
-	for(int v=oldN+1; v<=newN; ++v) core.addLhs(-1,v);
+	tmpConstraint.resize(newN+1);
+	objective.resize(newN+1);
+	bool lazy = (opt_mode==2 || opt_mode==4) && core.vars.size()-degree>1;
+
+	if(lazy){ // add lazy constraints
+		LazyVar lv;
+		lv.init(core,oldN+1);
+		for(; lv.idx<lv.nvars; ++lv.idx){
+			lv.getAtLeastConstraint(tmpConstraint);
+			addInputConstraint(tmpConstraint);
+			lv.getAtMostConstraint(tmpConstraint);
+			addInputConstraint(tmpConstraint);
+			if(lv.idx>0){
+				lv.getSymBreakingConstraint(tmpConstraint);
+				addInputConstraint(tmpConstraint);
+			}
+		}
+	}
 
 	// reformulate the objective
+	for(int v=oldN+1; v<=newN; ++v) core.addLhs(-1,v);
 	core.copyTo(tmpConstraint,-1);
 	objective.add(tmpConstraint,mult,false);
 	objective.removeZeroes();
 	assert(lower_bound==-objective.getDegree());
 
-	// add channeling constraints
-	addInputConstraint(tmpConstraint,false);
-	core.copyTo(tmpConstraint);
-	addInputConstraint(tmpConstraint,false);
-	for(int v=oldN+1; v<newN; ++v){
-		tmpConstraint.reset(1);
-		tmpConstraint.addLhs(1,v);
-		tmpConstraint.addLhs(1,-v-1);
-		addInputConstraint(tmpConstraint,false);
+	if(!lazy){ // add channeling constraints
+		addInputConstraint(tmpConstraint);
+		core.copyTo(tmpConstraint);
+		addInputConstraint(tmpConstraint);
+		for(int v=oldN+1; v<newN; ++v){
+			tmpConstraint.reset(1);
+			tmpConstraint.addLhs(1,v);
+			tmpConstraint.addLhs(1,-v-1);
+			addInputConstraint(tmpConstraint);
+		}
 	}
 }
 
@@ -1669,7 +1736,7 @@ void optimize(Constraint<int,long long>& objective){
 		size_t current_time=DETERMINISTICTIME;
 		printObjBounds(lower_bound,last_sol_obj_val);
 		assumps.clear();
-		if(opt_mode==1 || (opt_mode==2 && 10*lower_time<upper_time)){ // set up core-guided search
+		if(opt_mode==1 || opt_mode==2 || (opt_mode>2 && 10*lower_time<upper_time)){ // use core-guided step
 			for(int v: objective.vars) assumps.push_back(-objective.getLit(v));
 			std::sort(assumps.begin(),assumps.end(),[&](int l1,int l2){
 				return objective.getCoef(-l1)>objective.getCoef(-l2) ||
