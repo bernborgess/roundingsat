@@ -1233,7 +1233,6 @@ void removeConstraint(CRef cr){
 }
 
 void reduceDB(){
-	cnt_reduceDB++;
 	if (verbosity > 0) puts("c INPROCESSING");
 
 	assert(decisionLevel()==0);
@@ -1490,7 +1489,9 @@ void extractCore(CRef confl, Constraint<int,long long>* out, int l_assump=0){
 	backjumpTo(0);
 }
 
-bool solve(const vector<int>& assumptions, Constraint<int,long long>* out=nullptr) {
+enum SolveState { SAT, UNSAT, INPROCESSING };
+
+SolveState solve(const vector<int>& assumptions, Constraint<int,long long>* out=nullptr) {
 	backjumpTo(0); // ensures assumptions are reset
 	std::vector<unsigned int> assumptions_lim={0};
 	assumptions_lim.reserve(assumptions.size());
@@ -1517,7 +1518,7 @@ bool solve(const vector<int>& assumptions, Constraint<int,long long>* out=nullpt
 				learnConstraint(confl_data);
 			}else{
 				extractCore(confl,out);
-				return false;
+				return SolveState::UNSAT;
 			}
 		} else {
 			if(asynch_interrupt)exit_INDETERMINATE();
@@ -1525,9 +1526,11 @@ bool solve(const vector<int>& assumptions, Constraint<int,long long>* out=nullpt
 				backjumpTo(0);
 				double rest_base = luby(rinc, curr_restarts++);
 				nconfl_to_restart = (long long) rest_base * rfirst;
-				if(NCONFL >= (cnt_reduceDB+1) * nbclausesbeforereduce) {
+				if(NCONFL >= (cnt_reduceDB+1)*nbclausesbeforereduce) {
+					++cnt_reduceDB;
 					reduceDB();
-					nbclausesbeforereduce += incReduceDB;
+					while(NCONFL >= cnt_reduceDB*nbclausesbeforereduce) nbclausesbeforereduce += incReduceDB;
+					return SolveState::INPROCESSING;
 				}
 			}
 			int next = 0;
@@ -1535,9 +1538,9 @@ bool solve(const vector<int>& assumptions, Constraint<int,long long>* out=nullpt
 			while(assumptions_lim.back()<assumptions.size()){
 				int l_assump = assumptions[assumptions_lim.back()];
 				if (~Level[-l_assump]){ // found conflicting assumption
-					if(Level[-l_assump]==0){ backjumpTo(0); out->reset(); return false; }
+					if(Level[-l_assump]==0){ backjumpTo(0); out->reset(); return SolveState::UNSAT; }
 					extractCore(Reason[abs(l_assump)],out,l_assump);
-					return false;
+					return SolveState::UNSAT;
 				}
 				if (~Level[l_assump]){ // assumption already propagated
 					++assumptions_lim.back();
@@ -1552,7 +1555,7 @@ bool solve(const vector<int>& assumptions, Constraint<int,long long>* out=nullpt
 				assert(order_heap.empty());
 				for (int i = 1; i <= n; ++i)last_sol[i] = ~Level[i];
 				backjumpTo(0);
-				return true;
+				return SolveState::SAT;
 			}
 			decide(next);
 			++NDECIDE;
@@ -1760,16 +1763,17 @@ void optimize(Constraint<int,long long>& objective){
 				       (objective.getCoef(-l1)==objective.getCoef(-l2) && abs(l1)<abs(l2));
 			});
 		}
-		if(solve(assumps,&core)){
-			upper_time+=DETERMINISTICTIME-current_time;
+		SolveState reply = solve(assumps,&core);
+		assert(decisionLevel()==0);
+		if(assumps.size()==0) upper_time+=DETERMINISTICTIME-current_time;
+		else lower_time+=DETERMINISTICTIME-current_time;
+		if(reply==SolveState::SAT){
 			handleNewSolution(origObjective,lower_bound);
-		}	else {
-			assert(decisionLevel()==0);
-			lower_time+=DETERMINISTICTIME-current_time;
+		}	else if(reply==SolveState::UNSAT) {
 			++NCORES;
 			if(assumps.size()==0) exit_UNSAT();
 			handleInconsistency(objective,core,lower_bound,lazyVars);
-		}
+		} // else reply==SolveState::INPROCESSING, time to check if we want to switch mode
 	}
 }
 
@@ -1798,7 +1802,10 @@ int main(int argc, char**argv){
 		optimize(objective_func);
 	}else{
 		// TODO: fix empty objective function
-		if(solve({})) exit_SAT();
-		else exit_UNSAT();
+		while(true){
+			SolveState reply = solve({});
+			if(reply==SolveState::SAT) exit_SAT();
+			else if(reply==SolveState::UNSAT) exit_UNSAT();
+		}
 	}
 }
