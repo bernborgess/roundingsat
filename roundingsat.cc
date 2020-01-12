@@ -729,7 +729,7 @@ void claBumpActivity (Clause& c) {
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 
-void uncheckedEnqueue(int p, CRef from){
+void uncheckedEnqueue(int p, CRef from=CRef_Undef){
 	assert(Pos[abs(p)]==-1);
 	int v = abs(p);
 	Level[p] = decisionLevel();
@@ -792,14 +792,12 @@ void undoOne(){
 		}
 		--qhead;
 	}
-
 	int v = abs(l);
 	trail.pop_back();
 	Level[l] = -1;
 	Pos[v] = -1;
-	phase[v]=l;
+	phase[v] = l;
 	if(!trail_lim.empty() && trail_lim.back() == (int)trail.size())trail_lim.pop_back();
-	Reason[v] = CRef_Undef;
 	order_heap.insert(v);
 }
 
@@ -811,7 +809,7 @@ void backjumpTo(int level){
 
 void decide(int l){
 	newDecisionLevel();
-	uncheckedEnqueue(l,CRef_Undef);
+	uncheckedEnqueue(l);
 }
 
 // ---------------------------------------------------------------------
@@ -1426,59 +1424,45 @@ void read_options(int argc, char**argv) {
 
 template<class SMALL, class LARGE>
 LARGE assumpSlack(const IntSet& assumptions, const Constraint<SMALL, LARGE>& core){
-	LARGE slack = -core.getDegree();
-	for(int v: core.vars){
-		int l=core.getLit(v);
-		if(!assumptions.has(-l)) slack+=core.getCoef(l);
-	}
+	LARGE slack = -core.rhs;
+	for(int v: core.vars) if(assumptions.has(v) || (!assumptions.has(-v) && core.coefs[v]>0)) slack+=core.coefs[v];
 	return slack;
 }
 
-void extractCore(int propagated_assump, const std::vector<int>& assumptions, Constraint<int,long long>* out){
-	if(out == nullptr) { backjumpTo(0); return; }
-	for(int l: assumptions) if(Level[-l]==0) { // assumption violated at root
-		out->reset(); backjumpTo(0); return;
-	}
-	Constraint<int,long long>& outCore = *out;
-
-	tmpSet.reset();
-	for(int l: assumptions) tmpSet.add(l);
-
-	// gather set of conflicting assumptions
-	std::vector<int> conflictingAssumps;
-	conflictingAssumps.push_back(propagated_assump);
-	std::vector<int> stack;
-	stack.push_back(-propagated_assump);
-	Level[-propagated_assump]=-3;
-	while(stack.size()>0){
-		int stack_l = stack.back();
-		stack.pop_back();
-		if(Reason[abs(stack_l)]==CRef_Undef){
-			assert(tmpSet.has(stack_l));
-			conflictingAssumps.push_back(stack_l);
-		}else{
-			Clause& C = ca[Reason[abs(stack_l)]];
-			for(int i=0; i<(int)C.size(); ++i){
-				int current_l = -C.lits()[i];
-				if(Level[current_l]<=0) continue;
-				Level[current_l]=-3; // exploiting Level to mark as seen
-				stack.push_back(current_l);
-			}
-		}
-	}
-	assert(conflictingAssumps.size()>1);
-	backjumpTo(0);
-
-	// create conflict
-	for(int conflicting_l: conflictingAssumps){ assert(tmpSet.has(conflicting_l)); decide(conflicting_l); }
-	CRef confl = propagate();
+void extractCore(CRef confl, Constraint<int,long long>* out, int l_assump=0){
+	assert(out!=nullptr);
+	Constraint<int,long long>& outCore = *out; outCore.reset();
 	assert(confl!=CRef_Undef);
 
-	// analyze conflict
+	if(l_assump!=0){ // l_assump is an assumption propagated to the opposite value
+		assert(~Level[-l_assump]);
+		while(~Level[-l_assump]) undoOne();
+		assert(Pos[abs(l_assump)]==-1);
+		decide(l_assump);
+	}
+
 	confl_data.init(ca[confl]);
-	confl_data.copyTo(outCore);
-	double assumpSlk = assumpSlack(tmpSet,outCore)/(double)outCore.getDegree();
-	while(Reason[abs(trail.back())]!=CRef_Undef){
+	assert(confl_data.getSlack()<0);
+
+	// Set all assumptions in front of the trail, all propagations later. This makes it easy to do decision learning.
+	// For this, we first copy the trail, then backjump to 0, then rebuild the trail.
+	// Otherwise, reordering the trail messes up the slacks of the watched constraints (see undoOne()).
+	tmpSet.reset(); // holds the assumptions
+	std::vector<int> props; // holds the propagations
+	assert(trail_lim.size()>0);
+	for(int i=trail_lim[0]; i<(int)trail.size(); ++i){
+		int l = trail[i];
+		if(Reason[abs(l)]==CRef_Undef) tmpSet.add(l); // decision, hence assumption
+		else props.push_back(l);
+	}
+	backjumpTo(0);
+
+	for(int l: tmpSet.getKeys()) decide(l);
+	for(int l: props) { assert(Reason[abs(l)]!=CRef_Undef); uncheckedEnqueue(l,Reason[abs(l)]); }
+
+	// analyze conflict
+	long long assumpslk = assumpSlack(tmpSet,confl_data);
+	while(assumpslk>=0){
 		int l = trail.back();
 		int confl_coef_l = confl_data.getCoef(-l);
 		if(confl_coef_l>0) {
@@ -1488,20 +1472,16 @@ void extractCore(int propagated_assump, const std::vector<int>& assumptions, Con
 			tmpConstraint.roundToOne(tmpConstraint.getCoef(l),false);
 			confl_data.add(tmpConstraint,confl_coef_l);
 			assert(confl_data.getCoef(-l)==0);
-			double tmpAssumpSlk = assumpSlack(tmpSet,confl_data)/(double)confl_data.getDegree();
-			if(tmpAssumpSlk<assumpSlk){
-				assumpSlk=tmpAssumpSlk;
-				confl_data.copyTo(outCore);
-			}
+			assumpslk = assumpSlack(tmpSet,confl_data);
 		}
 		undoOne();
+		assert(decisionLevel()>=1);
 	}
-	assert(assumpSlack(tmpSet,outCore)<0);
+	confl_data.copyTo(outCore);
 
 	// weaken non-falsifieds
 	for(int v: outCore.vars){
 		if(tmpSet.has(-outCore.getLit(v))) continue;
-		assert(Level[-outCore.getLit(v)]==-1);
 		outCore.weaken(-outCore.coefs[v],v);
 	}
 	outCore.postProcess();
@@ -1532,8 +1512,13 @@ bool solve(const vector<int>& assumptions, Constraint<int,long long>* out=nullpt
 					}
 				}
 			}
-			analyze(confl);
-			learnConstraint(confl_data);
+			if(assumptions_lim.back()>=assumptions.size()){
+				analyze(confl);
+				learnConstraint(confl_data);
+			}else{
+				extractCore(confl,out);
+				return false;
+			}
 		} else {
 			if(asynch_interrupt)exit_INDETERMINATE();
 			if(nconfl_to_restart <= 0){
@@ -1549,8 +1534,9 @@ bool solve(const vector<int>& assumptions, Constraint<int,long long>* out=nullpt
 			if(assumptions_lim.size()>(unsigned int) decisionLevel()+1)assumptions_lim.resize(decisionLevel()+1);
 			while(assumptions_lim.back()<assumptions.size()){
 				int l_assump = assumptions[assumptions_lim.back()];
-				if (~Level[-l_assump]){ // found conflicting assumptions
-					extractCore(l_assump,assumptions,out);
+				if (~Level[-l_assump]){ // found conflicting assumption
+					if(Level[-l_assump]==0){ backjumpTo(0); out->reset(); return false; }
+					extractCore(Reason[abs(l_assump)],out,l_assump);
 					return false;
 				}
 				if (~Level[l_assump]){ // assumption already propagated
