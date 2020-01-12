@@ -115,7 +115,7 @@ struct Watch {
 	CRef cref;
 	int idx;
 };
-const double resize_factor=1.5;
+const int resize_factor=2;
 const int INF=1e9+1;
 
 double initial_time;
@@ -146,14 +146,16 @@ inline T floordiv_safe(const T& p,const T& q){ assert(q>0); return (p<0?-ceildiv
 
 template<class T> void resizeLitMap(std::vector<T>& _map, typename std::vector<T>::iterator& map, int size, T init){
 	assert(size<(1<<28));
-	int oldmiddle = (_map.size()-1)/2;
-	int newmiddle = resize_factor*size;
-	if(newmiddle<=oldmiddle) return;
-	_map.resize(2*newmiddle+1);
-	map=_map.begin()+newmiddle;
-	for(int i=_map.size()-1; i>newmiddle+oldmiddle; --i) _map[i]=init;
-	for(int i=newmiddle+oldmiddle; i>=newmiddle-oldmiddle; --i) _map[i]=_map[i-newmiddle+oldmiddle];
-	for(int i=newmiddle-oldmiddle-1; i>=0; --i) _map[i]=init;
+	int oldsize = (_map.size()-1)/2;
+	if(oldsize>=size) return;
+	int newsize = oldsize;
+	while(newsize<size) newsize=newsize*resize_factor+1;
+	_map.resize(2*newsize+1);
+	map=_map.begin()+newsize;
+	int i=_map.size()-1;
+	for(; i>newsize+oldsize; --i) _map[i]=init;
+	for(; i>=newsize-oldsize; --i) _map[i]=_map[i-newsize+oldsize];
+	for(; i>=0; --i) _map[i]=init;
 }
 
 unsigned int gcd(unsigned int u, unsigned int v){
@@ -172,8 +174,8 @@ unsigned int gcd(unsigned int u, unsigned int v){
 	return u << shift;
 }
 
-vector<vector<Watch>> _adj; vector<vector<Watch>>::iterator adj;
-vector<int> _Level; vector<int>::iterator Level;
+vector<vector<Watch>> _adj={{}}; vector<vector<Watch>>::iterator adj;
+vector<int> _Level={-1}; vector<int>::iterator Level;
 vector<int> trail, trail_lim, Pos;
 vector<CRef> Reason;
 int qhead; // for unit propagation
@@ -256,8 +258,9 @@ struct Constraint{
 	inline SMALL getCoef(int l) const { return coefs[abs(l)]==_unused_()?0:(l<0?-coefs[-l]:coefs[l]); }
 	inline int getLit(int l) const { // NOTE: always check for answer "0"!
 		int v = abs(l);
-		if(coefs[v]==0 || coefs[v]==_unused_()) return 0;
-		if(coefs[v]<0) return -v;
+		SMALL c = coefs[v];
+		if(c==0 || c==_unused_()) return 0;
+		else if(c<0) return -v;
 		else return v;
 	}
 	inline bool increasesSlack(int v) const { // NOTE: equivalent to "non-falsified" for a normal-form constraint
@@ -451,7 +454,6 @@ struct Constraint{
 
 		// create useful datastructures
 		std::sort(vars.begin(),vars.end(),[&](int v1,int v2){ return abs(coefs[v1])>abs(coefs[v2]); });
-		int coefIndex = 0;
 		std::vector<int> litsByPos;
 		litsByPos.reserve(vars.size());
 		for(int v: vars){
@@ -459,20 +461,21 @@ struct Constraint{
 			if(~Level[-l]) litsByPos.push_back(-l);
 		}
 		std::sort(litsByPos.begin(),litsByPos.end(),[&](int l1,int l2){ return Pos[abs(l1)]<Pos[abs(l2)]; });
-		int posIndex = 0;
 
 		// calculate earliest propagating decision level by decreasing slack one decision level at a time
+		auto posIt = litsByPos.cbegin();
+		auto coefIt = vars.cbegin();
 		int assertionLevel = 0;
 		while(true){
-			while(posIndex<(int)litsByPos.size() && Level[litsByPos[posIndex]]<=assertionLevel){
-				slack-=abs(coefs[abs(litsByPos[posIndex])]);
-				++posIndex;
+			while(posIt!=litsByPos.cend() && Level[*posIt]<=assertionLevel){
+				slack-=abs(coefs[abs(*posIt)]);
+				++posIt;
 			}
 			if(slack<0){ assertionLevel=max(assertionLevel-1,0); break; }
-			while((unsigned int)assertionLevel>=(unsigned int)Level[getLit(vars[coefIndex])]) ++coefIndex;
+			while((unsigned int)assertionLevel>=(unsigned int)Level[getLit(*coefIt)]) ++coefIt;
 			// NOTE: unsigned int cast ensures assertionLevel < -1
-			assert(coefIndex<(int)vars.size());
-			if(slack<abs(coefs[vars[coefIndex]])) break;
+			assert(coefIt!=vars.cend());
+			if(slack<abs(coefs[*coefIt])) break;
 			++assertionLevel;
 		}
 		assert(assertionLevel<decisionLevel());
@@ -674,7 +677,7 @@ struct{
 		vector<int> variables;
 		while (!empty()) variables.push_back(removeMax());
 		tree.clear();
-		cap = resize_factor*newsize;
+		while(cap<newsize) cap=cap*resize_factor+1;
 		tree.resize(2*(cap+1), -1);
 		for (int x : variables) insert(x);
 	}
@@ -938,16 +941,13 @@ CRef propagate() {
 
 int pickBranchLit(){
 	int next = 0;
-
 	// Activity based decision:
-	while (next == 0 || Pos[next]!=-1)
-		if (order_heap.empty()){
-			next = 0;
-			break;
-		}else
-			next = order_heap.removeMax();
-
-	return next == 0 ? 0 : phase[next];
+	while (next == 0 || Pos[next]!=-1){
+		if (order_heap.empty()) return 0;
+		else next = order_heap.removeMax();
+	}
+	assert(phase[0]==0);
+	return phase[next];
 }
 
 // ---------------------------------------------------------------------
@@ -975,8 +975,8 @@ void setNbVariables(long long nvars){
 	last_sol.resize(nvars+1,false);
 	tmpConstraint.resize(nvars+1);
 	confl_data.resize(nvars+1);
-	tmpSet.resize(nvars+1);
-	actSet.resize(nvars+1);
+	tmpSet.resize(nvars);
+	actSet.resize(nvars);
 	order_heap.resize(nvars);
 	for(int i=n+1;i<=nvars;++i) phase[i] = -i, order_heap.insert(i);
 	n = nvars;
