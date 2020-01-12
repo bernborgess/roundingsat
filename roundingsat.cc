@@ -1647,7 +1647,8 @@ ostream & operator<<(ostream & o, LazyVar & lv) {
 	return o;
 }
 
-void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,long long>& core, long long& lower_bound){
+void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,long long>& core, long long& lower_bound,
+                         std::vector<LazyVar>& lazyVars){
 	// take care of derived unit lits
 	long long prev_lower = lower_bound; _unused(prev_lower);
 	lower_bound = -objective.removeUnits(false);
@@ -1680,19 +1681,14 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 	objective.resize(newN+1);
 	bool lazy = (opt_mode==2 || opt_mode==4) && core.vars.size()-degree>1;
 
-	if(lazy){ // add lazy constraints
-		LazyVar lv;
+	if(lazy){ // add first lazy constraint
+		lazyVars.push_back(LazyVar());
+		LazyVar& lv = lazyVars.back();
 		lv.init(core,oldN+1);
-		for(; lv.idx<lv.nvars; ++lv.idx){
-			lv.getAtLeastConstraint(tmpConstraint);
-			addInputConstraint(tmpConstraint);
-			lv.getAtMostConstraint(tmpConstraint);
-			addInputConstraint(tmpConstraint);
-			if(lv.idx>0){
-				lv.getSymBreakingConstraint(tmpConstraint);
-				addInputConstraint(tmpConstraint);
-			}
-		}
+		lv.getAtLeastConstraint(tmpConstraint);
+		addInputConstraint(tmpConstraint);
+		lv.getAtMostConstraint(tmpConstraint);
+		addInputConstraint(tmpConstraint);
 	}
 
 	// reformulate the objective
@@ -1701,6 +1697,19 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 	objective.add(tmpConstraint,mult,false);
 	objective.removeZeroes();
 	assert(lower_bound==-objective.getDegree());
+	for(int i=0; i<(int)lazyVars.size(); ++i){
+		LazyVar& lv=lazyVars[i];
+		while(objective.getCoef(lv.firstvar+lv.idx)==0){
+			lv.idx++;
+			if(lv.idx==lv.nvars){ swapErase(lazyVars,--i); break; }
+			lv.getAtLeastConstraint(tmpConstraint);
+			addInputConstraint(tmpConstraint);
+			lv.getAtMostConstraint(tmpConstraint);
+			addInputConstraint(tmpConstraint);
+			lv.getSymBreakingConstraint(tmpConstraint);
+			addInputConstraint(tmpConstraint);
+		}
+	}
 
 	if(!lazy){ // add channeling constraints
 		addInputConstraint(tmpConstraint);
@@ -1729,6 +1738,7 @@ void optimize(Constraint<int,long long>& objective){
 	objective.copyTo(origObjective);
 
 	std::vector<int> assumps;
+	std::vector<LazyVar> lazyVars;
 	assumps.reserve(objective.vars.size());
 	Constraint<int,long long> core;
 	size_t upper_time=0, lower_time=0;
@@ -1736,7 +1746,7 @@ void optimize(Constraint<int,long long>& objective){
 		size_t current_time=DETERMINISTICTIME;
 		printObjBounds(lower_bound,last_sol_obj_val);
 		assumps.clear();
-		if(opt_mode==1 || opt_mode==2 || (opt_mode>2 && 10*lower_time<upper_time)){ // use core-guided step
+		if(opt_mode==1 || opt_mode==2 || (opt_mode>2 && lower_time<upper_time)){ // use core-guided step
 			for(int v: objective.vars) assumps.push_back(-objective.getLit(v));
 			std::sort(assumps.begin(),assumps.end(),[&](int l1,int l2){
 				return objective.getCoef(-l1)>objective.getCoef(-l2) ||
@@ -1751,7 +1761,7 @@ void optimize(Constraint<int,long long>& objective){
 			lower_time+=DETERMINISTICTIME-current_time;
 			++NCORES;
 			if(assumps.size()==0) exit_UNSAT();
-			handleInconsistency(objective,core,lower_bound);
+			handleInconsistency(objective,core,lower_bound,lazyVars);
 		}
 	}
 }
