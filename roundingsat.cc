@@ -1601,7 +1601,7 @@ void handleNewSolution(const Constraint<int,long long>& origObjective, long long
 
 struct LazyVar{
 	int mult;
-	int firstvar;
+	int currentvar;
 	int idx;
 	int nvars;
 	// core
@@ -1614,7 +1614,7 @@ struct LazyVar{
 		rhs=core.getDegree();
 		lhs.reserve(core.vars.size());
 		for(int v: core.vars) lhs.push_back(core.getLit(v));
-		firstvar=startvar;
+		currentvar=startvar;
 		idx=0;
 		nvars=lhs.size()-rhs;
 	}
@@ -1623,27 +1623,27 @@ struct LazyVar{
 		// X >= (k+i+1)yi
 		out.reset();
 		for(int l: lhs) out.addLhs(1,l);
-		out.addLhs(-(rhs+idx+1),firstvar+idx);
+		out.addLhs(-(rhs+idx+1),currentvar);
 	}
 
 	void getAtMostConstraint(Constraint<int, long long>& out){
 		// ~X >= (n-k-i)~yi
 		out.reset();
 		for(int l: lhs) out.addLhs(1,-l);
-		out.addLhs(-(lhs.size()-rhs-idx),-(firstvar+idx));
+		out.addLhs(-(lhs.size()-rhs-idx),-currentvar);
 	}
 
-	void getSymBreakingConstraint(Constraint<int, long long>& out){
+	void getSymBreakingConstraint(Constraint<int, long long>& out, int prevvar){
 		// yi>=yi++
 		assert(idx>0);
 		out.reset(1);
-		out.addLhs(1,firstvar+idx-1);
-		out.addLhs(1,-(firstvar+idx));
+		out.addLhs(1,prevvar);
+		out.addLhs(1,-currentvar);
 	}
 };
 
 ostream & operator<<(ostream & o, LazyVar & lv) {
-	o << lv.firstvar << " " << lv.idx << " " << lv.nvars << " | ";
+	o << lv.currentvar << " " << lv.idx << " " << lv.nvars << " | ";
 	for(int l: lv.lhs) o << "+x" << l << " ";
 	o << ">= " << lv.rhs;
 	return o;
@@ -1674,25 +1674,22 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 	assert(mult<INF);
 	lower_bound+=degree*mult;
 
-	// add auxiliary variables
-	int oldN = n;
-	int newN = oldN-degree+core.vars.size();
-	setNbVariables(newN);
-	core.resize(newN+1);
-	tmpConstraint.resize(newN+1);
-	objective.resize(newN+1);
-
 	if((opt_mode==2 || opt_mode==4) && core.vars.size()-degree>1){
+		// add auxiliary variable
+		int newN = n+1;
+		setNbVariables(newN);
+		core.resize(newN+1);
+		objective.resize(newN+1);
 		// reformulate the objective
 		core.copyTo(tmpConstraint,-1);
-		tmpConstraint.addLhs(1,oldN+1);
+		tmpConstraint.addLhs(1,newN);
 		objective.add(tmpConstraint,mult,false);
 		objective.removeZeroes();
 		assert(lower_bound==-objective.getDegree());
 		// add first lazy constraint
 		lazyVars.push_back(LazyVar());
 		LazyVar& lv = lazyVars.back();
-		lv.init(core,oldN+1,mult);
+		lv.init(core,newN,mult);
 		lv.getAtLeastConstraint(tmpConstraint);
 		addInputConstraint(tmpConstraint);
 		lv.getAtMostConstraint(tmpConstraint);
@@ -1700,19 +1697,35 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 		// check for new lazy variables
 		for(int i=0; i<(int)lazyVars.size(); ++i){
 			LazyVar& lv=lazyVars[i];
-			if(objective.getCoef(lv.firstvar+lv.idx)==0){
+			int currentvar = lv.currentvar;
+			if(objective.getCoef(currentvar)==0){
 				lv.idx++;
 				if(lv.idx==lv.nvars){ swapErase(lazyVars,--i); break; }
-				objective.addLhs(lv.mult,lv.firstvar+lv.idx);
+				// add auxiliary variable
+				int newN = n+1;
+				setNbVariables(newN);
+				core.resize(newN+1);
+				objective.resize(newN+1);
+				int oldvar = lv.currentvar;
+				lv.currentvar = newN;
+				// reformulate the objective
+				objective.addLhs(lv.mult,newN);
+				// add necessary lazy constraints
 				lv.getAtLeastConstraint(tmpConstraint);
 				addInputConstraint(tmpConstraint);
 				lv.getAtMostConstraint(tmpConstraint);
 				addInputConstraint(tmpConstraint);
-				lv.getSymBreakingConstraint(tmpConstraint);
+				lv.getSymBreakingConstraint(tmpConstraint,oldvar);
 				addInputConstraint(tmpConstraint);
 			}
 		}
 	}else{
+		// add auxiliary variables
+		int oldN = n;
+		int newN = oldN-degree+core.vars.size();
+		setNbVariables(newN);
+		core.resize(newN+1);
+		objective.resize(newN+1);
 		// reformulate the objective
 		for(int v=oldN+1; v<=newN; ++v) core.addLhs(-1,v);
 		core.copyTo(tmpConstraint,-1);
