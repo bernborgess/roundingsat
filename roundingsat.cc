@@ -978,7 +978,7 @@ void setNbVariables(long long nvars){
 	Pos.resize(nvars+1,-1);
 	Reason.resize(nvars+1,CRef_Undef);
 	activity.resize(nvars+1,0);
-	phase.resize(nvars+1,false);
+	phase.resize(nvars+1);
 	last_sol.resize(nvars+1,false);
 	tmpConstraint.resize(nvars+1);
 	confl_data.resize(nvars+1);
@@ -1344,7 +1344,6 @@ void exit_SAT() {
 }
 
 void exit_UNSAT() {
-	assert(false);
 	print_stats();
 	if(foundSolution()){
 		cout << "o " << last_sol_obj_val << endl;
@@ -1668,7 +1667,7 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 		assert(objective.getLit(v)!=0);
 		mult=min(mult,abs(objective.coefs[v]));
 	}
-	assert(mult<INF);
+	assert(mult<INF); assert(mult>0);
 	lower_bound+=degree*mult;
 
 	if((opt_mode==2 || opt_mode==4) && core.vars.size()-degree>1){
