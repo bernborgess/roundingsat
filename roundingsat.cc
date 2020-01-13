@@ -838,7 +838,7 @@ void analyze(CRef confl){
 	for(int v: confl_data.vars) actSet.add(confl_data.getLit(v));
 	while(1){
 		if (decisionLevel() == 0) {
-			assert(0>confl_data.getSlack());
+			assert(confl_data.getSlack()<0);
 			exit_UNSAT();
 		}
 		int l = trail.back();
@@ -863,12 +863,12 @@ void analyze(CRef confl){
 				for(int v: tmpConstraint.vars) actSet.add(tmpConstraint.getLit(v));
 				confl_data.add(tmpConstraint,confl_coef_l);
 				assert(confl_data.getCoef(-l)==0);
-				assert(0>confl_data.getSlack());
+				assert(confl_data.getSlack()<0);
 			}
 		}
 		undoOne();
 	}
-	assert(0>confl_data.getSlack());
+	assert(confl_data.getSlack()<0);
 	for(int l: actSet.getKeys()) if(l!=0) varBumpActivity(abs(l));
 }
 
@@ -1020,8 +1020,7 @@ CRef addInputConstraint(Constraint<int, long long>& c, bool initial=false){
 	if(degree > (long long) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
 	if(degree<=0) return CRef_Undef; // already satisfied.
 
-	long long slack = c.getSlack();
-	if(slack < 0)puts("c Inconsistent input constraint"),exit_UNSAT();
+	if(c.getSlack()<0) puts("c Inconsistent input constraint"),exit_UNSAT();
 
 	CRef result = attachConstraint(c,!initial,true);
 	if (propagate() != CRef_Undef)puts("c Input conflict"),exit_UNSAT();
@@ -1770,7 +1769,7 @@ void optimize(Constraint<int,long long>& objective){
 			handleNewSolution(origObjective,lower_bound);
 		}	else if(reply==SolveState::UNSAT) {
 			++NCORES;
-			if(assumps.size()==0) exit_UNSAT();
+			if(core.getSlack()<0) exit_UNSAT();
 			handleInconsistency(objective,core,lower_bound,lazyVars);
 		} // else reply==SolveState::INPROCESSING, time to check if we want to switch mode
 	}
