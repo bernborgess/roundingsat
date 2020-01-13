@@ -984,7 +984,7 @@ void setNbVariables(long long nvars){
 	confl_data.resize(nvars+1);
 	tmpSet.resize(nvars);
 	actSet.resize(nvars);
-	order_heap.resize(nvars);
+	order_heap.resize(nvars+1);
 	for(int i=n+1;i<=nvars;++i) phase[i] = -i, order_heap.insert(i);
 	n = nvars;
 }
@@ -1095,7 +1095,7 @@ void opb_read(istream & in) {
 				if (negated) l = -l;
 				tmpConstraint.addLhs(coef,l);
 			}
-			if (opt_line) objective_func=tmpConstraint;
+			if (opt_line) tmpConstraint.copyTo(objective_func);
 			else {
 				tmpConstraint.addRhs(read_number(line0.substr(line0.find("=") + 1)));
 				// Handle equality case with two constraints
