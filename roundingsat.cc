@@ -355,15 +355,16 @@ struct Constraint{
 		if(isCardinality()) return false;
 		sort(vars.begin(),vars.end(),[&](int v1, int v2){return abs(coefs[v1])<abs(coefs[v2]);});
 		LARGE degree = getDegree();
-		assert(degree>0);
+		if(degree==0){ reset(0); return true; }
 		assert(coefs[vars[0]]!=0);
 
-		int largeCoefsNeeded=1;
+		int largeCoefsNeeded=0;
 		LARGE largeCoefSum=0;
-		for(; largeCoefsNeeded<=(int)vars.size(); ++largeCoefsNeeded){
+		while(largeCoefsNeeded<(int)vars.size() && largeCoefSum<degree){
+			++largeCoefsNeeded;
 			largeCoefSum+=abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
-			if(largeCoefSum>=degree) break;
 		}
+		assert(largeCoefsNeeded>0);
 		if(largeCoefSum<degree){ // trivially unsatisfiable constraint
 			reset(1); return true;
 		}
@@ -375,13 +376,13 @@ struct Constraint{
 			if(smallCoefSum<degree) return false;
 			// else, we have an equivalent cardinality constraint
 		}else{
-			LARGE wiggleroom=degree-largeCoefSum+abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
-			assert(wiggleroom>0);
-			for(; skippable<(int)vars.size(); ++skippable){
-				wiggleroom-=abs(coefs[vars[skippable]]);
-				if(wiggleroom<=0) break;
-			}
-			assert(skippable<(int)vars.size());
+//			LARGE wiggleroom=degree-largeCoefSum+abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
+//			assert(wiggleroom>0);
+//			while(skippable<(int)vars.size() && wiggleroom>abs(coefs[vars[skippable]])){
+//				wiggleroom-=abs(coefs[vars[skippable]]);
+//				++skippable;
+//			}
+//			assert(skippable<(int)vars.size());
 		}
 
 		rhs=largeCoefsNeeded;
@@ -571,6 +572,9 @@ private:
 	static constexpr bool _unused_(){ return false; }
 
 public:
+	IntSet(){}
+	IntSet(int size, const std::vector<int>& ints) { resize(size); for(int i: ints) add(i); }
+
 	void reset(){
 		for(int k: keys) values[k]=_unused_();
 		keys.clear();
@@ -1539,6 +1543,7 @@ SolveState solve(const vector<int>& assumptions, Constraint<int,long long>* out=
 				if (~Level[-l_assump]){ // found conflicting assumption
 					if(Level[-l_assump]==0){ backjumpTo(0); out->reset(); return SolveState::UNSAT; }
 					extractCore(Reason[abs(l_assump)],out,l_assump);
+//					assert(assumpSlack(IntSet(n,assumptions),*out)<0);
 					return SolveState::UNSAT;
 				}
 				if (~Level[l_assump]){ // assumption already propagated
