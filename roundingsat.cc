@@ -1597,7 +1597,7 @@ struct LazyVar{
 	std::vector<int> lhs;
 	int rhs;
 
-	void init(const Constraint<int, long long>& core, int startvar, int m){
+	LazyVar(const Constraint<int, long long>& core, int startvar, int m){
 		assert(core.isCardinality());
 		mult=m;
 		rhs=core.getDegree();
@@ -1631,15 +1631,15 @@ struct LazyVar{
 	}
 };
 
-ostream & operator<<(ostream & o, LazyVar & lv) {
-	o << lv.currentvar << " " << lv.idx << " " << lv.nvars << " | ";
-	for(int l: lv.lhs) o << "+x" << l << " ";
-	o << ">= " << lv.rhs;
+ostream & operator<<(ostream & o, LazyVar* lv) {
+	o << lv->currentvar << " " << lv->idx << " " << lv->nvars << " | ";
+	for(int l: lv->lhs) o << "+x" << l << " ";
+	o << ">= " << lv->rhs;
 	return o;
 }
 
 void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,long long>& core, long long& lower_bound,
-                         std::vector<LazyVar>& lazyVars){
+                         std::vector<LazyVar*>& lazyVars){
 	// take care of derived unit lits
 	long long prev_lower = lower_bound; _unused(prev_lower);
 	lower_bound = -objective.removeUnits(false);
@@ -1676,35 +1676,34 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 		objective.removeZeroes();
 		assert(lower_bound==-objective.getDegree());
 		// add first lazy constraint
-		lazyVars.push_back(LazyVar());
-		LazyVar& lv = lazyVars.back();
-		lv.init(core,newN,mult);
-		lv.getAtLeastConstraint(tmpConstraint);
+		LazyVar* lv = new LazyVar(core,newN,mult);
+		lazyVars.push_back(lv);
+		lv->getAtLeastConstraint(tmpConstraint);
 		addInputConstraint(tmpConstraint);
-		lv.getAtMostConstraint(tmpConstraint);
+		lv->getAtMostConstraint(tmpConstraint);
 		addInputConstraint(tmpConstraint);
 		// check for new lazy variables
 		for(int i=0; i<(int)lazyVars.size(); ++i){
-			LazyVar& lv=lazyVars[i];
-			int currentvar = lv.currentvar;
+			LazyVar* lv=lazyVars[i];
+			int currentvar = lv->currentvar;
 			if(objective.getCoef(currentvar)==0){
-				lv.idx++;
-				if(lv.idx==lv.nvars){ swapErase(lazyVars,--i); break; }
+				lv->idx++;
+				if(lv->idx==lv->nvars){ swapErase(lazyVars,i--); delete lv; continue; }
 				// add auxiliary variable
 				int newN = n+1;
 				setNbVariables(newN);
 				core.resize(newN+1);
 				objective.resize(newN+1);
-				int oldvar = lv.currentvar;
-				lv.currentvar = newN;
+				int oldvar = lv->currentvar;
+				lv->currentvar = newN;
 				// reformulate the objective
-				objective.addLhs(lv.mult,newN);
+				objective.addLhs(lv->mult,newN);
 				// add necessary lazy constraints
-				lv.getAtLeastConstraint(tmpConstraint);
+				lv->getAtLeastConstraint(tmpConstraint);
 				addInputConstraint(tmpConstraint);
-				lv.getAtMostConstraint(tmpConstraint);
+				lv->getAtMostConstraint(tmpConstraint);
 				addInputConstraint(tmpConstraint);
-				lv.getSymBreakingConstraint(tmpConstraint,oldvar);
+				lv->getSymBreakingConstraint(tmpConstraint,oldvar);
 				addInputConstraint(tmpConstraint);
 			}
 		}
@@ -1748,7 +1747,7 @@ void optimize(Constraint<int,long long>& objective){
 	objective.copyTo(origObjective);
 
 	std::vector<int> assumps;
-	std::vector<LazyVar> lazyVars;
+	std::vector<LazyVar*> lazyVars;
 	assumps.reserve(objective.vars.size());
 	Constraint<int,long long> core;
 	size_t upper_time=0, lower_time=0;
