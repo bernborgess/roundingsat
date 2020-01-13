@@ -204,9 +204,8 @@ struct Constraint{
 	}
 
 	void init(Clause& C){
-		reset();
+		reset(C.w);
 		for(size_t i=0;i<C.size();++i) addLhs(C.coef(i), C.lits()[i]);
-		addRhs(C.w);
 		saturate();
 	}
 
@@ -269,19 +268,25 @@ struct Constraint{
 	}
 
 	inline void weaken(SMALL m, int l){ // add either abs(m)*(l>=0) or abs(m)*(-l>=-1)
-		addLhs(m,l);
+		addLhs(m,l); // TODO: optimize this method by not calling addLhs
 		if(m<0) addRhs(m);
 	}
 
 	LARGE saturate(){ // returns degree
 		LARGE w = getDegree();
-		if(w<=0) reset(), rhs=w;
+		if(w<=0) reset(w);
 		for (int v: vars){
 			if(coefs[v]>w) coefs[v]=w;
 			if(coefs[v]<-w) rhs-=coefs[v]+w, coefs[v]=-w;
 		}
 		assert(w==getDegree()); // degree is invariant under saturation
 		return w;
+	}
+
+	bool isSaturated(){
+		LARGE w = getDegree();
+		for(int v:vars) if(abs(coefs[v])>w) return false;
+		return true;
 	}
 
 	template<class COEFS, class RHS>
@@ -300,11 +305,10 @@ struct Constraint{
 
 	template<class S, class L>
 	void copyTo(Constraint<S,L>& out, S mult=1) const {
-		out.reset();
+		out.reset(mult*rhs);
 		out.resize(coefs.size());
 		out.vars=vars;
 		for(int v: vars) out.coefs[v]=mult*coefs[v];
-		out.rhs=mult*rhs;
 	}
 
 	LARGE getSlack() const {
@@ -352,6 +356,7 @@ struct Constraint{
 	}
 
 	bool simplifyToCardinality(bool equivalencePreserving){
+		assert(isSaturated());
 		if(isCardinality()) return false;
 		sort(vars.begin(),vars.end(),[&](int v1, int v2){return abs(coefs[v1])<abs(coefs[v2]);});
 		LARGE degree = getDegree();
@@ -376,24 +381,22 @@ struct Constraint{
 			if(smallCoefSum<degree) return false;
 			// else, we have an equivalent cardinality constraint
 		}else{
-//			LARGE wiggleroom=degree-largeCoefSum+abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
-//			assert(wiggleroom>0);
-//			while(skippable<(int)vars.size() && wiggleroom>abs(coefs[vars[skippable]])){
-//				wiggleroom-=abs(coefs[vars[skippable]]);
-//				++skippable;
-//			}
-//			assert(skippable<(int)vars.size());
+			LARGE wiggleroom=degree-largeCoefSum+abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
+			assert(wiggleroom>0);
+			while(skippable<(int)vars.size() && wiggleroom>abs(coefs[vars[skippable]])){
+				wiggleroom-=abs(coefs[vars[skippable]]);
+				++skippable;
+			}
+			assert(skippable<(int)vars.size());
 		}
 
 		rhs=largeCoefsNeeded;
 		// TODO: sort vars from large to small to be able to simply pop skippable literals
 		for(int i=0; i<skippable; ++i) coefs[vars[i]]=0;
 		for(int i=skippable; i<(int)vars.size(); ++i){
-			int v = vars[i];
-			if(coefs[v]<0){
-				coefs[v]=-1;
-				--rhs;
-			}else coefs[v]=1;
+			int& c = coefs[vars[i]];
+			if(c<0){ c=-1; --rhs; }
+			else c=1;
 		}
 		removeZeroes();
 		return true;
@@ -1341,6 +1344,7 @@ void exit_SAT() {
 }
 
 void exit_UNSAT() {
+	assert(false);
 	print_stats();
 	if(foundSolution()){
 		cout << "o " << last_sol_obj_val << endl;
