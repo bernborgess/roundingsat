@@ -77,6 +77,7 @@ struct Clause {
 	int slack; // sum of non-falsified watches minus w.
 	// NOTE: will never be larger than 2 * non-falsified watch, so fits in 32 bit for the n-watched literal scheme
 	int watchIdx;
+	int propIdx;
 	// ordinary data
 	int data[0]; // TODO: data as pairs of coef-lit instead of list of all lits, then all coefs?
 
@@ -123,7 +124,7 @@ size_t NBACKJUMP=0, DETERMINISTICTIME=0;
 long long NCONFL=0, NDECIDE=0, NPROP=0;
 __int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
 long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
-long long NGCD=0, NCARDDETECT=0, NCORECARDINALITIES=0, NCORES=0;
+long long NGCD=0, NCARDDETECT=0, NCORECARDINALITIES=0, NCORES=0, NSOLS=0;
 long long NWEAKENEDNONIMPLYING=0, NWEAKENEDNONIMPLIED=0;
 double rinc = 2;
 int rfirst = 100;
@@ -650,6 +651,7 @@ struct {
 		clause->nbackjump = 0;
 		clause->slack = -w;
 		clause->watchIdx = 0;
+		clause->propIdx = 0;
 		clause->w = w;
 		for(unsigned int i=0;i<length;i++){
 			int v = constraint.vars[i];
@@ -866,8 +868,10 @@ void analyze(CRef confl){
 				}
 				tmpConstraint.init(reasonC);
 				tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack());
-				assert(tmpConstraint.getSlack()>=0);
+				assert(tmpConstraint.getCoef(l)>tmpConstraint.getSlack());
 				tmpConstraint.roundToOne(tmpConstraint.getCoef(l),!originalRoundToOne);
+				assert(tmpConstraint.getCoef(l)==1);
+				assert(tmpConstraint.getSlack()<=0);
 				for(int v: tmpConstraint.vars) actSet.add(tmpConstraint.getLit(v));
 				confl_data.add(tmpConstraint,confl_coef_l);
 				assert(confl_data.getCoef(-l)==0);
@@ -896,14 +900,14 @@ CRef propagate() {
 			int idx = ws[it_ws].idx;
 			Clause & C = ca[cr];
 			if(C.getStatus()>=FORCEDELETE){ swapErase(ws,it_ws--); continue; }
-			if(C.nbackjump<NBACKJUMP) C.nbackjump=NBACKJUMP, C.watchIdx=0;
+			if(C.nbackjump<NBACKJUMP) C.nbackjump=NBACKJUMP, C.propIdx=0, C.watchIdx=0;
 			const int * const lits = C.lits(); int * const coefs = C.coefs();
 			const int Csize = C.size(); const int ClargestCoef = C.largestCoef();
 			int Cslack = C.slack;
 			const int c = coefs[idx];
 			assert(c<0);
 			Cslack+=c;
-			if(Cslack-c>=ClargestCoef){ // look for new watches
+			if(Cslack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
 				int i=C.watchIdx;
 				DETERMINISTICTIME-=i;
 				for(; i<Csize && Cslack<ClargestCoef; ++i){ // NOTE: innermost loop of RoundingSat
@@ -924,22 +928,18 @@ CRef propagate() {
 				coefs[idx]=-c;
 				swapErase(ws,it_ws--);
 			}else if(Cslack>=0){ // keep the watch, check for propagation
-				long long slk = -C.w;
-				for(int i=0; i<(int)Csize; ++i) if(Level[-lits[i]]==-1) slk+=abs(coefs[i]);
-				assert(Cslack>=slk);
-				if(slk>=0){
-					int i=0;
-					for(; i<Csize && abs(coefs[i])>Cslack; ++i){ // TODO: full breadth-first propagation
-						const int l = lits[i];
-						if(Pos[abs(l)]==-1) uncheckedEnqueue(l,cr);
-					}
-					DETERMINISTICTIME+=i;
-				}else	confl=cr;
-			}else confl=cr;
-			if(confl!=CRef_Undef){ // conflict, clean up current level and stop propagation
+				int i=C.propIdx;
+				DETERMINISTICTIME-=i;
+				for(; i<Csize && abs(coefs[i])>Cslack; ++i){
+					const int l = lits[i];
+					if(Pos[abs(l)]==-1) uncheckedEnqueue(l,cr);
+				}
+				DETERMINISTICTIME+=i;
+				C.propIdx=i;
+			}else{ // conflict, clean up current level and stop propagation
+				confl=cr;
 				for(int i=0; i<=it_ws; ++i){
 					Clause& constraint = ca[ws[i].cref];
-					if(constraint.isClause()) continue;
 					constraint.slack += constraint.coef(ws[i].idx);
 				}
 				--qhead;
@@ -1315,6 +1315,7 @@ void print_stats() {
 	printf("d weakened non-implying lits %lld\n", NWEAKENEDNONIMPLYING);
 	printf("d auxiliary variables introduced %d\n", n-orig_n);
 	if(opt_mode>0){
+		printf("d solutions found %lld\n", NSOLS);
 		printf("d cores constructed %lld\n", NCORES);
 		printf("d core cardinality constraints returned %lld\n", NCORECARDINALITIES);
 	}
@@ -1444,13 +1445,11 @@ void extractCore(CRef confl, Constraint<int,long long>* out, int l_assump=0){
 
 	if(l_assump!=0){ // l_assump is an assumption propagated to the opposite value
 		assert(~Level[-l_assump]);
-		while(~Level[-l_assump]) undoOne();
+		int pos = Pos[abs(l_assump)];
+		while((int)trail.size()>pos) undoOne();
 		assert(Pos[abs(l_assump)]==-1);
 		decide(l_assump);
 	}
-
-	confl_data.init(ca[confl]);
-	assert(confl_data.getSlack()<0);
 
 	// Set all assumptions in front of the trail, all propagations later. This makes it easy to do decision learning.
 	// For this, we first copy the trail, then backjump to 0, then rebuild the trail.
@@ -1458,7 +1457,7 @@ void extractCore(CRef confl, Constraint<int,long long>* out, int l_assump=0){
 	tmpSet.reset(); // holds the assumptions
 	std::vector<int> props; // holds the propagations
 	assert(trail_lim.size()>0);
-	for(int i=trail_lim[0]; i<(int)trail.size(); ++i){
+	for(int i=trail_lim[0]; i<(int)trail.size(); ++i){ // TODO: also set propagated assumptions as decisions?
 		int l = trail[i];
 		if(Reason[abs(l)]==CRef_Undef) tmpSet.add(l); // decision, hence assumption
 		else props.push_back(l);
@@ -1467,6 +1466,9 @@ void extractCore(CRef confl, Constraint<int,long long>* out, int l_assump=0){
 
 	for(int l: tmpSet.getKeys()) decide(l);
 	for(int l: props) { assert(Reason[abs(l)]!=CRef_Undef); uncheckedEnqueue(l,Reason[abs(l)]); }
+
+	confl_data.init(ca[confl]);
+	assert(confl_data.getSlack()<0);
 
 	// analyze conflict
 	long long assumpslk = assumpSlack(tmpSet,confl_data);
@@ -1477,10 +1479,13 @@ void extractCore(CRef confl, Constraint<int,long long>* out, int l_assump=0){
 			Clause& reasonC = ca[Reason[abs(l)]];
 			tmpConstraint.init(reasonC);
 			tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack());
-			assert(tmpConstraint.getSlack()>=0);
-			tmpConstraint.roundToOne(tmpConstraint.getCoef(l),true);
+			assert(tmpConstraint.getCoef(l)>tmpConstraint.getSlack());
+			tmpConstraint.roundToOne(tmpConstraint.getCoef(l),false); // TODO: true
+			assert(tmpConstraint.getCoef(l)==1);
+			assert(tmpConstraint.getSlack()<=0);
 			confl_data.add(tmpConstraint,confl_coef_l);
 			assert(confl_data.getCoef(-l)==0);
+			assert(confl_data.getSlack()<0);
 			assumpslk = assumpSlack(tmpSet,confl_data);
 		}
 		undoOne();
@@ -1767,21 +1772,23 @@ void optimize(Constraint<int,long long>& objective){
 		printObjBounds(lower_bound,last_sol_obj_val);
 		assumps.clear();
 		if(opt_mode==1 || opt_mode==2 || (opt_mode>2 && lower_time<upper_time)){ // use core-guided step
-			for(int v: objective.vars) assumps.push_back(-objective.getLit(v));
+			for(int v: objective.vars) { assert(objective.getLit(v)!=0); assumps.push_back(-objective.getLit(v)); }
 			std::sort(assumps.begin(),assumps.end(),[&](int l1,int l2){
 				return objective.getCoef(-l1)>objective.getCoef(-l2) ||
 				       (objective.getCoef(-l1)==objective.getCoef(-l2) && abs(l1)<abs(l2));
 			});
 		}
+		assert(last_sol_obj_val>lower_bound);
 		SolveState reply = solve(assumps,&core);
 		assert(decisionLevel()==0);
 		if(assumps.size()==0) upper_time+=DETERMINISTICTIME-current_time;
 		else lower_time+=DETERMINISTICTIME-current_time;
 		if(reply==SolveState::SAT){
+			++NSOLS;
 			handleNewSolution(origObjective,lower_bound);
 		}	else if(reply==SolveState::UNSAT) {
 			++NCORES;
-			if(core.getSlack()<0) exit_UNSAT();
+			if(core.getSlack()<0 || lower_bound>=last_sol_obj_val) exit_UNSAT();
 			handleInconsistency(objective,core,lower_bound,lazyVars);
 		} // else reply==SolveState::INPROCESSING, time to check if we want to switch mode
 	}
