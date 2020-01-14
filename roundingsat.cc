@@ -77,7 +77,6 @@ struct Clause {
 	int slack; // sum of non-falsified watches minus w.
 	// NOTE: will never be larger than 2 * non-falsified watch, so fits in 32 bit for the n-watched literal scheme
 	int watchIdx;
-	int propIdx;
 	// ordinary data
 	int data[0]; // TODO: data as pairs of coef-lit instead of list of all lits, then all coefs?
 
@@ -103,6 +102,7 @@ struct CRef {
 	bool operator< (CRef const&o)const{return ofs< o.ofs;}
 };
 const CRef CRef_Undef = { UINT32_MAX };
+std::ostream& operator<<(std::ostream& os, CRef cr) { return os << cr.ofs; }
 
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
@@ -267,12 +267,12 @@ struct Constraint{
 		return (coefs[v]>0 && Level[-v]==-1) || (coefs[v]<0 && Level[v]==-1);
 	}
 
-	inline void weaken(SMALL m, int l){ // add either abs(m)*(l>=0) or abs(m)*(-l>=-1)
+	inline void weaken(SMALL m, int l){ // add m*(l>=0) if m>0 and -m*(-l>=-1) if m<0
 		addLhs(m,l); // TODO: optimize this method by not calling addLhs
 		if(m<0) addRhs(m);
 	}
 
-	LARGE saturate(){ // returns degree
+	LARGE saturate(){ // returns degree // TODO: keep track of degree after computing
 		LARGE w = getDegree();
 		if(w<=0) reset(w);
 		for (int v: vars){
@@ -280,6 +280,7 @@ struct Constraint{
 			if(coefs[v]<-w) rhs-=coefs[v]+w, coefs[v]=-w;
 		}
 		assert(w==getDegree()); // degree is invariant under saturation
+		assert(isSaturated());
 		return w;
 	}
 
@@ -403,6 +404,7 @@ struct Constraint{
 	}
 
 	bool divideByGCD(){
+		assert(isSaturated());
 		if(isCardinality()) return false;
 		int mn=INF;
 		for(int v: vars){
@@ -496,9 +498,9 @@ struct Constraint{
 		}
 	}
 
-	LARGE weakenNonImplying(SMALL propCoef, LARGE slack){
+	void weakenNonImplying(SMALL propCoef, LARGE slack){
 		LARGE wiggle_room = propCoef-slack-1;
-		if(wiggle_room<=0) return slack;
+		if(wiggle_room<=0) return;
 		removeZeroes(); // ensures getLit(v)!=0
 		int j=0;
 		for(int i=0; i<(int)vars.size(); ++i){
@@ -517,28 +519,20 @@ struct Constraint{
 			wiggle_room-=c;
 			if(wiggle_room<0) break;
 			weaken(-coefs[v],v);
-			slack+=c;
 			++NWEAKENEDNONIMPLYING;
 		}
-		assert(slack==getSlack());
-		return slack;
+		saturate();
 	}
 
-	LARGE heuristicWeakening(){
-		LARGE slk = getSlack();
-
+	void heuristicWeakening(LARGE slk){
 		SMALL smallestPropagated=_unused_(); // smallest coefficient of propagated literals
-		if (slk >= 0) {
-			for (int v: vars){
-				SMALL c = abs(coefs[v]);
-				if (Pos[v]==-1 && c>slk) {
-					smallestPropagated = min(smallestPropagated, c);
-				}
-			}
+		if (slk >= 0) for (int v: vars){
+			SMALL c = abs(coefs[v]);
+			if (Pos[v]==-1 && c>slk) smallestPropagated = min(smallestPropagated, c);
 		}
-		if(smallestPropagated==_unused_()) return slk; // no propagation, no idea what to weaken
+		if(smallestPropagated==_unused_()) return; // no propagation, no idea what to weaken
 		weakenNonImplied(slk);
-		return weakenNonImplying(smallestPropagated,slk);
+		weakenNonImplying(smallestPropagated,slk);
 	}
 };
 
@@ -656,7 +650,6 @@ struct {
 		clause->nbackjump = 0;
 		clause->slack = -w;
 		clause->watchIdx = 0;
-		clause->propIdx = 0;
 		clause->w = w;
 		for(unsigned int i=0;i<length;i++){
 			int v = constraint.vars[i];
@@ -738,6 +731,13 @@ void claBumpActivity (Clause& c) {
 			cla_inc *= 1e-20; } }
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
+
+long long getSlack(Clause& C, int pos){
+	int* lits = C.lits(); int* coefs = C.coefs();
+	long long slack = -C.w;
+	for(int i=0; i<(int)C.size(); ++i) if(Level[-lits[i]]==-1 || Pos[abs(lits[i])]>pos) slack+=abs(coefs[i]);
+	return slack;
+}
 
 void uncheckedEnqueue(int p, CRef from=CRef_Undef){
 	assert(Pos[abs(p)]==-1);
@@ -843,7 +843,7 @@ void analyze(CRef confl){
 	confl_data.init(C);
 	actSet.reset();
 	for(int v: confl_data.vars) actSet.add(confl_data.getLit(v));
-	while(1){
+	while(true){
 		if (decisionLevel() == 0) {
 			assert(confl_data.getSlack()<0);
 			exit_UNSAT();
@@ -866,6 +866,7 @@ void analyze(CRef confl){
 				}
 				tmpConstraint.init(reasonC);
 				tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack());
+				assert(tmpConstraint.getSlack()>=0);
 				tmpConstraint.roundToOne(tmpConstraint.getCoef(l),!originalRoundToOne);
 				for(int v: tmpConstraint.vars) actSet.add(tmpConstraint.getLit(v));
 				confl_data.add(tmpConstraint,confl_coef_l);
@@ -895,7 +896,7 @@ CRef propagate() {
 			int idx = ws[it_ws].idx;
 			Clause & C = ca[cr];
 			if(C.getStatus()>=FORCEDELETE){ swapErase(ws,it_ws--); continue; }
-			if(C.nbackjump<NBACKJUMP) C.nbackjump=NBACKJUMP, C.propIdx=0, C.watchIdx=0;
+			if(C.nbackjump<NBACKJUMP) C.nbackjump=NBACKJUMP, C.watchIdx=0;
 			const int * const lits = C.lits(); int * const coefs = C.coefs();
 			const int Csize = C.size(); const int ClargestCoef = C.largestCoef();
 			int Cslack = C.slack;
@@ -923,16 +924,19 @@ CRef propagate() {
 				coefs[idx]=-c;
 				swapErase(ws,it_ws--);
 			}else if(Cslack>=0){ // keep the watch, check for propagation
-				int i=C.propIdx;
-				DETERMINISTICTIME-=i;
-				for(; i<Csize && abs(coefs[i])>Cslack; ++i){
-					const int l = lits[i];
-					if(Pos[abs(l)]==-1) uncheckedEnqueue(l,cr);
-				}
-				DETERMINISTICTIME+=i;
-				C.propIdx=i;
-			}else{ // conflict, clean up current level and stop propagation
-				confl=cr;
+				long long slk = -C.w;
+				for(int i=0; i<(int)Csize; ++i) if(Level[-lits[i]]==-1) slk+=abs(coefs[i]);
+				assert(Cslack>=slk);
+				if(slk>=0){
+					int i=0;
+					for(; i<Csize && abs(coefs[i])>Cslack; ++i){ // TODO: full breadth-first propagation
+						const int l = lits[i];
+						if(Pos[abs(l)]==-1) uncheckedEnqueue(l,cr);
+					}
+					DETERMINISTICTIME+=i;
+				}else	confl=cr;
+			}else confl=cr;
+			if(confl!=CRef_Undef){ // conflict, clean up current level and stop propagation
 				for(int i=0; i<=it_ws; ++i){
 					Clause& constraint = ca[ws[i].cref];
 					if(constraint.isClause()) continue;
@@ -1001,12 +1005,11 @@ void learnConstraint(Constraint<long long,__int128>& confl){
 	backjumpTo(tmpConstraint.getAssertionLevel());
 	assert(qhead==(int)trail.size()); // jumped back sufficiently far to catch up with qhead
 
-	long long slack = tmpConstraint.heuristicWeakening();
-	if(slack < 0) {
-		assert(decisionLevel()==0);
-		exit_UNSAT();
-	}
+	long long slk = tmpConstraint.getSlack();
+	if(slk<0){ assert(decisionLevel()==0); exit_UNSAT(); }
+	tmpConstraint.heuristicWeakening(slk);
 	tmpConstraint.postProcess();
+	assert(tmpConstraint.isSaturated());
 
 	CRef cr = attachConstraint(tmpConstraint,true);
 	Clause & C = ca[cr];
@@ -1474,7 +1477,8 @@ void extractCore(CRef confl, Constraint<int,long long>* out, int l_assump=0){
 			Clause& reasonC = ca[Reason[abs(l)]];
 			tmpConstraint.init(reasonC);
 			tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack());
-			tmpConstraint.roundToOne(tmpConstraint.getCoef(l),false);
+			assert(tmpConstraint.getSlack()>=0);
+			tmpConstraint.roundToOne(tmpConstraint.getCoef(l),true);
 			confl_data.add(tmpConstraint,confl_coef_l);
 			assert(confl_data.getCoef(-l)==0);
 			assumpslk = assumpSlack(tmpSet,confl_data);
