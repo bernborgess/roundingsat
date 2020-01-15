@@ -1784,8 +1784,9 @@ void optimize(Constraint<int,long long>& objective){
 			handleNewSolution(origObjective,lower_bound);
 		}	else if(reply==SolveState::UNSAT) {
 			++NCORES;
-			if(core.getSlack()<0 || lower_bound>=last_sol_obj_val) exit_UNSAT();
+			if(core.getSlack()<0) exit_UNSAT();
 			handleInconsistency(objective,core,lower_bound,lazyVars);
+			if(lower_bound>=last_sol_obj_val){ printObjBounds(lower_bound,last_sol_obj_val); exit_UNSAT(); }
 		} // else reply==SolveState::INPROCESSING, time to check if we want to switch mode
 	}
 }
