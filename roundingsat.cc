@@ -735,13 +735,6 @@ void claBumpActivity (Clause& c) {
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 
-long long getSlack(Clause& C, int pos){
-	int* lits = C.lits(); int* coefs = C.coefs();
-	long long slack = -C.w;
-	for(int i=0; i<(int)C.size(); ++i) if(Level[-lits[i]]==-1 || Pos[abs(lits[i])]>pos) slack+=abs(coefs[i]);
-	return slack;
-}
-
 void uncheckedEnqueue(int p, CRef from=CRef_Undef){
 	assert(Pos[abs(p)]==-1);
 	int v = abs(p);
