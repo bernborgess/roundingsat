@@ -1555,7 +1555,7 @@ SolveState solve(const vector<int>& assumptions, Constraint<int,long long>* out=
 				if (~Level[-l_assump]){ // found conflicting assumption
 					if(Level[-l_assump]==0){ backjumpTo(0); out->reset(); return SolveState::UNSAT; }
 					extractCore(Reason[abs(l_assump)],out,l_assump);
-					assert(assumpSlack(IntSet(n,assumptions),*out)<0);
+					assert(assumpSlack(IntSet(n,assumptions),*out)<0); // TODO: heavy assertion check
 					return SolveState::UNSAT;
 				}
 				if (~Level[l_assump]){ // assumption already propagated
@@ -1762,9 +1762,10 @@ void optimize(Constraint<int,long long>& objective){
 	assumps.reserve(objective.vars.size());
 	Constraint<int,long long> core;
 	size_t upper_time=0, lower_time=0;
+	SolveState reply = SolveState::UNSAT;
 	while(true){
 		size_t current_time=DETERMINISTICTIME;
-		printObjBounds(lower_bound,last_sol_obj_val);
+		if(reply!=SolveState::INPROCESSING) printObjBounds(lower_bound,last_sol_obj_val);
 		assumps.clear();
 		if(opt_mode==1 || opt_mode==2 || (opt_mode>2 && lower_time<upper_time)){ // use core-guided step
 			for(int v: objective.vars) { assert(objective.getLit(v)!=0); assumps.push_back(-objective.getLit(v)); }
@@ -1774,7 +1775,7 @@ void optimize(Constraint<int,long long>& objective){
 			});
 		}
 		assert(last_sol_obj_val>lower_bound);
-		SolveState reply = solve(assumps,&core);
+		reply = solve(assumps,&core);
 		assert(decisionLevel()==0);
 		if(assumps.size()==0) upper_time+=DETERMINISTICTIME-current_time;
 		else lower_time+=DETERMINISTICTIME-current_time;
