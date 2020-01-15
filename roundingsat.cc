@@ -115,7 +115,9 @@ vector<CRef> clauses, learnts, external;
 struct Watch {
 	CRef cref;
 	int idx;
+	bool operator==(const Watch& other)const{return other.cref==cref && other.idx==idx;}
 };
+
 const int resize_factor=2;
 const int INF=1e9+1;
 
@@ -321,7 +323,6 @@ struct Constraint{
 
 	template<class S, class L>
 	void add(const Constraint<S,L>& c, SMALL mult=1, bool saturateAndReduce=true){
-		assert(mult>0);
 		for(int v: c.vars) addLhs(mult*c.coefs[v],v);
 		addRhs(mult*c.rhs);
 		if(!saturateAndReduce) return;
@@ -357,7 +358,7 @@ struct Constraint{
 		return true;
 	}
 
-	bool simplifyToCardinality(bool equivalencePreserving){
+	bool simplifyToCardinality(bool equivalencePreserving){ // TODO: return degree?
 		assert(isSaturated());
 		if(isCardinality()) return false;
 		sort(vars.begin(),vars.end(),[&](int v1, int v2){return abs(coefs[v1])<abs(coefs[v2]);});
@@ -429,7 +430,7 @@ struct Constraint{
 	// NOTE: only equivalence preserving operations here!
 	void postProcess(){
 		removeZeroes();
-		LARGE degree = removeUnits();
+		LARGE degree = removeUnits(); // NOTE: also saturates
 		if(degree>1 && divideByGCD()) ++NGCD;
 		if(degree>1 && simplifyToCardinality(true)) ++NCARDDETECT;
 	}
@@ -777,7 +778,7 @@ CRef attachConstraint(Constraint<int,long long>& constraint, bool learnt, bool l
 		// set sufficient falsified watches
 		std::vector<int> falsifieds;
 		falsifieds.reserve(C.size());
-		for(int i=0; i<(int)C.size(); ++i) if(~Level[-lits[i]]) falsifieds.push_back(i);
+		for(int i=0; i<(int)C.size(); ++i) if(~Level[-lits[i]] && Pos[abs(lits[i])]<qhead) falsifieds.push_back(i);
 		std::sort(falsifieds.begin(),falsifieds.end(),[&](int i1,int i2){ return Pos[abs(lits[i1])]>Pos[abs(lits[i2])]; });
 		int diff = C.largestCoef()-C.slack;
 		for(int i: falsifieds){
@@ -787,9 +788,9 @@ CRef attachConstraint(Constraint<int,long long>& constraint, bool learnt, bool l
 			adj[lits[i]].push_back({cr,i});
 			if(diff<=0) break;
 		}
+		// perform initial propagation
+		for(int i=0; i<(int)C.size() && abs(coefs[i])>C.slack; ++i) if(Pos[abs(lits[i])]==-1) uncheckedEnqueue(lits[i],cr);
 	}
-	// perform initial propagation
-	for(int i=0; i<(int)C.size() && abs(coefs[i])>C.slack; ++i) if(Pos[abs(lits[i])]==-1) uncheckedEnqueue(lits[i],cr);
 	return cr;
 }
 
@@ -1456,6 +1457,7 @@ void extractCore(CRef confl, Constraint<int,long long>* out, int l_assump=0){
 	// Otherwise, reordering the trail messes up the slacks of the watched constraints (see undoOne()).
 	tmpSet.reset(); // holds the assumptions
 	std::vector<int> props; // holds the propagations
+	props.reserve(trail.size());
 	assert(trail_lim.size()>0);
 	for(int i=trail_lim[0]; i<(int)trail.size(); ++i){ // TODO: also set propagated assumptions as decisions?
 		int l = trail[i];
@@ -1476,11 +1478,10 @@ void extractCore(CRef confl, Constraint<int,long long>* out, int l_assump=0){
 		int l = trail.back();
 		int confl_coef_l = confl_data.getCoef(-l);
 		if(confl_coef_l>0) {
-			Clause& reasonC = ca[Reason[abs(l)]];
-			tmpConstraint.init(reasonC);
+			tmpConstraint.init(ca[Reason[abs(l)]]);
 			tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack());
 			assert(tmpConstraint.getCoef(l)>tmpConstraint.getSlack());
-			tmpConstraint.roundToOne(tmpConstraint.getCoef(l),false); // TODO: true
+			tmpConstraint.roundToOne(tmpConstraint.getCoef(l),true);
 			assert(tmpConstraint.getCoef(l)==1);
 			assert(tmpConstraint.getSlack()<=0);
 			confl_data.add(tmpConstraint,confl_coef_l);
@@ -1488,18 +1489,14 @@ void extractCore(CRef confl, Constraint<int,long long>* out, int l_assump=0){
 			assert(confl_data.getSlack()<0);
 			assumpslk = assumpSlack(tmpSet,confl_data);
 		}
+		assert(decisionLevel()==tmpSet.size());
 		undoOne();
-		assert(decisionLevel()>=1);
 	}
 	confl_data.copyTo(outCore);
 
 	// weaken non-falsifieds
-	for(int v: outCore.vars){
-		if(tmpSet.has(-outCore.getLit(v))) continue;
-		outCore.weaken(-outCore.coefs[v],v);
-	}
+	for(int v: outCore.vars) if(!tmpSet.has(-outCore.getLit(v))) outCore.weaken(-outCore.coefs[v],v);
 	outCore.postProcess();
-
 	assert(assumpSlack(tmpSet,outCore)<0);
 	backjumpTo(0);
 }
@@ -1509,7 +1506,7 @@ enum SolveState { SAT, UNSAT, INPROCESSING };
 SolveState solve(const vector<int>& assumptions, Constraint<int,long long>* out=nullptr) {
 	backjumpTo(0); // ensures assumptions are reset
 	std::vector<unsigned int> assumptions_lim={0};
-	assumptions_lim.reserve(assumptions.size());
+	assumptions_lim.reserve(assumptions.size()+1);
 	while (true) {
 		CRef confl = propagate();
 		if (confl != CRef_Undef) {
@@ -1528,10 +1525,12 @@ SolveState solve(const vector<int>& assumptions, Constraint<int,long long>* out=
 					}
 				}
 			}
-			if(assumptions_lim.back()>=assumptions.size()){
+
+			if(decisionLevel()>=(int)assumptions_lim.size()){
 				analyze(confl);
 				learnConstraint(confl_data);
 			}else{
+				assert(decisionLevel()>0);
 				extractCore(confl,out);
 				return SolveState::UNSAT;
 			}
@@ -1549,20 +1548,21 @@ SolveState solve(const vector<int>& assumptions, Constraint<int,long long>* out=
 				}
 			}
 			int next = 0;
-			if(assumptions_lim.size()>(unsigned int) decisionLevel()+1)assumptions_lim.resize(decisionLevel()+1);
+			if((int)assumptions_lim.size()>decisionLevel()+1)assumptions_lim.resize(decisionLevel()+1);
 			while(assumptions_lim.back()<assumptions.size()){
+				assert(decisionLevel()==(int)assumptions_lim.size()-1);
 				int l_assump = assumptions[assumptions_lim.back()];
 				if (~Level[-l_assump]){ // found conflicting assumption
 					if(Level[-l_assump]==0){ backjumpTo(0); out->reset(); return SolveState::UNSAT; }
 					extractCore(Reason[abs(l_assump)],out,l_assump);
-//					assert(assumpSlack(IntSet(n,assumptions),*out)<0);
+					assert(assumpSlack(IntSet(n,assumptions),*out)<0);
 					return SolveState::UNSAT;
 				}
 				if (~Level[l_assump]){ // assumption already propagated
 					++assumptions_lim.back();
 				}else{ // unassigned assumption
 					next = l_assump;
-					assumptions_lim.push_back(assumptions_lim.back());
+					assumptions_lim.push_back(assumptions_lim.back()+1);
 					break;
 				}
 			}
@@ -1605,41 +1605,38 @@ void handleNewSolution(const Constraint<int,long long>& origObjective, long long
 }
 
 struct LazyVar{
+	// core
+	std::vector<int> lhs;
+	int rhs;
+	// info
 	int mult;
 	int currentvar;
 	int idx;
 	int nvars;
-	// core
-	std::vector<int> lhs;
-	int rhs;
 
-	LazyVar(const Constraint<int, long long>& core, int startvar, int m){
+	LazyVar(const Constraint<int, long long>& core, int startvar, int m):
+	rhs(core.getDegree()),mult(m),currentvar(startvar),idx(0),nvars(core.vars.size()-rhs){
 		assert(core.isCardinality());
-		mult=m;
-		rhs=core.getDegree();
 		lhs.reserve(core.vars.size());
 		for(int v: core.vars) lhs.push_back(core.getLit(v));
-		currentvar=startvar;
-		idx=0;
-		nvars=lhs.size()-rhs;
 	}
 
 	void getAtLeastConstraint(Constraint<int, long long>& out){
-		// X >= (k+i+1)yi
+		// X >= (k+i+1)yi (equivalent to yi ==> X>k+i)
 		out.reset();
 		for(int l: lhs) out.addLhs(1,l);
 		out.addLhs(-(rhs+idx+1),currentvar);
 	}
 
 	void getAtMostConstraint(Constraint<int, long long>& out){
-		// ~X >= (n-k-i)~yi
+		// ~X >= (n-k-i)~yi (equivalent to ~yi ==> X=<k+i)
 		out.reset();
 		for(int l: lhs) out.addLhs(1,-l);
 		out.addLhs(-(lhs.size()-rhs-idx),-currentvar);
 	}
 
 	void getSymBreakingConstraint(Constraint<int, long long>& out, int prevvar){
-		// yi>=yi++
+		// y-- + ~y >= 1 (equivalent to y-- >= y)
 		assert(idx>0);
 		out.reset(1);
 		out.addLhs(1,prevvar);
@@ -1686,9 +1683,8 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 		core.resize(newN+1);
 		objective.resize(newN+1);
 		// reformulate the objective
-		core.copyTo(tmpConstraint,-1);
-		tmpConstraint.addLhs(1,newN);
-		objective.add(tmpConstraint,mult,false);
+		objective.add(core,-mult,false);
+		objective.addLhs(mult,newN); // add only one variable for now
 		objective.removeZeroes();
 		assert(lower_bound==-objective.getDegree());
 		// add first lazy constraint
@@ -1701,8 +1697,7 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 		// check for new lazy variables
 		for(int i=0; i<(int)lazyVars.size(); ++i){
 			LazyVar* lv=lazyVars[i];
-			int currentvar = lv->currentvar;
-			if(objective.getCoef(currentvar)==0){
+			if(objective.getCoef(lv->currentvar)<=0){
 				lv->idx++;
 				if(lv->idx==lv->nvars){ swapErase(lazyVars,i--); delete lv; continue; }
 				// add auxiliary variable
@@ -1740,7 +1735,7 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 		addInputConstraint(tmpConstraint);
 		core.copyTo(tmpConstraint);
 		addInputConstraint(tmpConstraint);
-		for(int v=oldN+1; v<newN; ++v){
+		for(int v=oldN+1; v<newN; ++v){ // add symmetry breaking constraints
 			tmpConstraint.reset(1);
 			tmpConstraint.addLhs(1,v);
 			tmpConstraint.addLhs(1,-v-1);
@@ -1826,3 +1821,4 @@ int main(int argc, char**argv){
 		}
 	}
 }
+// TODO problem instance: /home/jodv/workspace/instances/opt/PB/PB16_full/PB06/mps-v2-20-10/MIPLIB/miplib/normalized-mps-v2-20-10-mod008.opb.bz2
