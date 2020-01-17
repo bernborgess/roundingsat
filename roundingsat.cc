@@ -60,6 +60,15 @@ static inline double cpuTime(void) {
 	getrusage(RUSAGE_SELF, &ru);
 	return (double)ru.ru_utime.tv_sec + (double)ru.ru_utime.tv_usec / 1000000; }
 
+struct CRef {
+	uint32_t ofs;
+	bool operator==(CRef const&o)const{return ofs==o.ofs;}
+	bool operator!=(CRef const&o)const{return ofs!=o.ofs;}
+	bool operator< (CRef const&o)const{return ofs< o.ofs;}
+};
+const CRef CRef_Undef = { UINT32_MAX };
+std::ostream& operator<<(std::ostream& os, CRef cr) { return os << cr.ofs; }
+
 enum DeletionStatus { LOCKED, UNLOCKED, FORCEDELETE, MARKEDFORDELETE };
 
 struct Clause {
@@ -74,10 +83,10 @@ struct Clause {
 	int w; // TODO: not needed in memory actually...
 	// watch data
 	unsigned int nbackjump;
+	int propIdx;
 	int slack; // sum of non-falsified watches minus w.
 	// NOTE: will never be larger than 2 * non-falsified watch, so fits in 32 bit for the n-watched literal scheme
 	int watchIdx;
-	int propIdx;
 	// ordinary data
 	int data[0]; // TODO: data as pairs of coef-lit instead of list of all lits, then all coefs?
 
@@ -94,16 +103,12 @@ struct Clause {
 	inline int coef(int i) { return abs(coefs()[i]); }
 	inline bool isWatched(int idx) { return coefs()[idx]<0; }
 	inline bool isClause() const { return w==-1; }
+	inline void undo(int idx) {
+		assert(isWatched(idx));
+		slack += coef(idx);
+		propIdx=0;
+	}
 };
-
-struct CRef {
-	uint32_t ofs;
-	bool operator==(CRef const&o)const{return ofs==o.ofs;}
-	bool operator!=(CRef const&o)const{return ofs!=o.ofs;}
-	bool operator< (CRef const&o)const{return ofs< o.ofs;}
-};
-const CRef CRef_Undef = { UINT32_MAX };
-std::ostream& operator<<(std::ostream& os, CRef cr) { return os << cr.ofs; }
 
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
@@ -791,11 +796,7 @@ void undoOne(){
 	assert(!trail.empty());
 	int l = trail.back();
 	if(qhead==(int)trail.size()){
-		for(const Watch& w: adj[-l]){
-			Clause& C = ca[w.cref];
-			assert(C.isWatched(w.idx));
-			C.slack += C.coef(w.idx);
-		}
+		for(const Watch& w: adj[-l]) ca[w.cref].undo(w.idx);
 		--qhead;
 	}
 	int v = abs(l);
@@ -894,7 +895,7 @@ CRef propagate() {
 			int idx = ws[it_ws].idx;
 			Clause & C = ca[cr];
 			if(C.getStatus()>=FORCEDELETE){ swapErase(ws,it_ws--); continue; }
-			if(C.nbackjump<NBACKJUMP) C.nbackjump=NBACKJUMP, C.propIdx=0, C.watchIdx=0;
+			if(C.nbackjump<NBACKJUMP){ C.nbackjump=NBACKJUMP; C.watchIdx=0; }
 			const int * const lits = C.lits(); int * const coefs = C.coefs();
 			const int Csize = C.size(); const int ClargestCoef = C.largestCoef();
 			int Cslack = C.slack;
@@ -904,7 +905,7 @@ CRef propagate() {
 			if(Cslack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
 				int i=C.watchIdx;
 				DETERMINISTICTIME-=i;
-				for(; i<Csize && Cslack<ClargestCoef; ++i){ // NOTE: innermost loop of RoundingSat
+				for(; i<Csize && Cslack<ClargestCoef; ++i){ // NOTE: first innermost loop of RoundingSat
 					const int l = lits[i];
 					const int cf = coefs[i];
 					if(Level[-l]==-1 && cf>0){
@@ -924,7 +925,7 @@ CRef propagate() {
 			}else if(Cslack>=0){ // keep the watch, check for propagation
 				int i=C.propIdx;
 				DETERMINISTICTIME-=i;
-				for(; i<Csize && abs(coefs[i])>Cslack; ++i){
+				for(; i<Csize && abs(coefs[i])>Cslack; ++i){ // NOTE: second innermost loop of RoundingSat
 					const int l = lits[i];
 					if(Pos[abs(l)]==-1) uncheckedEnqueue(l,cr);
 				}
@@ -932,10 +933,7 @@ CRef propagate() {
 				C.propIdx=i;
 			}else{ // conflict, clean up current level and stop propagation
 				confl=cr;
-				for(int i=0; i<=it_ws; ++i){
-					Clause& constraint = ca[ws[i].cref];
-					constraint.slack += constraint.coef(ws[i].idx);
-				}
+				for(int i=0; i<=it_ws; ++i){ const Watch& w=ws[i]; ca[w.cref].undo(w.idx); }
 				--qhead;
 				break;
 			}
