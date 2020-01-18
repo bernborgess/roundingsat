@@ -60,6 +60,26 @@ static inline double cpuTime(void) {
 	getrusage(RUSAGE_SELF, &ru);
 	return (double)ru.ru_utime.tv_sec + (double)ru.ru_utime.tv_usec / 1000000; }
 
+const int resize_factor=2;
+const int INF=1e9+1;
+
+double initial_time;
+size_t NBACKJUMP=0, DETERMINISTICTIME=0;
+long long NCONFL=0, NDECIDE=0, NPROP=0;
+__int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
+long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
+long long NGCD=0, NCARDDETECT=0, NCORECARDINALITIES=0, NCORES=0, NSOLS=0;
+long long NWEAKENEDNONIMPLYING=0, NWEAKENEDNONIMPLIED=0;
+double rinc = 2;
+int rfirst = 100;
+int nbclausesbeforereduce=2000;
+int incReduceDB=300;
+int cnt_reduceDB=0;
+bool originalRoundToOne=false;
+int opt_mode=0;
+int curr_restarts=0;
+long long nconfl_to_restart=0;
+
 struct CRef {
 	uint32_t ofs;
 	bool operator==(CRef const&o)const{return ofs==o.ofs;}
@@ -103,7 +123,7 @@ struct Clause {
 	inline int coef(int i) { return abs(coefs()[i]); }
 	inline bool isWatched(int idx) { return coefs()[idx]<0; }
 	inline bool isClause() const { return w==-1; }
-	inline void undo(int idx) {
+	inline void undoFalsified(int idx) {
 		assert(isWatched(idx));
 		slack += coef(idx);
 		propIdx=0;
@@ -120,28 +140,9 @@ vector<CRef> clauses, learnts, external;
 struct Watch {
 	CRef cref;
 	int idx;
+	Watch(CRef cr,int i):cref(cr),idx(i){};
 	bool operator==(const Watch& other)const{return other.cref==cref && other.idx==idx;}
 };
-
-const int resize_factor=2;
-const int INF=1e9+1;
-
-double initial_time;
-size_t NBACKJUMP=0, DETERMINISTICTIME=0;
-long long NCONFL=0, NDECIDE=0, NPROP=0;
-__int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
-long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
-long long NGCD=0, NCARDDETECT=0, NCORECARDINALITIES=0, NCORES=0, NSOLS=0;
-long long NWEAKENEDNONIMPLYING=0, NWEAKENEDNONIMPLIED=0;
-double rinc = 2;
-int rfirst = 100;
-int nbclausesbeforereduce=2000;
-int incReduceDB=300;
-int cnt_reduceDB=0;
-bool originalRoundToOne=false;
-int opt_mode=0;
-int curr_restarts=0;
-long long nconfl_to_restart=0;
 
 template <class T>
 inline T ceildiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return (p+q-1)/q; }
@@ -284,8 +285,8 @@ struct Constraint{
 		LARGE w = getDegree();
 		if(w<=0) reset(w);
 		for (int v: vars){
-			if(coefs[v]>w) coefs[v]=w;
 			if(coefs[v]<-w) rhs-=coefs[v]+w, coefs[v]=-w;
+			else coefs[v]=min<LARGE>(coefs[v],w);
 		}
 		assert(w==getDegree()); // degree is invariant under saturation
 		assert(isSaturated());
@@ -796,7 +797,7 @@ void undoOne(){
 	assert(!trail.empty());
 	int l = trail.back();
 	if(qhead==(int)trail.size()){
-		for(const Watch& w: adj[-l]) ca[w.cref].undo(w.idx);
+		for(const Watch& w: adj[-l]) ca[w.cref].undoFalsified(w.idx);
 		--qhead;
 	}
 	int v = abs(l);
@@ -895,7 +896,6 @@ CRef propagate() {
 			int idx = ws[it_ws].idx;
 			Clause & C = ca[cr];
 			if(C.getStatus()>=FORCEDELETE){ swapErase(ws,it_ws--); continue; }
-			if(C.nbackjump<NBACKJUMP){ C.nbackjump=NBACKJUMP; C.watchIdx=0; }
 			const int * const lits = C.lits(); int * const coefs = C.coefs();
 			const int Csize = C.size(); const int ClargestCoef = C.largestCoef();
 			int Cslack = C.slack;
@@ -903,15 +903,16 @@ CRef propagate() {
 			assert(c<0);
 			Cslack+=c;
 			if(Cslack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
+				if(C.nbackjump<NBACKJUMP){ C.nbackjump=NBACKJUMP; C.watchIdx=0; }
 				int i=C.watchIdx;
 				DETERMINISTICTIME-=i;
 				for(; i<Csize && Cslack<ClargestCoef; ++i){ // NOTE: first innermost loop of RoundingSat
 					const int l = lits[i];
 					const int cf = coefs[i];
-					if(Level[-l]==-1 && cf>0){
+					if(cf>0 && Level[-l]==-1){
 						Cslack+=cf;
 						coefs[i]=-cf;
-						adj[l].push_back({cr,i});
+						adj[l].emplace_back(cr,i);
 					}
 				}
 				DETERMINISTICTIME+=i;
@@ -933,7 +934,7 @@ CRef propagate() {
 				C.propIdx=i;
 			}else{ // conflict, clean up current level and stop propagation
 				confl=cr;
-				for(int i=0; i<=it_ws; ++i){ const Watch& w=ws[i]; ca[w.cref].undo(w.idx); }
+				for(int i=0; i<=it_ws; ++i){ const Watch& w=ws[i]; ca[w.cref].undoFalsified(w.idx); }
 				--qhead;
 				break;
 			}
