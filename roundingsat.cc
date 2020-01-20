@@ -60,6 +60,9 @@ static inline double cpuTime(void) {
 	getrusage(RUSAGE_SELF, &ru);
 	return (double)ru.ru_utime.tv_sec + (double)ru.ru_utime.tv_usec / 1000000; }
 
+// ---------------------------------------------------------------------
+// Global variables
+
 const int resize_factor=2;
 const int INF=1e9+1;
 
@@ -89,21 +92,43 @@ struct CRef {
 const CRef CRef_Undef = { UINT32_MAX };
 std::ostream& operator<<(std::ostream& os, CRef cr) { return os << cr.ofs; }
 
+int verbosity = 1;
+// currently, the maximum number of variables is hardcoded (variable N), and most arrays are of fixed size.
+int n = 0;
+int orig_n = 0;
+vector<CRef> clauses, learnts, external;
+struct Watch {
+	CRef cref;
+	int idx;
+	Watch(CRef cr,int i):cref(cr),idx(i){};
+	bool operator==(const Watch& other)const{return other.cref==cref && other.idx==idx;}
+};
+
+vector<vector<Watch>> _adj={{}}; vector<vector<Watch>>::iterator adj;
+vector<int> _Level={-1}; vector<int>::iterator Level;
+vector<int> trail, trail_lim, Pos;
+vector<CRef> Reason;
+int qhead; // for unit propagation
+int last_sol_obj_val = INF;
+inline bool foundSolution(){return last_sol_obj_val<INF;}
+vector<bool> last_sol;
+vector<int> phase;
+inline void newDecisionLevel() { trail_lim.push_back(trail.size()); }
+inline int decisionLevel() { return trail_lim.size(); }
+
 enum DeletionStatus { LOCKED, UNLOCKED, FORCEDELETE, MARKEDFORDELETE };
 
-struct Clause {
+struct Clause { // TODO: heuristic info actually not needed in cache-sensitive Clause...
+	float act;
 	struct {
-		unsigned status       : 2;
-		unsigned lbd          : 30;
 		unsigned unused       : 1;
 		unsigned learnt       : 1;
+		unsigned lbd          : 30;
+		unsigned status       : 2;
 		unsigned size         : 30;
 	} header;
-	float act;
-	int w; // TODO: not needed in memory actually...
 	// watch data
 	unsigned int nbackjump;
-	int propIdx;
 	int slack; // sum of non-falsified watches minus w.
 	// NOTE: will never be larger than 2 * non-falsified watch, so fits in 32 bit for the n-watched literal scheme
 	int watchIdx;
@@ -120,29 +145,27 @@ struct Clause {
 	inline unsigned int lbd() const { return header.lbd; }
 	inline bool learnt() const { return header.learnt; }
 	inline int largestCoef() { return abs(coefs()[0]); }
-	inline int coef(int i) { return abs(coefs()[i]); }
+	inline int coef(int i) { return abs(data[header.size+i]); }
 	inline bool isWatched(int idx) { return coefs()[idx]<0; }
-	inline bool isClause() const { return w==-1; }
 	inline void undoFalsified(int idx) {
 		assert(isWatched(idx));
 		slack += coef(idx);
-		propIdx=0;
+		watchIdx=0;
+	}
+	inline int degree() const {
+		int result = slack;
+		int sz = size();
+		for(int i=0; i<sz; ++i) {
+			int l = data[i];
+			int c = data[sz+i];
+			if(c<0 && (Level[-l]==-1 || Pos[abs(l)]>=qhead)) result+=c;
+		}
+		return -result;
 	}
 };
 
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
-int verbosity = 1;
-// currently, the maximum number of variables is hardcoded (variable N), and most arrays are of fixed size.
-int n = 0;
-int orig_n = 0;
-vector<CRef> clauses, learnts, external;
-struct Watch {
-	CRef cref;
-	int idx;
-	Watch(CRef cr,int i):cref(cr),idx(i){};
-	bool operator==(const Watch& other)const{return other.cref==cref && other.idx==idx;}
-};
 
 template <class T>
 inline T ceildiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return (p+q-1)/q; }
@@ -183,18 +206,6 @@ unsigned int gcd(unsigned int u, unsigned int v){
 	return u << shift;
 }
 
-vector<vector<Watch>> _adj={{}}; vector<vector<Watch>>::iterator adj;
-vector<int> _Level={-1}; vector<int>::iterator Level;
-vector<int> trail, trail_lim, Pos;
-vector<CRef> Reason;
-int qhead; // for unit propagation
-int last_sol_obj_val = INF;
-inline bool foundSolution(){return last_sol_obj_val<INF;}
-vector<bool> last_sol;
-vector<int> phase;
-inline void newDecisionLevel() { trail_lim.push_back(trail.size()); }
-inline int decisionLevel() { return trail_lim.size(); }
-
 template<class SMALL, class LARGE> // LARGE should be able to fit sums of SMALL
 struct Constraint{
 	std::vector<int> vars;
@@ -213,7 +224,7 @@ struct Constraint{
 	}
 
 	void init(Clause& C){
-		reset(C.w);
+		reset(C.degree());
 		for(size_t i=0;i<C.size();++i) addLhs(C.coef(i), C.lits()[i]);
 		saturate();
 	}
@@ -601,7 +612,7 @@ IntSet tmpSet;
 IntSet actSet;
 
 // ---------------------------------------------------------------------
-// memory. maximum supported size of learnt clause database is 16GB
+// Memory. Maximum supported size of learnt clause database is 16GB
 
 class OutOfMemoryException{};
 static inline void* xrealloc(void *ptr, size_t size)
@@ -653,13 +664,11 @@ struct {
 		Clause * clause = (Clause*)(memory+at);
 		new (clause) Clause;
 		at += sz_clause(length);
-		clause->header = {(unsigned) (locked?LOCKED:UNLOCKED),length,0,learnt,length};
+		clause->header = {0,learnt,length,(unsigned) (locked?LOCKED:UNLOCKED),length};
 		clause->act = 0;
 		clause->nbackjump = 0;
 		clause->slack = -w;
 		clause->watchIdx = 0;
-		clause->propIdx = 0;
-		clause->w = w;
 		for(unsigned int i=0;i<length;i++){
 			int v = constraint.vars[i];
 			assert(constraint.getLit(v)!=0);
@@ -672,7 +681,9 @@ struct {
 	const Clause& operator[](CRef cr) const { return (Clause&)*(memory+cr.ofs); }
 } ca;
 
-// VSIDS ---------------------------------------------------------------
+// ---------------------------------------------------------------------
+// VSIDS
+
 double var_decay=0.95;
 double var_inc=1.0;
 vector<double> activity;
@@ -738,8 +749,9 @@ void claBumpActivity (Clause& c) {
 			for (size_t i = 0; i < learnts.size(); i++)
 				ca[learnts[i]].act *= 1e-20;
 			cla_inc *= 1e-20; } }
+
 // ---------------------------------------------------------------------
-// ---------------------------------------------------------------------
+// Search
 
 void uncheckedEnqueue(int p, CRef from=CRef_Undef){
 	assert(Pos[abs(p)]==-1);
@@ -917,6 +929,7 @@ CRef propagate() {
 				}
 				DETERMINISTICTIME+=i;
 				C.watchIdx=i;
+				if(Cslack<ClargestCoef){ assert(i==Csize); C.watchIdx=0; }
 			} // else we did not find enough watches last time, so we can skip looking for them now
 			C.slack=Cslack;
 
@@ -924,14 +937,14 @@ CRef propagate() {
 				coefs[idx]=-c;
 				swapErase(ws,it_ws--);
 			}else if(Cslack>=0){ // keep the watch, check for propagation
-				int i=C.propIdx;
+				int i=C.watchIdx;
 				DETERMINISTICTIME-=i;
 				for(; i<Csize && abs(coefs[i])>Cslack; ++i){ // NOTE: second innermost loop of RoundingSat
 					const int l = lits[i];
 					if(Pos[abs(l)]==-1) uncheckedEnqueue(l,cr);
 				}
 				DETERMINISTICTIME+=i;
-				C.propIdx=i;
+				C.watchIdx=i;
 			}else{ // conflict, clean up current level and stop propagation
 				confl=cr;
 				for(int i=0; i<=it_ws; ++i){ const Watch& w=ws[i]; ca[w.cref].undoFalsified(w.idx); }
@@ -955,8 +968,8 @@ int pickBranchLit(){
 }
 
 // ---------------------------------------------------------------------
-// ---------------------------------------------------------------------
 // Initialization
+
 void init(){
 	qhead = 0;
 	ca.memory = NULL;
@@ -987,7 +1000,6 @@ void setNbVariables(long long nvars){
 }
 
 // ---------------------------------------------------------------------
-// ---------------------------------------------------------------------
 // Constraint addition
 
 void learnConstraint(Constraint<long long,__int128>& confl){
@@ -1009,8 +1021,9 @@ void learnConstraint(Constraint<long long,__int128>& confl){
 	recomputeLBD(C);
 
 	LEARNEDLENGTHSUM+=C.size();
-	LEARNEDDEGREESUM+=C.w;
-	if(C.isClause()) ++NCLAUSESLEARNED;
+	int degree = C.degree(); // TODO: can probably be more efficient than linear
+	LEARNEDDEGREESUM+=degree;
+	if(degree==1) ++NCLAUSESLEARNED;
 	else if(tmpConstraint.isCardinality()) ++NCARDINALITIESLEARNED;
 	else ++NGENERALSLEARNED;
 }
@@ -1031,7 +1044,6 @@ CRef addInputConstraint(Constraint<int, long long>& c, bool initial=false){
 	return result;
 }
 
-// ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 // Parsers
 
@@ -1176,7 +1188,8 @@ void file_read(istream & in) {
 }
 
 // ---------------------------------------------------------------------
-// ---------------------------------------------------------------------
+// Garbage collection
+
 // We assume in the garbage collection method that reduceDB() is the
 // only place where clauses are deleted.
 void garbage_collect(){
@@ -1260,7 +1273,6 @@ void reduceDB(){
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 static double luby(double y, int x){
-
 	// Find the finite subsequence that contains index 'x', and the
 	// size of that subsequence:
 	int size, seq;
@@ -1276,7 +1288,7 @@ static double luby(double y, int x){
 }
 
 // ---------------------------------------------------------------------
-// ---------------------------------------------------------------------
+// Main
 
 bool asynch_interrupt = false;
 static void SIGINT_interrupt(int signum){
@@ -1326,7 +1338,8 @@ long long lhs(Clause& C, const std::vector<bool>& sol){
 bool checksol() {
 	for(CRef cr: clauses){
 		Clause& C = ca[cr];
-		if(lhs(C,last_sol)<C.w) return false;
+		int degree = C.degree();
+		if(lhs(C,last_sol)<degree) return false;
 	}
 	puts("c SATISFIABLE (checked)");
 	return true;
@@ -1382,8 +1395,6 @@ void usage(int argc, char**argv) {
 	printf("  --opt-mode=arg   Set optimization mode: 0 linear, 1(2) (lazy) core-guided, 3(4) (lazy) hybrid (default %d).\n",opt_mode);
 }
 
-char * filename = 0;
-
 typedef bool (*func)(double);
 template <class T>
 void getOption(const map<string, string>& opt_val, const string& option, func test, T& val){
@@ -1394,7 +1405,8 @@ void getOption(const map<string, string>& opt_val, const string& option, func te
 	}
 }
 
-void read_options(int argc, char**argv) {
+string read_options(int argc, char**argv) {
+	string filename = "";
 	for(int i=1;i<argc;i++){
 		if (!strcmp(argv[i], "--help")) {
 			usage(argc, argv);
@@ -1422,6 +1434,7 @@ void read_options(int argc, char**argv) {
 	getOption(opt_val,"rfirst",[](double x)->bool{return x>=1;},rfirst);
 	getOption(opt_val,"original-rto",[](double x)->bool{return x==0 || x==1;},originalRoundToOne);
 	getOption(opt_val,"opt-mode",[](double x)->bool{return x==0 || x==1 || x==2 || x==3 || x==4;},opt_mode);
+	return filename;
 }
 
 template<class SMALL, class LARGE>
@@ -1784,14 +1797,14 @@ void optimize(Constraint<int,long long>& objective){
 }
 
 int main(int argc, char**argv){
-	read_options(argc, argv);
 	initial_time = cpuTime();
 	init();
 	signal(SIGINT, SIGINT_exit);
 	signal(SIGTERM,SIGINT_exit);
 	signal(SIGXCPU,SIGINT_exit);
-	if (filename != 0) {
-		ifstream fin (filename);
+	string filename = read_options(argc, argv);
+	if (filename != "") {
+		ifstream fin(filename);
 		if (!fin)  exit_ERROR({"Could not open ",filename});
 		file_read(fin);
 	} else {
