@@ -129,8 +129,9 @@ struct Clause { // TODO: heuristic info actually not needed in cache-sensitive C
 	} header;
 	// watch data
 	unsigned int nbackjump;
-	int slack; // sum of non-falsified watches minus w.
+	long long slack; // sum of non-falsified watches minus w.
 	// NOTE: will never be larger than 2 * non-falsified watch, so fits in 32 bit for the n-watched literal scheme
+	// TODO: is above really true?
 	int watchIdx;
 	// ordinary data
 	int data[0]; // TODO: data as pairs of coef-lit instead of list of all lits, then all coefs?
