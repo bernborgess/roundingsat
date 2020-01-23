@@ -84,7 +84,7 @@ int curr_restarts=0;
 long long nconfl_to_restart=0;
 bool log_proof = false;
 ofstream proof_out ("proof.log");
-int next_constraint_ID = 1;
+int last_proofID = 0;
 std::vector<long long> unitIDs;
 
 struct CRef {
@@ -218,7 +218,7 @@ struct Constraint{
 	vector<SMALL> coefs;
 	LARGE rhs = 0;
 	static constexpr SMALL _unused_(){ return std::numeric_limits<SMALL>::max(); }
-	long long proofID;
+	bool doLogging = false;
 
 	inline void resize(size_t s){
 		if(s>coefs.size()) coefs.resize(s,_unused_());
@@ -231,22 +231,22 @@ struct Constraint{
 	}
 
 	void init(Clause& C){
-		proofID=C.id;
 		reset(C.degree());
 		for(size_t i=0;i<C.size();++i) addLhs(C.coef(i), C.lits()[i]);
-		removeUnits(); // NOTE: also saturates
 	}
 
 	long long removeUnits(bool doSaturation=true){
-		if(log_proof) proof_out << "p " << proofID << " ";
-		for(int i=0; i<(int)vars.size(); ++i){
-			int v=vars[i];
-			if(log_proof){
+		if(doLogging){
+			for(int i=0; i<(int)vars.size(); ++i){
+				int v=vars[i];
 				int l = getLit(v);
 				int c = getCoef(l);
 				if(Level[l]==0) proof_out << (l<0?"x":"~x") << v << " " << c << " * + ";
 				else if (Level[-l]==0) proof_out << unitIDs[Pos[v]] << " " << c << " * + ";
 			}
+		}
+		for(int i=0; i<(int)vars.size(); ++i){
+			int v=vars[i];
 			int c=coefs[v];
 			if(Level[v]==0){
 				addRhs(-c);
@@ -256,10 +256,6 @@ struct Constraint{
 				coefs[v]=_unused_();
 				swapErase(vars,i--);
 			}
-		}
-		if(log_proof){
-			proof_out << "0\n";
-			proofID=next_constraint_ID++;
 		}
 		if(doSaturation) return saturate();
 		else return getDegree();
@@ -312,12 +308,9 @@ struct Constraint{
 	inline void weaken(SMALL m, int l){ // add m*(l>=0) if m>0 and -m*(-l>=-1) if m<0
 		addLhs(m,l); // TODO: optimize this method by not calling addLhs
 		if(m<0) addRhs(m);
-		if(log_proof){
-			proof_out << "p " << proofID << " ";
+		if(doLogging){
 			if(m>0) proof_out << (l<0?"~x":"x") << abs(l) << " " << m << " * + ";
 			else proof_out << (l<0?"x":"~x") << abs(l) << " " << -m << " * + ";
-			proof_out << "0\n";
-			proofID=next_constraint_ID++;
 		}
 	}
 
@@ -326,10 +319,7 @@ struct Constraint{
 	}
 
 	LARGE saturate(){ // returns degree // TODO: keep track of degree after computing
-		if(log_proof){
-			proof_out << "p " << proofID << " s 0\n";
-			proofID=next_constraint_ID++;
-		}
+		if(doLogging) proof_out << "s ";
 		LARGE w = getDegree();
 		if(w<=0) reset(w);
 		for (int v: vars){
@@ -366,7 +356,7 @@ struct Constraint{
 		out.reset(mult*rhs);
 		out.resize(coefs.size());
 		out.vars=vars;
-		out.proofID=proofID;
+		out.doLogging=doLogging;
 		for(int v: vars) out.coefs[v]=mult*coefs[v];
 	}
 
@@ -380,10 +370,7 @@ struct Constraint{
 	void add(const Constraint<S,L>& c, SMALL mult=1, bool saturateAndReduce=true){
 		for(int v: c.vars) addLhs(mult*c.coefs[v],v);
 		addRhs(mult*c.rhs);
-		if(log_proof){
-			proof_out << "p " << c.proofID << " " << mult << " * " << proofID << " + 0\n";
-			proofID=next_constraint_ID++;
-		}
+		if(doLogging) proof_out << mult << " * + ";
 		if(!saturateAndReduce) return;
 		LARGE deg = saturate();
 		if (deg > (int) 1e9) roundToOne(ceildiv<LARGE>(deg,1e9),!originalRoundToOne);
@@ -411,8 +398,7 @@ struct Constraint{
 		// NOTE: as all coefficients are divisible by d, we can ceildiv the rhs instead of the degree
 		rhs=ceildiv_safe<LARGE>(rhs,d);
 		saturate(); // NOTE: needed, as weakening can change degree significantly
-		if(log_proof) proof_out << "p " << proofID << " " << d << " d s 0\n";
-		proofID=next_constraint_ID++;
+		if(doLogging) proof_out << d << " d s ";
 	}
 
 	bool isCardinality() const {
@@ -425,7 +411,7 @@ struct Constraint{
 		if(isCardinality()) return false;
 		sort(vars.begin(),vars.end(),[&](int v1, int v2){return abs(coefs[v1])<abs(coefs[v2]);});
 		LARGE degree = getDegree();
-		if(degree==0){ reset(0); return true; }
+		assert(degree>0);
 		assert(coefs[vars[0]]!=0);
 
 		int largeCoefsNeeded=0;
@@ -435,9 +421,7 @@ struct Constraint{
 			largeCoefSum+=abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
 		}
 		assert(largeCoefsNeeded>0);
-		if(largeCoefSum<degree){ // trivially unsatisfiable constraint
-			reset(1); return true;
-		}
+		assert(largeCoefSum>=degree); // otherwise trivially unsatisfiable
 
 		int skippable=0;
 		if(equivalencePreserving){
@@ -455,9 +439,8 @@ struct Constraint{
 		}
 		assert(skippable<=(int)vars.size()-largeCoefsNeeded);
 
-		if(log_proof){
+		if(doLogging){
 			int div_coef = abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
-			proof_out << "p " << proofID << " ";
 			for(int i=0; i<skippable; ++i){ // weaken small vars
 				int l = getLit(vars[i]);
 				proof_out << (l>0?"~x":"x") << abs(l) << " " << getCoef(l) << " * + ";
@@ -466,7 +449,7 @@ struct Constraint{
 				int l = getLit(vars[i]);
 				proof_out << (l>0?"~x":"x") << abs(l) << " " << (getCoef(l)%div_coef) << " * + ";
 			}
-			proof_out << div_coef << " d 0\n";
+			proof_out << div_coef << " d ";
 		}
 
 		rhs=largeCoefsNeeded;
@@ -480,7 +463,6 @@ struct Constraint{
 			else c=1;
 		}
 		removeZeroes();
-		proofID=next_constraint_ID++;
 		return true;
 	}
 
@@ -503,10 +485,7 @@ struct Constraint{
 		for (int v: vars) coefs[v] /= (int)_gcd;
 		// NOTE: as all coefficients are divisible, we can ceildiv the rhs instead of the degree
 		rhs=ceildiv_safe<LARGE>(rhs,_gcd);
-		if(log_proof){
-			proof_out << "p " << proofID << " " << _gcd << " d 0\n";
-			proofID=next_constraint_ID++;
-		}
+		if(doLogging) proof_out << _gcd << " d ";
 		return true;
 	}
 
@@ -620,24 +599,40 @@ struct Constraint{
 		weakenNonImplying(smallestPropagated,slk);
 	}
 
-	void logInconsistency(){
-		assert(decisionLevel()==0);
-		assert(getSlack()<0);
-		if(log_proof){
-			removeUnits();
-			weakenAll();
-			proof_out << "c " << proofID << " 0" << std::endl;
+	void startLogging(long long proofID, bool startLine){
+		assert(doLogging==false);
+		doLogging=true;
+		if(startLine) proof_out << "p ";
+		proof_out << proofID << " ";
+	}
+
+	void stopLogging(bool finishLine){
+		assert(doLogging==true);
+		doLogging=false;
+		if(finishLine){
+			proof_out << "0\n";
+			last_proofID++;
 		}
 	}
 
-	void logUnit(int v_unit){
+	void logInconsistency(long long proofID){
 		assert(decisionLevel()==0);
-		if(log_proof){
-			removeUnits();
-			weakenAll(v_unit);
-			proof_out << "p " << proofID << " " << max((long long)abs(coefs[v_unit]),getDegree()) << " d 0\n";
-			proofID=next_constraint_ID++;
-		}
+		assert(getSlack()<0);
+		startLogging(proofID,true);
+		removeUnits();
+		weakenAll();
+		stopLogging(true);
+		proof_out << "c " << last_proofID << " 0" << std::endl;
+	}
+
+	void logUnit(long long proofID, int v_unit){
+		assert(decisionLevel()==0);
+		startLogging(proofID,true);
+		removeUnits();
+		weakenAll(v_unit);
+		proof_out << max((long long)abs(coefs[v_unit]),getDegree()) << " d ";
+		stopLogging(true);
+		proof_out << "e " << last_proofID << " +1 " << (getLit(v_unit)>0?"x":"~x") << v_unit << " >= 1 ;\n";
 	}
 };
 
@@ -735,7 +730,7 @@ struct {
 	}
 	int sz_constr(int length) { return (sizeof(Clause)+sizeof(int)*length+sizeof(int)*length)/sizeof(uint32_t); }
 
-	CRef alloc(const Constraint<int,long long>& constraint, bool learnt, bool locked){
+	CRef alloc(const Constraint<int,long long>& constraint, long long proofID, bool learnt, bool locked){
 		long long degree = constraint.getDegree();
 		assert(degree>0);
 		assert(degree<=1e9);
@@ -750,7 +745,7 @@ struct {
 		Clause * constr = (Clause*)(memory+at);
 		new (constr) Clause;
 		at += sz_constr(length);
-		constr->id = constraint.proofID;
+		constr->id = proofID;
 		constr->act = 0;
 		constr->header = {0,learnt,length,(unsigned) (locked?LOCKED:UNLOCKED),length};
 		constr->nbackjump = 0;
@@ -765,9 +760,8 @@ struct {
 		if(log_proof){
 			proof_out << "e " << constr->id << " ";
 			for(int i=0; i<(int)constr->size(); ++i){
-				int c = constr->coef(i);
 				int l = constr->lits()[i];
-				proof_out << "+" << c << (l<0?" ~x":" x") << abs(l) << " ";
+				proof_out << "+" << constr->coef(i) << (l<0?" ~x":" x") << abs(l) << " ";
 			}
 			proof_out << ">= " << constr->degree() << " ;\n";
 		}
@@ -858,11 +852,11 @@ void uncheckedEnqueue(int p, CRef from=CRef_Undef){
 		Reason[v] = CRef_Undef; // no need to keep track of reasons for unit literals
 		assert(from!=CRef_Undef);
 		if(log_proof){ // TODO: unit propagation follows from 1 constraint, so can be checked more efficiently
-			tmpConstraint.init(ca[from]);
-			tmpConstraint.logUnit(v);
+			Clause& C = ca[from];
+			tmpConstraint.init(C);
+			tmpConstraint.logUnit(C.id,v);
 			assert(unitIDs.size()==trail.size());
-			unitIDs.push_back(tmpConstraint.proofID);
-			proof_out << "e " << tmpConstraint.proofID << " +1 " << (p>0?"x":"~x") << v << " >= 1 ;\n";
+			unitIDs.push_back(last_proofID);
 		}
 	}
 	Level[p] = decisionLevel();
@@ -871,12 +865,12 @@ void uncheckedEnqueue(int p, CRef from=CRef_Undef){
 }
 
 // @pre: removeUnits and removeZeroes executed on constraint
-CRef attachConstraint(Constraint<int,long long>& constraint, bool learnt, bool locked=false){
+CRef attachConstraint(Constraint<int,long long>& constraint, long long proofID, bool learnt, bool locked=false){
 	// sort from smallest to largest coefficient
 	std::sort(constraint.vars.begin(),constraint.vars.end(),[&](int v1,int v2){
 		return abs(constraint.coefs[v1])>abs(constraint.coefs[v2]); });
 
-	CRef cr = ca.alloc(constraint, learnt, locked);
+	CRef cr = ca.alloc(constraint, proofID, learnt, locked);
 	if (learnt) learnts.push_back(cr);
 	else clauses.push_back(cr);
 	Clause& C = ca[cr]; int* lits = C.lits(); int* coefs = C.coefs();
@@ -957,12 +951,17 @@ void analyze(CRef confl){
 	}
 
 	confl_data.init(C);
+	if(log_proof) confl_data.startLogging(C.id,true);
+	confl_data.removeUnits();
 	actSet.reset();
 	for(int v: confl_data.vars) actSet.add(confl_data.getLit(v));
 	while(true){
 		if (decisionLevel() == 0) {
 			assert(confl_data.getSlack()<0);
-			confl_data.logInconsistency();
+			if(log_proof){
+				confl_data.stopLogging(true);
+				confl_data.logInconsistency(last_proofID);
+			}
 			exit_UNSAT();
 		}
 		int l = trail.back();
@@ -982,11 +981,14 @@ void analyze(CRef confl){
 					recomputeLBD(reasonC);
 				}
 				tmpConstraint.init(reasonC);
+				if(log_proof) tmpConstraint.startLogging(reasonC.id,false);
+				tmpConstraint.removeUnits();
 				tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack()); // NOTE: also saturates
 				assert(tmpConstraint.getCoef(l)>tmpConstraint.getSlack());
 				tmpConstraint.roundToOne(tmpConstraint.getCoef(l),!originalRoundToOne);
 				assert(tmpConstraint.getCoef(l)==1);
 				assert(tmpConstraint.getSlack()<=0);
+				if(log_proof) tmpConstraint.stopLogging(false);
 				for(int v: tmpConstraint.vars) actSet.add(tmpConstraint.getLit(v));
 				confl_data.add(tmpConstraint,confl_coef_l);
 				assert(confl_data.getCoef(-l)==0);
@@ -1114,19 +1116,24 @@ void learnConstraint(Constraint<long long,__int128>& confl){
 	assert(confl.getDegree()<=1e9);
 
 	confl.copyTo(tmpConstraint);
+	if(log_proof) confl.stopLogging(false);
 	backjumpTo(tmpConstraint.getAssertionLevel());
 	assert(qhead==(int)trail.size()); // jumped back sufficiently far to catch up with qhead
 
 	long long slk = tmpConstraint.getSlack();
 	if(slk<0){
-		tmpConstraint.logInconsistency();
+		if(log_proof){
+			tmpConstraint.stopLogging(true);
+			tmpConstraint.logInconsistency(last_proofID);
+		}
 		exit_UNSAT();
 	}
 	tmpConstraint.heuristicWeakening(slk);
 	tmpConstraint.postProcess();
 	assert(tmpConstraint.isSaturated());
+	if(log_proof) tmpConstraint.stopLogging(true);
 
-	CRef cr = attachConstraint(tmpConstraint,true);
+	CRef cr = attachConstraint(tmpConstraint,last_proofID,true);
 	Clause & C = ca[cr];
 	recomputeLBD(C);
 
@@ -1142,22 +1149,25 @@ CRef addInputConstraint(Constraint<int, long long>& c, bool initial=false){
 	assert(decisionLevel()==0);
 	assert(learnts.size()==0 || !initial);
 	c.postProcess();
+	if(log_proof) c.stopLogging(true);
 	long long degree = c.getDegree();
 	if(degree > (long long) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
 	if(degree<=0) return CRef_Undef; // already satisfied.
 
 	if(c.getSlack()<0){
 		puts("c Inconsistent input constraint");
-		c.logInconsistency();
+		if(log_proof) c.logInconsistency(last_proofID);
 		exit_UNSAT();
 	}
 
-	CRef result = attachConstraint(c,!initial,true);
+	CRef result = attachConstraint(c,last_proofID,!initial,true);
 	CRef confl = propagate();
 	if (confl != CRef_Undef){
 		puts("c Input conflict");
-		tmpConstraint.init(ca[confl]);
-		tmpConstraint.logInconsistency();
+		if(log_proof){
+			tmpConstraint.init(ca[confl]);
+			tmpConstraint.logInconsistency(ca[confl].id);
+		}
 		exit_UNSAT();
 	}
 
@@ -1227,21 +1237,26 @@ void opb_read(istream & in) {
 			if (opt_line) tmpConstraint.copyTo(objective_func);
 			else {
 				tmpConstraint.addRhs(read_number(line0.substr(line0.find("=") + 1)));
+				// Handle equality case with two constraints
+				bool equality = line0.find(" = ") != string::npos;
+				if(equality) tmpConstraint.copyTo(inverted,-1);
+				// NOTE: addInputConstraint modifies tmpConstraint, so store the inverted version first
+
 				if(log_proof){
 					proof_out << "l " << proofIDcounter++ << std::endl;
-					tmpConstraint.proofID=next_constraint_ID++;
+					tmpConstraint.startLogging(++last_proofID,true);
 				}
-				// Handle equality case with two constraints
-				if (line0.find(" = ") != string::npos) {
-					tmpConstraint.copyTo(inverted,-1);
+				addInputConstraint(tmpConstraint,true);
+				assert(tmpConstraint.doLogging==false);
+
+				if(equality){ // NOTE: to comply with VeriPB, the ">=" constraint is constructed before the "=<"
 					if(log_proof){
 						proof_out << "l " << proofIDcounter++ << std::endl;
-						inverted.proofID=next_constraint_ID++;
-						// NOTE: to comply with VeriPB, proofID should have been allocated to the ">=" constraint before the "=<"
+						inverted.startLogging(++last_proofID,true);
 					}
 					addInputConstraint(inverted,true);
+					assert(inverted.doLogging==false);
 				}
-				addInputConstraint(tmpConstraint,true); // NOTE: addInputConstraint modifies tmpConstraint, so invert should be called first
 			}
 		}
 	}
@@ -1606,6 +1621,8 @@ void extractCore(CRef confl, Constraint<int,long long>& outCore, int l_assump=0)
 	for(int l: props) { assert(Reason[abs(l)]!=CRef_Undef); uncheckedEnqueue(l,Reason[abs(l)]); }
 
 	confl_data.init(ca[confl]);
+	if(log_proof) confl_data.startLogging(ca[confl].id,true);
+	confl_data.removeUnits();
 	assert(confl_data.getSlack()<0);
 
 	// analyze conflict
@@ -1615,11 +1632,14 @@ void extractCore(CRef confl, Constraint<int,long long>& outCore, int l_assump=0)
 		int confl_coef_l = confl_data.getCoef(-l);
 		if(confl_coef_l>0) {
 			tmpConstraint.init(ca[Reason[abs(l)]]);
+			if(log_proof) tmpConstraint.startLogging(ca[Reason[abs(l)]].id,false);
+			tmpConstraint.removeUnits();
 			tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack()); // NOTE: also saturates
 			assert(tmpConstraint.getCoef(l)>tmpConstraint.getSlack());
 			tmpConstraint.roundToOne(tmpConstraint.getCoef(l),true);
 			assert(tmpConstraint.getCoef(l)==1);
 			assert(tmpConstraint.getSlack()<=0);
+			if(log_proof) tmpConstraint.stopLogging(false);
 			confl_data.add(tmpConstraint,confl_coef_l);
 			assert(confl_data.getCoef(-l)==0);
 			assert(confl_data.getSlack()<0);
@@ -1629,10 +1649,12 @@ void extractCore(CRef confl, Constraint<int,long long>& outCore, int l_assump=0)
 		undoOne();
 	}
 	confl_data.copyTo(outCore);
+	if(log_proof) confl_data.stopLogging(false);
 
 	// weaken non-falsifieds
 	for(int v: outCore.vars) if(!tmpSet.has(-outCore.getLit(v))) outCore.weaken(-outCore.coefs[v],v);
 	outCore.postProcess();
+	if(log_proof) outCore.stopLogging(true);
 	assert(assumpSlack(tmpSet,outCore)<0);
 	backjumpTo(0);
 }
@@ -1647,8 +1669,10 @@ SolveState solve(const vector<int>& assumptions, Constraint<int,long long>& out)
 		CRef confl = propagate();
 		if (confl != CRef_Undef) {
 			if(decisionLevel() == 0){
-				tmpConstraint.init(ca[confl]);
-				tmpConstraint.logInconsistency();
+				if(log_proof){
+					tmpConstraint.init(ca[confl]);
+					tmpConstraint.logInconsistency(ca[confl].id);
+				}
 				exit_UNSAT();
 			}
 			varDecayActivity();
@@ -1669,8 +1693,12 @@ SolveState solve(const vector<int>& assumptions, Constraint<int,long long>& out)
 			if(decisionLevel()>=(int)assumptions_lim.size()){
 				analyze(confl);
 				learnConstraint(confl_data);
+				assert(confl_data.doLogging==false);
+				assert(tmpConstraint.doLogging==false);
 			}else{
 				extractCore(confl,out);
+				assert(confl_data.doLogging==false);
+				assert(tmpConstraint.doLogging==false);
 				return SolveState::UNSAT;
 			}
 		} else {
@@ -1692,8 +1720,9 @@ SolveState solve(const vector<int>& assumptions, Constraint<int,long long>& out)
 				assert(decisionLevel()==(int)assumptions_lim.size()-1);
 				int l_assump = assumptions[assumptions_lim.back()];
 				if (~Level[-l_assump]){ // found conflicting assumption
-					if(Level[-l_assump]==0){ backjumpTo(0); out.reset(); return SolveState::UNSAT; }
 					extractCore(Reason[abs(l_assump)],out,l_assump);
+					assert(confl_data.doLogging==false);
+					assert(tmpConstraint.doLogging==false);
 					assert(assumpSlack(IntSet(n,assumptions),out)<0); // TODO: heavy assertion check
 					return SolveState::UNSAT;
 				}
@@ -1923,7 +1952,10 @@ void optimize(Constraint<int,long long>& objective, Constraint<int,long long>& c
 		}	else if(reply==SolveState::UNSAT) {
 			++NCORES;
 			if(core.getSlack()<0){
-				core.logInconsistency();
+				if(log_proof){
+					core.stopLogging(true);
+					core.logInconsistency(last_proofID);
+				}
 				exit_UNSAT();
 			}
 			handleInconsistency(objective,core,lower_bound,lazyVars);
@@ -1966,7 +1998,7 @@ int main(int argc, char**argv){
 			SolveState reply = solve({},inconsistency);
 			if(reply==SolveState::SAT) exit_SAT();
 			else if(reply==SolveState::UNSAT){
-				inconsistency.logInconsistency();
+				if(log_proof) inconsistency.logInconsistency(last_proofID);
 				exit_UNSAT();
 			}
 		}
