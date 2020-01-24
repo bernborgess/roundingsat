@@ -83,9 +83,10 @@ int opt_mode=0;
 int curr_restarts=0;
 long long nconfl_to_restart=0;
 bool print_sol = false;
-bool log_proof = false;
-ofstream proof_out ("proof.log");
-int last_proofID = 0;
+string proof_log_name = "";
+bool logProof(){ return proof_log_name.size()>0; }
+ofstream proof_out; ofstream formula_out;
+int last_proofID = 0; int last_formID = 0;
 std::vector<long long> unitIDs;
 
 struct CRef {
@@ -242,8 +243,8 @@ struct Constraint{
 				int v=vars[i];
 				int l = getLit(v);
 				int c = getCoef(l);
-				if(Level[l]==0) proof_out << (l<0?"x":"~x") << v << " " << c << " * + ";
-				else if (Level[-l]==0) proof_out << unitIDs[Pos[v]] << " " << c << " * + ";
+				if(Level[l]==0) proof_out << (l<0?"x":"~x") << v << " " << (c==1?"":std::to_string(c)+" * ") << "+ ";
+				else if (Level[-l]==0) proof_out << unitIDs[Pos[v]] << " " << (c==1?"":std::to_string(c)+" * ") << "+ ";
 			}
 		}
 		for(int i=0; i<(int)vars.size(); ++i){
@@ -310,8 +311,8 @@ struct Constraint{
 		addLhs(m,l); // TODO: optimize this method by not calling addLhs
 		if(m<0) addRhs(m);
 		if(doLogging){
-			if(m>0) proof_out << (l<0?"~x":"x") << abs(l) << " " << m << " * + ";
-			else proof_out << (l<0?"x":"~x") << abs(l) << " " << -m << " * + ";
+			if(m>0) proof_out << (l<0?"~x":"x") << abs(l) << " " << (m==1?"":std::to_string(m)+" * ") << "+ ";
+			else proof_out << (l<0?"x":"~x") << abs(l) << " " << (-m==1?"":std::to_string(-m)+" * ") << "+ ";
 		}
 	}
 
@@ -371,7 +372,7 @@ struct Constraint{
 	void add(const Constraint<S,L>& c, SMALL mult=1, bool saturateAndReduce=true){
 		for(int v: c.vars) addLhs(mult*c.coefs[v],v);
 		addRhs(mult*c.rhs);
-		if(doLogging) proof_out << mult << " * + ";
+		if(doLogging) proof_out << (mult==1?"":std::to_string(mult)+" * ") << "+ ";
 		if(!saturateAndReduce) return;
 		LARGE deg = saturate();
 		if (deg > (int) 1e9) roundToOne(ceildiv<LARGE>(deg,1e9),!originalRoundToOne);
@@ -381,6 +382,7 @@ struct Constraint{
 	void roundToOne(SMALL d, bool partial){
 		assert(isSaturated());
 		assert(d>0);
+		if(d==1) return;
 		for(int v:vars){
 			assert(Level[-v]!=0);
 			assert(Level[ v]!=0);
@@ -444,13 +446,15 @@ struct Constraint{
 			int div_coef = abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
 			for(int i=0; i<skippable; ++i){ // weaken small vars
 				int l = getLit(vars[i]);
-				proof_out << (l>0?"~x":"x") << abs(l) << " " << getCoef(l) << " * + ";
+				SMALL d = getCoef(l);
+				proof_out << (l>0?"~x":"x") << abs(l) << " " << (d==1?"":std::to_string(d)+" * ") << "+ ";
 			}
 			for(int i=vars.size()-largeCoefsNeeded+1; i<(int)vars.size(); ++i){ // partially weaken large vars
 				int l = getLit(vars[i]);
-				proof_out << (l>0?"~x":"x") << abs(l) << " " << (getCoef(l)%div_coef) << " * + ";
+				SMALL d = getCoef(l)%div_coef;
+				proof_out << (l>0?"~x":"x") << abs(l) << " " << (d==1?"":std::to_string(d)+" * ") << "+ ";
 			}
-			proof_out << div_coef << " d ";
+			if(div_coef>1) proof_out << div_coef << " d ";
 		}
 
 		rhs=largeCoefsNeeded;
@@ -631,9 +635,22 @@ struct Constraint{
 		startLogging(proofID,true);
 		removeUnits();
 		weakenAll(v_unit);
-		proof_out << max((long long)abs(coefs[v_unit]),getDegree()) << " d ";
+		long long d = max((long long)abs(coefs[v_unit]),getDegree());
+		if(d>1) proof_out << d << " d ";
 		stopLogging(true);
+		#if NDEBUG
+		#else
 		proof_out << "e " << last_proofID << " +1 " << (getLit(v_unit)>0?"x":"~x") << v_unit << " >= 1 ;\n";
+		#endif
+	}
+
+	void toStreamAsOPB(ofstream& o) const {
+		for(int v: vars){
+			SMALL c=coefs[v];
+			if(c==0) continue;
+			o << (c<0?"":"+") << c << " x" << v << " ";
+		}
+		o << ">= " << rhs << " ;\n";
 	}
 };
 
@@ -758,7 +775,9 @@ struct {
 			constr->lits()[i]=constraint.getLit(v);
 			constr->coefs()[i]=abs(constraint.coefs[v]);
 		}
-		if(log_proof){
+		#if NDEBUG
+		#else
+		if(logProof()){
 			proof_out << "e " << constr->id << " ";
 			for(int i=0; i<(int)constr->size(); ++i){
 				int l = constr->lits()[i];
@@ -766,6 +785,7 @@ struct {
 			}
 			proof_out << ">= " << constr->degree() << " ;\n";
 		}
+		#endif
 		return {(uint32_t)(at-sz_constr(length))};
 	}
 	Clause& operator[](CRef cr) { return (Clause&)*(memory+cr.ofs); }
@@ -852,7 +872,7 @@ void uncheckedEnqueue(int p, CRef from=CRef_Undef){
 	if(decisionLevel()==0){
 		Reason[v] = CRef_Undef; // no need to keep track of reasons for unit literals
 		assert(from!=CRef_Undef);
-		if(log_proof){ // TODO: unit propagation follows from 1 constraint, so can be checked more efficiently
+		if(logProof()){
 			Clause& C = ca[from];
 			tmpConstraint.init(C);
 			tmpConstraint.logUnit(C.id,v);
@@ -952,14 +972,14 @@ void analyze(CRef confl){
 	}
 
 	confl_data.init(C);
-	if(log_proof) confl_data.startLogging(C.id,true);
+	if(logProof()) confl_data.startLogging(C.id,true);
 	confl_data.removeUnits();
 	actSet.reset();
 	for(int v: confl_data.vars) actSet.add(confl_data.getLit(v));
 	while(true){
 		if (decisionLevel() == 0) {
 			assert(confl_data.getSlack()<0);
-			if(log_proof){
+			if(logProof()){
 				confl_data.stopLogging(true);
 				confl_data.logInconsistency(last_proofID);
 			}
@@ -982,14 +1002,14 @@ void analyze(CRef confl){
 					recomputeLBD(reasonC);
 				}
 				tmpConstraint.init(reasonC);
-				if(log_proof) tmpConstraint.startLogging(reasonC.id,false);
+				if(logProof()) tmpConstraint.startLogging(reasonC.id,false);
 				tmpConstraint.removeUnits();
 				tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack()); // NOTE: also saturates
 				assert(tmpConstraint.getCoef(l)>tmpConstraint.getSlack());
 				tmpConstraint.roundToOne(tmpConstraint.getCoef(l),!originalRoundToOne);
 				assert(tmpConstraint.getCoef(l)==1);
 				assert(tmpConstraint.getSlack()<=0);
-				if(log_proof) tmpConstraint.stopLogging(false);
+				if(logProof()) tmpConstraint.stopLogging(false);
 				for(int v: tmpConstraint.vars) actSet.add(tmpConstraint.getLit(v));
 				confl_data.add(tmpConstraint,confl_coef_l);
 				assert(confl_data.getCoef(-l)==0);
@@ -1117,13 +1137,13 @@ void learnConstraint(Constraint<long long,__int128>& confl){
 	assert(confl.getDegree()<=1e9);
 
 	confl.copyTo(tmpConstraint);
-	if(log_proof) confl.stopLogging(false);
+	if(logProof()) confl.stopLogging(false);
 	backjumpTo(tmpConstraint.getAssertionLevel());
 	assert(qhead==(int)trail.size()); // jumped back sufficiently far to catch up with qhead
 
 	long long slk = tmpConstraint.getSlack();
 	if(slk<0){
-		if(log_proof){
+		if(logProof()){
 			tmpConstraint.stopLogging(true);
 			tmpConstraint.logInconsistency(last_proofID);
 		}
@@ -1132,7 +1152,7 @@ void learnConstraint(Constraint<long long,__int128>& confl){
 	tmpConstraint.heuristicWeakening(slk);
 	tmpConstraint.postProcess();
 	assert(tmpConstraint.isSaturated());
-	if(log_proof) tmpConstraint.stopLogging(true);
+	if(logProof()) tmpConstraint.stopLogging(true);
 
 	CRef cr = attachConstraint(tmpConstraint,last_proofID,true);
 	Clause & C = ca[cr];
@@ -1149,15 +1169,20 @@ void learnConstraint(Constraint<long long,__int128>& confl){
 CRef addInputConstraint(Constraint<int, long long>& c, bool initial=false){
 	assert(decisionLevel()==0);
 	assert(learnts.size()==0 || !initial);
+	if(logProof()){
+		proof_out << "l " << ++last_formID << std::endl;
+		c.toStreamAsOPB(formula_out);
+		c.startLogging(++last_proofID,true);
+	}
 	c.postProcess();
-	if(log_proof) c.stopLogging(true);
+	if(logProof()) c.stopLogging(true);
 	long long degree = c.getDegree();
 	if(degree > (long long) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
 	if(degree<=0) return CRef_Undef; // already satisfied.
 
 	if(c.getSlack()<0){
 		puts("c Inconsistent input constraint");
-		if(log_proof) c.logInconsistency(last_proofID);
+		if(logProof()) c.logInconsistency(last_proofID);
 		exit_UNSAT();
 	}
 
@@ -1165,7 +1190,7 @@ CRef addInputConstraint(Constraint<int, long long>& c, bool initial=false){
 	CRef confl = propagate();
 	if (confl != CRef_Undef){
 		puts("c Input conflict");
-		if(log_proof){
+		if(logProof()){
 			tmpConstraint.init(ca[confl]);
 			tmpConstraint.logInconsistency(ca[confl].id);
 		}
@@ -1192,7 +1217,6 @@ int read_number(const string & s) {
 }
 
 void opb_read(istream & in) {
-	int proofIDcounter=1;
 	Constraint<int,long long> inverted;
 	bool first_constraint = true; _unused(first_constraint);
 	for (string line; getline(in, line);) {
@@ -1241,23 +1265,9 @@ void opb_read(istream & in) {
 				// Handle equality case with two constraints
 				bool equality = line0.find(" = ") != string::npos;
 				if(equality) tmpConstraint.copyTo(inverted,-1);
-				// NOTE: addInputConstraint modifies tmpConstraint, so store the inverted version first
-
-				if(log_proof){
-					proof_out << "l " << proofIDcounter++ << std::endl;
-					tmpConstraint.startLogging(++last_proofID,true);
-				}
+				// NOTE: addInputConstraint modifies tmpConstraint, so the inverted version is stored first
 				addInputConstraint(tmpConstraint,true);
-				assert(tmpConstraint.doLogging==false);
-
-				if(equality){ // NOTE: to comply with VeriPB, the ">=" constraint is constructed before the "=<"
-					if(log_proof){
-						proof_out << "l " << proofIDcounter++ << std::endl;
-						inverted.startLogging(++last_proofID,true);
-					}
-					addInputConstraint(inverted,true);
-					assert(inverted.doLogging==false);
-				}
+				if(equality) addInputConstraint(inverted,true);
 			}
 		}
 	}
@@ -1545,17 +1555,20 @@ void usage(int argc, char**argv) {
 	printf("  --rfirst=arg     Set the interval of the Luby restart sequence (integer >=1; default %d).\n",rfirst);
 	printf("  --original-rto=arg Set whether to use RoundingSat's original round-to-one conflict analysis (0 or 1; default %d).\n",originalRoundToOne);
 	printf("  --opt-mode=arg   Set optimization mode: 0 linear, 1(2) (lazy) core-guided, 3(4) (lazy) hybrid (default %d).\n",opt_mode);
-	printf("  --log-proof=arg  Toggle proof logging (0 or 1; default %d).\n",log_proof);
+	printf("  --proof-log=arg  Set a filename for the proof logs (string).\n");
 }
 
 typedef bool (*func)(double);
 template <class T>
-void getOption(const map<string, string>& opt_val, const string& option, func test, T& val){
+void getOptionNum(const map<string, string>& opt_val, const string& option, func test, T& val){
 	if (opt_val.count(option)) {
 		double v = atof(opt_val.at(option).c_str());
 		if (test(v)) val=v;
 		else exit_ERROR({"Invalid value for ",option,": ",opt_val.at(option),".\nCheck usage with --help option."});
 	}
+}
+void getOptionStr(const map<string, string>& opt_val, const string& option, string& val){
+	if(opt_val.count(option)) val=opt_val.at(option);
 }
 
 string read_options(int argc, char**argv) {
@@ -1566,7 +1579,7 @@ string read_options(int argc, char**argv) {
 			exit(1);
 		}
 	}
-	vector<string> opts={"print-sol","verbosity", "var-decay", "rinc", "rfirst", "original-rto", "opt-mode", "log-proof"};
+	vector<string> opts={"print-sol","verbosity", "var-decay", "rinc", "rfirst", "original-rto", "opt-mode", "proof-log"};
 	map<string, string> opt_val;
 	for(int i=1;i<argc;i++){
 		if (string(argv[i]).substr(0,2) != "--") filename = argv[i];
@@ -1581,14 +1594,14 @@ string read_options(int argc, char**argv) {
 			if (!found) exit_ERROR({"Unknown option: ",argv[i],".\nCheck usage with --help option."});
 		}
 	}
-	getOption(opt_val,"print-sol",[](double x)->bool{return x==0 || x==1;},print_sol);
-	getOption(opt_val,"verbosity",[](double x)->bool{return true;},verbosity);
-	getOption(opt_val,"var-decay",[](double x)->bool{return x>=0.5 && x<1;},var_decay);
-	getOption(opt_val,"rinc",[](double x)->bool{return x>=1;},rinc);
-	getOption(opt_val,"rfirst",[](double x)->bool{return x>=1;},rfirst);
-	getOption(opt_val,"original-rto",[](double x)->bool{return x==0 || x==1;},originalRoundToOne);
-	getOption(opt_val,"opt-mode",[](double x)->bool{return x==0 || x==1 || x==2 || x==3 || x==4;},opt_mode);
-	getOption(opt_val,"log-proof",[](double x)->bool{return x==0 || x==1;},log_proof);
+	getOptionNum(opt_val,"print-sol",[](double x)->bool{return x==0 || x==1;},print_sol);
+	getOptionNum(opt_val,"verbosity",[](double x)->bool{return true;},verbosity);
+	getOptionNum(opt_val,"var-decay",[](double x)->bool{return x>=0.5 && x<1;},var_decay);
+	getOptionNum(opt_val,"rinc",[](double x)->bool{return x>=1;},rinc);
+	getOptionNum(opt_val,"rfirst",[](double x)->bool{return x>=1;},rfirst);
+	getOptionNum(opt_val,"original-rto",[](double x)->bool{return x==0 || x==1;},originalRoundToOne);
+	getOptionNum(opt_val,"opt-mode",[](double x)->bool{return x==0 || x==1 || x==2 || x==3 || x==4;},opt_mode);
+	getOptionStr(opt_val,"proof-log",proof_log_name);
 	return filename;
 }
 
@@ -1629,7 +1642,7 @@ void extractCore(CRef confl, Constraint<int,long long>& outCore, int l_assump=0)
 	for(int l: props) { assert(Reason[abs(l)]!=CRef_Undef); uncheckedEnqueue(l,Reason[abs(l)]); }
 
 	confl_data.init(ca[confl]);
-	if(log_proof) confl_data.startLogging(ca[confl].id,true);
+	if(logProof()) confl_data.startLogging(ca[confl].id,true);
 	confl_data.removeUnits();
 	assert(confl_data.getSlack()<0);
 
@@ -1640,14 +1653,14 @@ void extractCore(CRef confl, Constraint<int,long long>& outCore, int l_assump=0)
 		int confl_coef_l = confl_data.getCoef(-l);
 		if(confl_coef_l>0) {
 			tmpConstraint.init(ca[Reason[abs(l)]]);
-			if(log_proof) tmpConstraint.startLogging(ca[Reason[abs(l)]].id,false);
+			if(logProof()) tmpConstraint.startLogging(ca[Reason[abs(l)]].id,false);
 			tmpConstraint.removeUnits();
 			tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack()); // NOTE: also saturates
 			assert(tmpConstraint.getCoef(l)>tmpConstraint.getSlack());
 			tmpConstraint.roundToOne(tmpConstraint.getCoef(l),true);
 			assert(tmpConstraint.getCoef(l)==1);
 			assert(tmpConstraint.getSlack()<=0);
-			if(log_proof) tmpConstraint.stopLogging(false);
+			if(logProof()) tmpConstraint.stopLogging(false);
 			confl_data.add(tmpConstraint,confl_coef_l);
 			assert(confl_data.getCoef(-l)==0);
 			assert(confl_data.getSlack()<0);
@@ -1657,12 +1670,12 @@ void extractCore(CRef confl, Constraint<int,long long>& outCore, int l_assump=0)
 		undoOne();
 	}
 	confl_data.copyTo(outCore);
-	if(log_proof) confl_data.stopLogging(false);
+	if(logProof()) confl_data.stopLogging(false);
 
 	// weaken non-falsifieds
 	for(int v: outCore.vars) if(!tmpSet.has(-outCore.getLit(v))) outCore.weaken(-outCore.coefs[v],v);
 	outCore.postProcess();
-	if(log_proof) outCore.stopLogging(true);
+	if(logProof()) outCore.stopLogging(true);
 	assert(assumpSlack(tmpSet,outCore)<0);
 	backjumpTo(0);
 }
@@ -1677,7 +1690,7 @@ SolveState solve(const vector<int>& assumptions, Constraint<int,long long>& out)
 		CRef confl = propagate();
 		if (confl != CRef_Undef) {
 			if(decisionLevel() == 0){
-				if(log_proof){
+				if(logProof()){
 					tmpConstraint.init(ca[confl]);
 					tmpConstraint.logInconsistency(ca[confl].id);
 				}
@@ -1960,7 +1973,7 @@ void optimize(Constraint<int,long long>& objective, Constraint<int,long long>& c
 		}	else if(reply==SolveState::UNSAT) {
 			++NCORES;
 			if(core.getSlack()<0){
-				if(log_proof){
+				if(logProof()){
 					core.stopLogging(true);
 					core.logInconsistency(last_proofID);
 				}
@@ -1980,7 +1993,12 @@ int main(int argc, char**argv){
 	signal(SIGXCPU,SIGINT_exit);
 	string filename = read_options(argc, argv);
 
-	if(log_proof) proof_out << "pseudo-Boolean proof version 1.0" << std::endl;
+	if(logProof()){
+		proof_out = ofstream(proof_log_name+".proof");
+		proof_out << "pseudo-Boolean proof version 1.0\n";
+		formula_out = ofstream(proof_log_name+".formula");
+		formula_out << "* #variable= 0 #constraint= 0\n";
+	}
 
 	if (filename != "") {
 		ifstream fin(filename);
@@ -2006,7 +2024,7 @@ int main(int argc, char**argv){
 			SolveState reply = solve({},inconsistency);
 			if(reply==SolveState::SAT) exit_SAT();
 			else if(reply==SolveState::UNSAT){
-				if(log_proof) inconsistency.logInconsistency(last_proofID);
+				if(logProof()) inconsistency.logInconsistency(last_proofID);
 				exit_UNSAT();
 			}
 		}
