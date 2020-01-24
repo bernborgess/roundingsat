@@ -82,6 +82,7 @@ bool originalRoundToOne=false;
 int opt_mode=0;
 int curr_restarts=0;
 long long nconfl_to_restart=0;
+bool print_sol = false;
 bool log_proof = false;
 ofstream proof_out ("proof.log");
 int last_proofID = 0;
@@ -1449,25 +1450,25 @@ void print_stats() {
 	double timespent = cpuTime()-initial_time;
 	printf("c CPU time			  : %g s\n", timespent);
 	printf("c deterministic time %zu %.2e\n", DETERMINISTICTIME,(double)DETERMINISTICTIME);
-	printf("d propagations %lld\n", NPROP);
-	printf("d decisions %lld\n", NDECIDE);
-	printf("d conflicts %lld\n", NCONFL);
-	printf("d restarts %d\n", curr_restarts);
-	printf("d inprocessing phases %d\n", cnt_reduceDB);
-	printf("d clauses learned %lld\n", NCLAUSESLEARNED);
-	printf("d cardinalities learned %lld\n", NCARDINALITIESLEARNED);
-	printf("d general constraints learned %lld\n", NGENERALSLEARNED);
-	printf("d average learned constraint length %.2f\n", NCONFL==0?0:(double)LEARNEDLENGTHSUM/NCONFL);
-	printf("d average learned constraint degree %.2f\n", NCONFL==0?0:(double)LEARNEDDEGREESUM/NCONFL);
-	printf("d gcd simplifications %lld\n", NGCD);
-	printf("d detected cardinalities %lld\n", NCARDDETECT);
-	printf("d weakened non-implied lits %lld\n", NWEAKENEDNONIMPLIED);
-	printf("d weakened non-implying lits %lld\n", NWEAKENEDNONIMPLYING);
-	printf("d auxiliary variables introduced %d\n", n-orig_n);
+	printf("c propagations %lld\n", NPROP);
+	printf("c decisions %lld\n", NDECIDE);
+	printf("c conflicts %lld\n", NCONFL);
+	printf("c restarts %d\n", curr_restarts);
+	printf("c inprocessing phases %d\n", cnt_reduceDB);
+	printf("c clauses learned %lld\n", NCLAUSESLEARNED);
+	printf("c cardinalities learned %lld\n", NCARDINALITIESLEARNED);
+	printf("c general constraints learned %lld\n", NGENERALSLEARNED);
+	printf("c average learned constraint length %.2f\n", NCONFL==0?0:(double)LEARNEDLENGTHSUM/NCONFL);
+	printf("c average learned constraint degree %.2f\n", NCONFL==0?0:(double)LEARNEDDEGREESUM/NCONFL);
+	printf("c gcd simplifications %lld\n", NGCD);
+	printf("c detected cardinalities %lld\n", NCARDDETECT);
+	printf("c weakened non-implied lits %lld\n", NWEAKENEDNONIMPLIED);
+	printf("c weakened non-implying lits %lld\n", NWEAKENEDNONIMPLYING);
+	printf("c auxiliary variables introduced %d\n", n-orig_n);
 	if(opt_mode>0){
-		printf("d solutions found %lld\n", NSOLS);
-		printf("d cores constructed %lld\n", NCORES);
-		printf("d core cardinality constraints returned %lld\n", NCORECARDINALITIES);
+		printf("c solutions found %lld\n", NSOLS);
+		printf("c cores constructed %lld\n", NCORES);
+		printf("c core cardinality constraints returned %lld\n", NCORECARDINALITIES);
 	}
 }
 
@@ -1490,11 +1491,17 @@ bool checksol() {
 	return true;
 }
 
-void exit_SAT() {
+void printSol(){
 	assert(checksol());
+	if(print_sol){
+		printf("v");for(int i=1;i<=orig_n;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n"); }
+}
+
+void exit_SAT() {
 	print_stats();
+	if(foundSolution()) cout << "o " << last_sol_obj_val << endl;
 	puts("s SATISFIABLE");
-	//printf("v");for(int i=1;i<=orig_n;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
+	printSol();
 	exit(10);
 }
 
@@ -1503,8 +1510,7 @@ void exit_UNSAT() {
 	if(foundSolution()){
 		cout << "o " << last_sol_obj_val << endl;
 		cout << "s OPTIMUM FOUND" << endl;
-		assert(checksol());
-		//printf("v");for(int i=1;i<=orig_n;i++)if(last_sol[i])printf(" x%d",i);else printf(" -x%d",i);printf("\n");
+		printSol();
 		exit(30);
 	}else{
 		puts("s UNSATISFIABLE");
@@ -1530,7 +1536,8 @@ void usage(int argc, char**argv) {
 	printf("Usage: %s [OPTION] instance.(opb|cnf|wcnf)\n", argv[0]);
 	printf("\n");
 	printf("Options:\n");
-	printf("  --help           Prints this help message\n");
+	printf("  --help           Prints this help message.\n");
+	printf("  --print-sol=arg  Prints the solution if found (default %d).\n",print_sol);
 	printf("  --verbosity=arg  Set the verbosity of the output (default %d).\n",verbosity);
 	printf("\n");
 	printf("  --var-decay=arg  Set the VSIDS decay factor (0.5<=arg<1; default %lf).\n",var_decay);
@@ -1559,7 +1566,7 @@ string read_options(int argc, char**argv) {
 			exit(1);
 		}
 	}
-	vector<string> opts = {"verbosity", "var-decay", "rinc", "rfirst", "original-rto", "opt-mode", "log-proof"};
+	vector<string> opts={"print-sol","verbosity", "var-decay", "rinc", "rfirst", "original-rto", "opt-mode", "log-proof"};
 	map<string, string> opt_val;
 	for(int i=1;i<argc;i++){
 		if (string(argv[i]).substr(0,2) != "--") filename = argv[i];
@@ -1574,6 +1581,7 @@ string read_options(int argc, char**argv) {
 			if (!found) exit_ERROR({"Unknown option: ",argv[i],".\nCheck usage with --help option."});
 		}
 	}
+	getOption(opt_val,"print-sol",[](double x)->bool{return x==0 || x==1;},print_sol);
 	getOption(opt_val,"verbosity",[](double x)->bool{return true;},verbosity);
 	getOption(opt_val,"var-decay",[](double x)->bool{return x>=0.5 && x<1;},var_decay);
 	getOption(opt_val,"rinc",[](double x)->bool{return x>=1;},rinc);
@@ -1748,8 +1756,8 @@ SolveState solve(const vector<int>& assumptions, Constraint<int,long long>& out)
 }
 
 inline void printObjBounds(long long lower, long long upper){
-	if(upper<INF) printf("o %10lld >= %10lld\n",upper,lower);
-	else printf("o          - >= %10lld\n",lower);
+	if(upper<INF) printf("c bounds %10lld >= %10lld\n",upper,lower);
+	else printf("c bounds          - >= %10lld\n",lower);
 }
 
 void handleNewSolution(const Constraint<int,long long>& origObjective, long long lower_bound){
