@@ -176,7 +176,7 @@ struct Clause { // TODO: heuristic info actually not needed in cache-sensitive C
 // ---------------------------------------------------------------------
 
 template <class T>
-inline T ceildiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return (p+q-1)/q; }
+inline T ceildiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return (p+q-1)/q; } // NOTE: potential overflow
 template <class T>
 inline T floordiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return p/q; }
 template <class T>
@@ -386,14 +386,18 @@ struct Constraint{
 		for(int v:vars){
 			assert(Level[-v]!=0);
 			assert(Level[ v]!=0);
-			if(coefs[v]%d==0){ coefs[v]/=d; continue; }
-			else if(increasesSlack(v)){
-				if(partial) weaken(-coefs[v]%d,v); // partial weakening
-				else weaken(-coefs[v],v);
-			}else{
-				assert((Level[v]==-1)==(coefs[v]>0));
-				if(coefs[v]<0) weaken(-d-(coefs[v]%d),v);
-				else weaken(d-(coefs[v]%d),v);
+			if(coefs[v]%d!=0){
+				if(increasesSlack(v)){ // increasesSlack == non-falsified
+					if(partial) weaken(-coefs[v]%d,v); // partial weakening
+					else weaken(-coefs[v],v);
+				}else{
+					assert((Level[v]==-1)==(coefs[v]>0));
+					if(coefs[v]<0){
+						int weakening = d+(coefs[v]%d);
+						coefs[v]-=weakening;
+						rhs-=weakening;
+					}else coefs[v]+=d-(coefs[v]%d);
+				}
 			}
 			assert(coefs[v]%d==0);
 			coefs[v]/=d;
@@ -459,9 +463,7 @@ struct Constraint{
 
 		rhs=largeCoefsNeeded;
 		// TODO: sort vars from large to small to be able to simply pop skippable literals
-		for(int i=0; i<skippable; ++i){
-			coefs[vars[i]]=0;
-		}
+		for(int i=0; i<skippable; ++i) coefs[vars[i]]=0;
 		for(int i=skippable; i<(int)vars.size(); ++i){
 			int& c = coefs[vars[i]];
 			if(c<0){ c=-1; --rhs; }
