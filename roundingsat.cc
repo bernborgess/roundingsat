@@ -245,16 +245,17 @@ struct Constraint{
 	}
 
 	long long removeUnits(bool doSaturation=true){
-		for(int i=0; logProof() && i<(int)vars.size(); ++i){
-			int v = vars[i]; int l = getLit(v); int c = getCoef(l);
-			if(Level[l]==0) proofBuffer << (l<0?"x":"~x") << v << " " << (c==1?"":std::to_string(c)+" * ") << "+ ";
-			else if (Level[-l]==0) proofBuffer << unitIDs[Pos[v]] << " " << (c==1?"":std::to_string(c)+" * ") << "+ ";
+		if(logProof()){
+			for(int v: vars){
+				int l = getLit(v); int c = getCoef(l);
+				if(Level[l]==0) proofBuffer << (l<0?"x":"~x") << v << " " << (c==1?"":std::to_string(c)+" * ") << "+ ";
+				else if (Level[-l]==0) proofBuffer << unitIDs[Pos[v]] << " " << (c==1?"":std::to_string(c)+" * ") << "+ ";
+			}
 		}
 		for(int i=0; i<(int)vars.size(); ++i){
 			int v=vars[i];
-			int c=coefs[v];
 			if(Level[v]==0){
-				addRhs(-c);
+				addRhs(-coefs[v]);
 				coefs[v]=_unused_();
 				swapErase(vars,i--);
 			}else if(Level[-v]==0){
@@ -322,7 +323,10 @@ struct Constraint{
 	LARGE saturate(){ // returns degree // TODO: keep track of degree after computing
 		if(logProof()) proofBuffer << "s ";
 		LARGE w = getDegree();
-		if(w<=0) reset(w);
+		if(w<=0){
+			for(int v: vars) coefs[v]=_unused_();
+			vars.clear(); rhs=0;
+		}
 		for (int v: vars){
 			if(coefs[v]<-w) rhs-=coefs[v]+w, coefs[v]=-w;
 			else coefs[v]=min<LARGE>(coefs[v],w);
@@ -609,6 +613,12 @@ struct Constraint{
 		proof_out << "p " << (proofID==0?"":std::to_string(proofID)+" ") << proofBuffer.str() << "0\n";
 		resetBuffer();
 		proofBuffer << ++last_proofID << " "; // keep proofBuffer consistent
+		#if !NDEBUG
+		if(getDegree()>0){ // TODO: remove check when VeriPB bug fixed
+			proof_out << "e " << last_proofID << " ";
+			toStreamAsOPB(proof_out);
+		}
+		#endif
 	}
 
 	void logInconsistency(long long proofID=0){
@@ -625,11 +635,9 @@ struct Constraint{
 		for(int v: vars) if(v!=v_unit) weaken(-coefs[v],v);
 		long long d = max((long long)abs(coefs[v_unit]),getDegree());
 		if(d>1) proofBuffer << d << " d ";
+		if(coefs[v_unit]>0){ coefs[v_unit]=1; rhs=1; }
+		else{ coefs[v_unit]=-1; rhs=0; }
 		logAsProofLine();
-		#if NDEBUG
-		#else
-		proof_out << "e " << last_proofID << " +1 " << (getLit(v_unit)>0?"x":"~x") << v_unit << " >= 1 ;\n";
-		#endif
 	}
 
 	void toStreamAsOPB(ofstream& o) const {
@@ -763,17 +771,6 @@ struct {
 			constr->lits()[i]=constraint.getLit(v);
 			constr->coefs()[i]=abs(constraint.coefs[v]);
 		}
-		#if NDEBUG
-		#else
-		if(logProof()){
-			proof_out << "e " << constr->id << " ";
-			for(int i=0; i<(int)constr->size(); ++i){
-				int l = constr->lits()[i];
-				proof_out << "+" << constr->coef(i) << (l<0?" ~x":" x") << abs(l) << " ";
-			}
-			proof_out << ">= " << constr->degree() << " ;\n";
-		}
-		#endif
 		return {(uint32_t)(at-sz_constr(length))};
 	}
 	Clause& operator[](CRef cr) { return (Clause&)*(memory+cr.ofs); }
