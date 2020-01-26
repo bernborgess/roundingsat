@@ -323,16 +323,21 @@ struct Constraint{
 	LARGE saturate(){ // returns degree // TODO: keep track of degree after computing
 		if(logProof()) proofBuffer << "s ";
 		LARGE w = getDegree();
+		if(logProof()){
+			if(isSaturated()) return w;
+			proofBuffer << "s "; // log saturation only if it modifies the constraint
+		}
 		if(w<=0){
 			for(int v: vars) coefs[v]=_unused_();
 			vars.clear(); rhs=0;
+			return 0;
 		}
 		for (int v: vars){
 			if(coefs[v]<-w) rhs-=coefs[v]+w, coefs[v]=-w;
 			else coefs[v]=min<LARGE>(coefs[v],w);
 		}
-		assert(w==getDegree()); // degree is invariant under saturation
 		assert(isSaturated());
+		assert(w==getDegree()); // degree is invariant under saturation
 		return w;
 	}
 
