@@ -42,7 +42,11 @@ using namespace std;
 
 #define _unused(x) ((void)(x)) // marks variables unused in release mode
 
-std::ostream& operator<<(std::ostream& os, __int128 t) { return os << (double) t; }
+std::ostream& operator<<(std::ostream& os, __int128 x){
+	if(x<0) return os << "-" << -x;
+	if(x<=std::numeric_limits<uint64_t>::max()) return os << (uint64_t) x;
+	return os << x/10 << (short)(x%10);
+}
 
 template <class T> inline void swapErase(T& indexable, size_t index){
 	indexable[index]=indexable.back();
@@ -461,9 +465,9 @@ struct Constraint{
 				SMALL d = getCoef(l);
 				proofBuffer << (l>0?"~x":"x") << abs(l) << " " << (d==1?"":std::to_string(d)+" * ") << "+ ";
 			}
-			for(int i=vars.size()-largeCoefsNeeded+1; i<(int)vars.size(); ++i){ // partially weaken large vars
+			for(int i=vars.size()-largeCoefsNeeded; i<(int)vars.size(); ++i){ // partially weaken large vars
 				int l = getLit(vars[i]);
-				SMALL d = getCoef(l)%div_coef;
+				SMALL d = getCoef(l)-div_coef;
 				proofBuffer << (l>0?"~x":"x") << abs(l) << " " << (d==1?"":std::to_string(d)+" * ") << "+ ";
 			}
 			if(div_coef>1) proofBuffer << div_coef << " d ";
