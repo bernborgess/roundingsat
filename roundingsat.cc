@@ -71,7 +71,7 @@ const int resize_factor=2;
 const int INF=1e9+1;
 
 double initial_time;
-size_t NBACKJUMP=0, DETERMINISTICTIME=0;
+long long NBACKJUMP=0, DETERMINISTICTIME=0;
 long long NCONFL=0, NDECIDE=0, NPROP=0;
 __int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
 long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
@@ -139,7 +139,7 @@ struct Clause { // TODO: heuristic info actually not needed in cache-sensitive C
 		unsigned size         : 30;
 	} header;
 	// watch data
-	unsigned int nbackjump;
+	long long nbackjump;
 	long long slack; // sum of non-falsified watches minus w.
 	// NOTE: will never be larger than 2 * non-falsified watch, so fits in 32 bit for the n-watched literal scheme
 	// TODO: is above really true?
@@ -929,6 +929,7 @@ void undoOne(){
 	if(qhead==(int)trail.size()){
 		for(const Watch& w: adj[-l]) ca[w.cref].undoFalsified(w.idx);
 		--qhead;
+		++NBACKJUMP;
 	}
 	int v = abs(l);
 	trail.pop_back();
@@ -941,7 +942,6 @@ void undoOne(){
 
 void backjumpTo(int level){
 	assert(level>=0);
-	++NBACKJUMP; assert(NBACKJUMP<std::numeric_limits<unsigned int>::max());
 	while(decisionLevel()>level) undoOne();
 }
 
@@ -1446,7 +1446,7 @@ static void SIGINT_exit(int signum){
 void print_stats() {
 	double timespent = cpuTime()-initial_time;
 	printf("c CPU time			  : %g s\n", timespent);
-	printf("c deterministic time %zu %.2e\n", DETERMINISTICTIME,(double)DETERMINISTICTIME);
+	printf("c deterministic time %lld %.2e\n", DETERMINISTICTIME,(double)DETERMINISTICTIME);
 	printf("c propagations %lld\n", NPROP);
 	printf("c decisions %lld\n", NDECIDE);
 	printf("c conflicts %lld\n", NCONFL);
@@ -1719,7 +1719,8 @@ SolveState solve(const vector<int>& assumptions, Constraint<int,long long>& out)
 				assert(decisionLevel()==(int)assumptions_lim.size()-1);
 				int l_assump = assumptions[assumptions_lim.back()];
 				if (~Level[-l_assump]){ // found conflicting assumption
-					extractCore(Reason[abs(l_assump)],out,l_assump);
+					if(Level[-l_assump]==0) backjumpTo(0), out.reset(); // negated assumption is unit
+					else extractCore(Reason[abs(l_assump)],out,l_assump);
 					return SolveState::UNSAT;
 				}
 				if (~Level[l_assump]){ // assumption already propagated
