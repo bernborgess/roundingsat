@@ -90,7 +90,7 @@ bool print_sol = false;
 string proof_log_name = "";
 bool logProof(){ return !proof_log_name.empty(); }
 ofstream proof_out; ofstream formula_out;
-int last_proofID = 0; int last_formID = 0;
+long long last_proofID = 0; long long last_formID = 0;
 std::vector<long long> unitIDs;
 
 struct CRef {
@@ -218,6 +218,11 @@ unsigned int gcd(unsigned int u, unsigned int v){
 	return u << shift;
 }
 
+template<class T>
+inline string proofMult(T mult){
+	return (mult==1?"":std::to_string(mult)+" * ");
+}
+
 template<class SMALL, class LARGE> // LARGE should be able to fit sums of SMALL
 struct Constraint{
 	std::vector<int> vars;
@@ -226,34 +231,37 @@ struct Constraint{
 	static constexpr SMALL _unused_(){ return std::numeric_limits<SMALL>::max(); }
 	std::stringstream proofBuffer;
 
+	Constraint(){ reset(); }
+
 	inline void resize(size_t s){
 		if(s>coefs.size()) coefs.resize(s,_unused_());
 	}
 
-	void resetBuffer(long long proofID=-1){
+	void resetBuffer(long long proofID){
 		proofBuffer.clear();
 		proofBuffer.str(std::string());
-		if(proofID!=-1) proofBuffer << proofID << " ";
+		proofBuffer << proofID << " ";
 	}
 
-	void reset(LARGE r=0, long long proofID=-1){
+	void reset(LARGE r=0){
 		for(int v: vars) coefs[v]=_unused_();
 		vars.clear();
 		rhs=r;
-		if(logProof()) resetBuffer(proofID);
+		if(logProof()) resetBuffer(1); // NOTE: proofID 1 equals the constraint 0 >= 0
 	}
 
 	void init(Clause& C){
-		reset(C.degree(),C.id);
+		reset(C.degree());
 		for(size_t i=0;i<C.size();++i) addLhs(C.coef(i), C.lits()[i]);
+		if(logProof()) resetBuffer(C.id);
 	}
 
 	long long removeUnits(bool doSaturation=true){
 		if(logProof()){
 			for(int v: vars){
-				int l = getLit(v); int c = getCoef(l);
-				if(Level[l]==0) proofBuffer << (l<0?"x":"~x") << v << " " << (c==1?"":std::to_string(c)+" * ") << "+ ";
-				else if (Level[-l]==0) proofBuffer << unitIDs[Pos[v]] << " " << (c==1?"":std::to_string(c)+" * ") << "+ ";
+				int l = getLit(v); SMALL c = getCoef(l);
+				if(Level[l]==0) proofBuffer << (l<0?"x":"~x") << v << " " << proofMult(c) << "+ ";
+				else if (Level[-l]==0) proofBuffer << unitIDs[Pos[v]] << " " << proofMult(c) << "+ ";
 			}
 		}
 		for(int i=0; i<(int)vars.size(); ++i){
@@ -318,15 +326,14 @@ struct Constraint{
 
 	inline void weaken(SMALL m, int l){ // add m*(l>=0) if m>0 and -m*(-l>=-1) if m<0
 		if(logProof()){
-			if(m>0) proofBuffer << (l<0?"~x":"x") << abs(l) << " " << (m==1?"":std::to_string(m)+" * ") << "+ ";
-			else proofBuffer << (l<0?"x":"~x") << abs(l) << " " << (-m==1?"":std::to_string(-m)+" * ") << "+ ";
+			if(m>0) proofBuffer << (l<0?"~x":"x") << abs(l) <<  " " << proofMult(m) << "+ ";
+			else proofBuffer << (l<0?"x":"~x") << abs(l) <<  " " << proofMult(-m) << "+ ";
 		}
 		addLhs(m,l); // TODO: optimize this method by not calling addLhs
 		if(m<0) addRhs(m);
 	}
 
 	LARGE saturate(){ // returns degree // TODO: keep track of degree after computing
-		if(logProof()) proofBuffer << "s ";
 		LARGE w = getDegree();
 		if(logProof()){
 			if(isSaturated()) return w;
@@ -372,7 +379,10 @@ struct Constraint{
 		out.resize(coefs.size());
 		out.vars=vars;
 		for(int v: vars) out.coefs[v]=mult*coefs[v];
-		if(logProof()) out.proofBuffer << proofBuffer.str() << (mult==1?"":std::to_string(mult)+" * ");
+		if(logProof()){
+			out.proofBuffer.str(std::string());
+			out.proofBuffer << proofBuffer.str() << proofMult(mult);
+		}
 	}
 
 	LARGE getSlack() const {
@@ -383,7 +393,7 @@ struct Constraint{
 
 	template<class S, class L>
 	void add(const Constraint<S,L>& c, SMALL mult=1, bool saturateAndReduce=true){
-		if(logProof()) proofBuffer << c.proofBuffer.str() << (mult==1?"":std::to_string(mult)+" * ") << "+ ";
+		if(logProof()) proofBuffer << c.proofBuffer.str() << proofMult(mult) << "+ ";
 		for(int v: c.vars) addLhs(mult*c.coefs[v],v);
 		addRhs(mult*c.rhs);
 		if(!saturateAndReduce) return;
@@ -467,12 +477,12 @@ struct Constraint{
 			for(int i=0; i<skippable; ++i){ // weaken small vars
 				int l = getLit(vars[i]);
 				SMALL d = getCoef(l);
-				proofBuffer << (l>0?"~x":"x") << abs(l) << " " << (d==1?"":std::to_string(d)+" * ") << "+ ";
+				proofBuffer << (l>0?"~x":"x") << abs(l) << " " << proofMult(d) << "+ ";
 			}
 			for(int i=vars.size()-largeCoefsNeeded; i<(int)vars.size(); ++i){ // partially weaken large vars
 				int l = getLit(vars[i]);
 				SMALL d = getCoef(l)-div_coef;
-				proofBuffer << (l>0?"~x":"x") << abs(l) << " " << (d==1?"":std::to_string(d)+" * ") << "+ ";
+				proofBuffer << (l>0?"~x":"x") << abs(l) << " " << proofMult(d) << "+ ";
 			}
 			if(div_coef>1) proofBuffer << div_coef << " d ";
 		}
@@ -883,12 +893,13 @@ void uncheckedEnqueue(int p, CRef from=CRef_Undef){
 }
 
 // @pre: removeUnits and removeZeroes executed on constraint
-CRef attachConstraint(Constraint<int,long long>& constraint, long long proofID, bool learnt, bool locked=false){
+CRef attachConstraint(Constraint<int,long long>& constraint, bool learnt, bool locked=false){
 	// sort from smallest to largest coefficient
 	std::sort(constraint.vars.begin(),constraint.vars.end(),[&](int v1,int v2){
 		return abs(constraint.coefs[v1])>abs(constraint.coefs[v2]); });
 
-	CRef cr = ca.alloc(constraint, proofID, learnt, locked);
+	if(logProof()) constraint.logAsProofLine();
+	CRef cr = ca.alloc(constraint,last_proofID,learnt,locked);
 	if (learnt) learnts.push_back(cr);
 	else clauses.push_back(cr);
 	Clause& C = ca[cr]; int* lits = C.lits(); int* coefs = C.coefs();
@@ -1139,9 +1150,8 @@ void learnConstraint(Constraint<long long,__int128>& confl){
 	tmpConstraint.heuristicWeakening(slk);
 	tmpConstraint.postProcess();
 	assert(tmpConstraint.isSaturated());
-	if(logProof()) tmpConstraint.logAsProofLine();
 
-	CRef cr = attachConstraint(tmpConstraint,last_proofID,true);
+	CRef cr = attachConstraint(tmpConstraint,true);
 	Clause & C = ca[cr];
 	recomputeLBD(C);
 
@@ -1162,7 +1172,6 @@ CRef addInputConstraint(Constraint<int, long long>& c, bool initial=false){
 		c.resetBuffer(++last_proofID); // ensure consistent proofBuffer
 	}
 	c.postProcess();
-	if(logProof()) c.logAsProofLine();
 	long long degree = c.getDegree();
 	if(degree > (long long) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
 	if(degree<=0) return CRef_Undef; // already satisfied.
@@ -1173,7 +1182,7 @@ CRef addInputConstraint(Constraint<int, long long>& c, bool initial=false){
 		exit_UNSAT();
 	}
 
-	CRef result = attachConstraint(c,last_proofID,!initial,true);
+	CRef result = attachConstraint(c,!initial,true);
 	CRef confl = propagate();
 	if (confl != CRef_Undef){
 		puts("c Input conflict");
@@ -1657,7 +1666,6 @@ void extractCore(CRef confl, Constraint<int,long long>& outCore, int l_assump=0)
 	// weaken non-falsifieds
 	for(int v: outCore.vars) if(!tmpSet.has(-outCore.getLit(v))) outCore.weaken(-outCore.coefs[v],v);
 	outCore.postProcess();
-	if(logProof()) outCore.logAsProofLine();
 	assert(assumpSlack(tmpSet,outCore)<0);
 	backjumpTo(0);
 }
@@ -1902,8 +1910,7 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 		addInputConstraint(tmpConstraint);
 		core.copyTo(tmpConstraint);
 		addInputConstraint(tmpConstraint);
-		if(coreAggregate.vars.size()==0) tmpConstraint.copyTo(coreAggregate,(long long)mult);
-		else coreAggregate.add(tmpConstraint,mult);
+		coreAggregate.add(tmpConstraint,mult,false);
 		for(int v=oldN+1; v<newN; ++v){ // add symmetry breaking constraints
 			tmpConstraint.reset(1);
 			tmpConstraint.addLhs(1,v);
@@ -1964,7 +1971,7 @@ void optimize(Constraint<int,long long>& objective, Constraint<int,long long>& c
 			printObjBounds(lower_bound,last_sol_obj_val);
 			if(logProof()){
 				tmpConstraint.init(ca[external[0]]);
-				coreAggregate.add(tmpConstraint);
+				coreAggregate.add(tmpConstraint,1,false);
 				coreAggregate.postProcess();
 				assert(coreAggregate.getSlack()<0);
 				coreAggregate.logInconsistency();
@@ -1983,10 +1990,12 @@ int main(int argc, char**argv){
 	string filename = read_options(argc, argv);
 
 	if(logProof()){
-		proof_out = ofstream(proof_log_name+".proof");
-		proof_out << "pseudo-Boolean proof version 1.0\n";
 		formula_out = ofstream(proof_log_name+".formula");
 		formula_out << "* #variable= 0 #constraint= 0\n";
+		formula_out << " >= 0 ;\n"; ++last_formID;
+		proof_out = ofstream(proof_log_name+".proof");
+		proof_out << "pseudo-Boolean proof version 1.0\n";
+		proof_out << "l 1\n"; ++last_proofID;
 	}
 
 	if (!filename.empty()) {
