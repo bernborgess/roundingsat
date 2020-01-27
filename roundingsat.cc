@@ -245,15 +245,17 @@ struct Constraint{
 		proofBuffer << proofID << " ";
 	}
 
-	void reset(LARGE r=0){
+	bool isReset(){ return vars.size()==0 && rhs==0; }
+	void reset(){
 		for(int v: vars) coefs[v]=_unused_();
 		vars.clear();
-		rhs=r;
+		rhs=0;
 		if(logProof()) resetBuffer(1); // NOTE: proofID 1 equals the constraint 0 >= 0
 	}
 
 	void init(Clause& C){
-		reset(C.degree());
+		assert(isReset()); // don't use a Constraint used by other stuff
+		addRhs(C.degree());
 		for(size_t i=0;i<C.size();++i) addLhs(C.coef(i), C.lits()[i]);
 		if(logProof()) resetBuffer(C.id);
 	}
@@ -379,8 +381,9 @@ struct Constraint{
 	}
 
 	template<class S, class L>
-	void copyTo(Constraint<S,L>& out, S mult=1) const {
-		out.reset(mult*rhs);
+	void copyTo(Constraint<S,L>& out, S mult=1) const { // TODO: refactor to replace by add(...)
+		assert(out.isReset());
+		out.addRhs(mult*rhs);
 		out.resize(coefs.size());
 		out.vars=vars;
 		for(int v: vars) out.coefs[v]=mult*coefs[v];
@@ -678,6 +681,7 @@ struct Constraint{
 Constraint<int, long long> objective_func;
 Constraint<int, long long> tmpConstraint;
 Constraint<long long, __int128> confl_data;
+Constraint<int, long long> logConstraint;
 
 template<class S, class L>
 ostream & operator<<(ostream & o, const Constraint<S,L>& C) {
@@ -884,8 +888,9 @@ void uncheckedEnqueue(int p, CRef from=CRef_Undef){
 		assert(from!=CRef_Undef);
 		if(logProof()){
 			Clause& C = ca[from];
-			tmpConstraint.init(C);
-			tmpConstraint.logUnit(v);
+			logConstraint.init(C);
+			logConstraint.logUnit(v);
+			logConstraint.reset();
 			assert(unitIDs.size()==trail.size());
 			unitIDs.push_back(last_proofID);
 		}
@@ -1017,6 +1022,7 @@ void analyze(CRef confl){
 				assert(tmpConstraint.getSlack()<=0);
 				for(int v: tmpConstraint.vars) actSet.add(tmpConstraint.getLit(v));
 				confl_data.add(tmpConstraint,confl_coef_l);
+				tmpConstraint.reset();
 				assert(confl_data.getCoef(-l)==0);
 				assert(confl_data.getSlack()<0);
 			}
@@ -1127,6 +1133,7 @@ void setNbVariables(long long nvars){
 	last_sol.resize(nvars+1,false);
 	tmpConstraint.resize(nvars+1);
 	confl_data.resize(nvars+1);
+	logConstraint.resize(nvars+1);
 	tmpSet.resize(nvars);
 	actSet.resize(nvars);
 	order_heap.resize(nvars+1);
@@ -1164,6 +1171,7 @@ void learnConstraint(Constraint<long long,__int128>& confl){
 	if(degree==1) ++NCLAUSESLEARNED;
 	else if(tmpConstraint.isCardinality()) ++NCARDINALITIESLEARNED;
 	else ++NGENERALSLEARNED;
+	tmpConstraint.reset();
 }
 
 CRef addInputConstraint(Constraint<int, long long>& c, bool initial=false){
@@ -1190,12 +1198,12 @@ CRef addInputConstraint(Constraint<int, long long>& c, bool initial=false){
 	if (confl != CRef_Undef){
 		puts("c Input conflict");
 		if(logProof()){
-			tmpConstraint.init(ca[confl]);
-			tmpConstraint.logInconsistency();
+			logConstraint.init(ca[confl]);
+			logConstraint.logInconsistency();
+			logConstraint.reset();
 		}
 		exit_UNSAT();
 	}
-
 	return result;
 }
 
@@ -1236,7 +1244,7 @@ void opb_read(istream & in) {
 			}
 			first_constraint = false;
 			istringstream is (line);
-			tmpConstraint.reset();
+			assert(tmpConstraint.isReset());
 			vector<string> tokens;
 			{ string tmp; while (is >> tmp) tokens.push_back(tmp); }
 			if (tokens.size() % 2 != 0) exit_ERROR({"No support for non-linear constraints."});
@@ -1258,15 +1266,21 @@ void opb_read(istream & in) {
 				if (negated) l = -l;
 				tmpConstraint.addLhs(coef,l);
 			}
-			if (opt_line) tmpConstraint.copyTo(objective_func);
-			else {
+			if(opt_line){
+				tmpConstraint.copyTo(objective_func);
+				tmpConstraint.reset();
+			}else{
 				tmpConstraint.addRhs(read_number(line0.substr(line0.find("=") + 1)));
 				// Handle equality case with two constraints
 				bool equality = line0.find(" = ") != string::npos;
 				if(equality) tmpConstraint.copyTo(inverted,-1);
 				// NOTE: addInputConstraint modifies tmpConstraint, so the inverted version is stored first
 				addInputConstraint(tmpConstraint,true);
-				if(equality) addInputConstraint(inverted,true);
+				tmpConstraint.reset();
+				if(equality){
+					addInputConstraint(inverted,true);
+					inverted.reset();
+				}
 			}
 		}
 	}
@@ -1281,7 +1295,8 @@ void wcnf_read(istream & in, long long top) {
 			istringstream is (line);
 			long long weight; is >> weight;
 			if(weight==0) continue;
-			tmpConstraint.reset(1);
+			assert(tmpConstraint.isReset());
+			tmpConstraint.addRhs(1);
 			int l;
 			while (is >> l, l) tmpConstraint.addLhs(1,l);
 			if(weight<top){ // soft clause
@@ -1293,6 +1308,7 @@ void wcnf_read(istream & in, long long top) {
 				tmpConstraint.addLhs(1,n);
 			} // else hard clause
 			addInputConstraint(tmpConstraint,true);
+			tmpConstraint.reset();
 		}
 	}
 	orig_n = n-objective_func.vars.size();
@@ -1303,10 +1319,12 @@ void cnf_read(istream & in) {
 		if (line.empty() || line[0] == 'c') continue;
 		else {
 			istringstream is (line);
-			tmpConstraint.reset(1);
+			assert(tmpConstraint.isReset());
+			tmpConstraint.addRhs(1);
 			int l;
 			while (is >> l, l) tmpConstraint.addLhs(1,l);
 			addInputConstraint(tmpConstraint,true);
+			tmpConstraint.reset();
 		}
 	}
 	orig_n=n;
@@ -1657,6 +1675,7 @@ void extractCore(CRef confl, Constraint<int,long long>& outCore, int l_assump=0)
 			assert(tmpConstraint.getCoef(l)==1);
 			assert(tmpConstraint.getSlack()<=0);
 			confl_data.add(tmpConstraint,confl_coef_l);
+			tmpConstraint.reset();
 			assert(confl_data.getCoef(-l)==0);
 			assert(confl_data.getSlack()<0);
 			assumpslk = assumpSlack(tmpSet,confl_data);
@@ -1665,6 +1684,7 @@ void extractCore(CRef confl, Constraint<int,long long>& outCore, int l_assump=0)
 		undoOne();
 	}
 	confl_data.copyTo(outCore);
+	confl_data.reset();
 
 	// weaken non-falsifieds
 	for(int v: outCore.vars) if(!tmpSet.has(-outCore.getLit(v))) outCore.weaken(-outCore.coefs[v],v);
@@ -1676,6 +1696,7 @@ void extractCore(CRef confl, Constraint<int,long long>& outCore, int l_assump=0)
 enum SolveState { SAT, UNSAT, INPROCESSING };
 
 SolveState solve(const vector<int>& assumptions, Constraint<int,long long>& out) {
+	out.reset();
 	backjumpTo(0); // ensures assumptions are reset
 	std::vector<unsigned int> assumptions_lim={0};
 	assumptions_lim.reserve(assumptions.size()+1);
@@ -1684,8 +1705,9 @@ SolveState solve(const vector<int>& assumptions, Constraint<int,long long>& out)
 		if (confl != CRef_Undef) {
 			if(decisionLevel() == 0){
 				if(logProof()){
-					tmpConstraint.init(ca[confl]);
-					tmpConstraint.logInconsistency();
+					logConstraint.init(ca[confl]);
+					logConstraint.logInconsistency();
+					logConstraint.reset();
 				}
 				exit_UNSAT();
 			}
@@ -1707,6 +1729,7 @@ SolveState solve(const vector<int>& assumptions, Constraint<int,long long>& out)
 			if(decisionLevel()>=(int)assumptions_lim.size()){
 				analyze(confl);
 				learnConstraint(confl_data);
+				confl_data.reset();
 			}else{
 				extractCore(confl,out);
 				return SolveState::UNSAT;
@@ -1770,6 +1793,7 @@ void handleNewSolution(const Constraint<int,long long>& origObjective, long long
 	tmpConstraint.addRhs(-last_sol_obj_val+1);
 	lastObjectiveBoundID=last_proofID+1; // The next constraint added to the proof will be the unaltered upper bound
 	CRef cr = addInputConstraint(tmpConstraint);
+	tmpConstraint.reset();
 	assert(cr!=CRef_Undef);
 	if(external.size()>0){
 		assert(external.size()==1);
@@ -1799,14 +1823,14 @@ struct LazyVar{
 
 	void getAtLeastConstraint(Constraint<int, long long>& out){
 		// X >= (k+i+1)yi (equivalent to yi ==> X>k+i)
-		out.reset();
+		assert(out.isReset());
 		for(int l: lhs) out.addLhs(1,l);
 		out.addLhs(-(rhs+idx+1),currentvar);
 	}
 
 	void getAtMostConstraint(Constraint<int, long long>& out){
 		// ~X >= (n-k-i)~yi (equivalent to ~yi ==> X=<k+i)
-		out.reset();
+		assert(out.isReset());
 		for(int l: lhs) out.addLhs(1,-l);
 		out.addLhs(-(lhs.size()-rhs-idx),-currentvar);
 	}
@@ -1814,7 +1838,8 @@ struct LazyVar{
 	void getSymBreakingConstraint(Constraint<int, long long>& out, int prevvar){
 		// y-- + ~y >= 1 (equivalent to y-- >= y)
 		assert(idx>0);
-		out.reset(1);
+		assert(out.isReset());
+		out.addRhs(1);
 		out.addLhs(1,prevvar);
 		out.addLhs(1,-currentvar);
 	}
@@ -1828,9 +1853,20 @@ ostream & operator<<(ostream & o, LazyVar* lv) {
 }
 
 __int128 lowerBoundFromCoreAggregate(Constraint<int,long long>& origObjective, Constraint<long long,__int128>& coreAggregate){
-	__int128 b = coreAggregate.getDegree();
+	__int128 b = coreAggregate.getDegree()-origObjective.getDegree();
 	for(int v: coreAggregate.vars) if(origObjective.getLit(v)==0) b-=abs(coreAggregate.coefs[v]);
 	return b;
+}
+
+bool testCoreAggregate(const Constraint<int,long long>& origObjective, const Constraint<long long,__int128>& coreAggregate, const Constraint<int, long long>& objective){
+	for(int v=0; v<=n; ++v){
+		if(origObjective.getLit(v)==0){
+			assert(objective.getCoef(v)==-coreAggregate.getCoef(v));
+		}else{
+			assert(origObjective.getCoef(v)==coreAggregate.getCoef(v)+objective.getCoef(v));
+		}
+	}
+	return true;
 }
 
 void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,long long>& core, long long& lower_bound,
@@ -1839,11 +1875,12 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 	// take care of derived unit lits
 	long long prev_lower = lower_bound; _unused(prev_lower);
 	lower_bound = -objective.removeUnits(false);
+	origObjective.removeUnits(false);
+	coreAggregate.removeUnits(false);
 	if(core.getDegree()==0){
 		assert(lower_bound>prev_lower);
 		return; // apparently only unit assumptions were derived
 	}
-
 	// figure out an appropriate core
 	core.simplifyToCardinality(false);
 
@@ -1876,8 +1913,10 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 		lazyVars.push_back(lv);
 		lv->getAtLeastConstraint(tmpConstraint);
 		addInputConstraint(tmpConstraint);
+		tmpConstraint.reset();
 		lv->getAtMostConstraint(tmpConstraint);
 		addInputConstraint(tmpConstraint);
+		tmpConstraint.reset();
 		// check for new lazy variables
 		for(int i=0; i<(int)lazyVars.size(); ++i){
 			LazyVar* lv=lazyVars[i];
@@ -1897,10 +1936,14 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 				// add necessary lazy constraints
 				lv->getAtLeastConstraint(tmpConstraint);
 				addInputConstraint(tmpConstraint);
+				tmpConstraint.reset();
 				lv->getAtMostConstraint(tmpConstraint);
 				addInputConstraint(tmpConstraint);
+				tmpConstraint.reset();
+				assert(tmpConstraint.isReset());
 				lv->getSymBreakingConstraint(tmpConstraint,oldvar);
 				addInputConstraint(tmpConstraint);
+				tmpConstraint.reset();
 			}
 		}
 	}else{
@@ -1919,28 +1962,32 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 		assert(lower_bound==-objective.getDegree());
 		// add channeling constraints
 		addInputConstraint(tmpConstraint);
+		tmpConstraint.reset();
 		core.copyTo(tmpConstraint);
 		assert(tmpConstraint.isCardinality());
 		addInputConstraint(tmpConstraint);
 		// NOTE: addInputConstraint constructs the right proofID for tmpConstraint,
 		// but coreAggregate's construction is only correct if tmpConstraint is not mutated by addInputConstraint.
 		// Due to tmpConstraint being a simple cardinality, this is the case.
-		coreAggregate.removeUnits(false);
 		coreAggregate.add(tmpConstraint,mult,false);
+		tmpConstraint.reset();
 		coreAggregate.removeZeroes();
+		assert(testCoreAggregate(origObjective,coreAggregate,objective));
 		assert(-objective.getDegree()==lowerBoundFromCoreAggregate(origObjective,coreAggregate));
 		for(int v=oldN+1; v<newN; ++v){ // add symmetry breaking constraints
-			tmpConstraint.reset(1);
+			assert(tmpConstraint.isReset());
+			tmpConstraint.addRhs(1);
 			tmpConstraint.addLhs(1,v);
 			tmpConstraint.addLhs(1,-v-1);
 			addInputConstraint(tmpConstraint);
+			tmpConstraint.reset();
 		}
 	}
 }
 
 void optimize(Constraint<int,long long>& objective, Constraint<int,long long>& core){
 	assert(objective.vars.size() > 0);
-	// NOTE: -objective.getRhs() keeps track of the offset of the reformulated objective (or after removing unit lits)
+	// NOTE: -objective.getDegree() keeps track of the offset of the reformulated objective (or after removing unit lits)
 	objective.removeZeroes();
 	long long lower_bound = -objective.removeUnits(false);
 
@@ -1989,11 +2036,11 @@ void optimize(Constraint<int,long long>& objective, Constraint<int,long long>& c
 		if(lower_bound>=last_sol_obj_val){
 			printObjBounds(lower_bound,last_sol_obj_val);
 			if(logProof()){
-				coreAggregate.removeUnits(false);
 				origObjective.copyTo(tmpConstraint,-1);
 				tmpConstraint.addRhs(-last_sol_obj_val+1);
 				tmpConstraint.resetBuffer(lastObjectiveBoundID); assert(lastObjectiveBoundID>0);
 				coreAggregate.add(tmpConstraint,1,false);
+				tmpConstraint.reset();
 				coreAggregate.postProcess();
 				coreAggregate.logInconsistency();
 			}
