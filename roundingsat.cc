@@ -636,10 +636,8 @@ struct Constraint{
 		proof_out << "p " << proofBuffer.str() << "0\n";
 		resetBuffer(++last_proofID); // ensure consistent proofBuffer
 		#if !NDEBUG
-		if(getDegree()>0){ // TODO: remove check when VeriPB bug fixed
-			proof_out << "e " << last_proofID << " ";
-			toStreamAsOPB(proof_out);
-		}
+		proof_out << "e " << last_proofID << " ";
+		toStreamAsOPB(proof_out);
 		#endif
 	}
 
@@ -2029,4 +2027,3 @@ int main(int argc, char**argv){
 		}
 	}
 }
-// TODO problem instance: /home/jodv/workspace/instances/opt/PB/PB16_full/PB06/mps-v2-20-10/MIPLIB/miplib/normalized-mps-v2-20-10-mod008.opb.bz2
