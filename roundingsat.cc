@@ -321,8 +321,9 @@ struct Constraint{
 	}
 	inline int getLit(int l) const { // NOTE: always check for answer "0"!
 		int v = abs(l);
+		if(v>(int)coefs.size()) return 0;
 		SMALL c = coefs[v];
-		if(v>=(int)coefs.size() || c==0 || c==_unused_()) return 0;
+		if(c==0 || c==_unused_()) return 0;
 		else if(c<0) return -v;
 		else return v;
 	}
