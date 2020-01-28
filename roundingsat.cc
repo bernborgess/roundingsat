@@ -308,7 +308,7 @@ struct Constraint{
 		coefs[v]+=c;
 	}
 
-	inline void addRhs(SMALL r){ rhs+=r; }
+	inline void addRhs(LARGE r){ rhs+=r; }
 	inline LARGE getRhs() const { return rhs; }
 	inline LARGE getDegree() const {
 		LARGE result = rhs;
@@ -568,7 +568,7 @@ struct Constraint{
 		std::vector<int> litsByPos;
 		litsByPos.reserve(vars.size());
 		for(int v: vars){
-			int l = getLit(v);
+			int l = getLit(v); assert(l!=0);
 			if(~Level[-l]) litsByPos.push_back(-l);
 		}
 		std::sort(litsByPos.begin(),litsByPos.end(),[&](int l1,int l2){ return Pos[abs(l1)]<Pos[abs(l2)]; });
@@ -974,10 +974,11 @@ void decide(int l){
 
 void recomputeLBD(Clause& C) {
 	if(C.lbd()<=2) return;
-	tmpSet.reset();
+	assert(tmpSet.size()==0);
 	int * lits = C.lits();
 	for (int i=0; i<(int)C.size(); i++) if (~Level[-lits[i]]) tmpSet.add(Level[-lits[i]]);
 	C.setLBD(tmpSet.size());
+	tmpSet.reset();
 }
 
 void analyze(CRef confl){
@@ -989,7 +990,7 @@ void analyze(CRef confl){
 
 	confl_data.init(C);
 	confl_data.removeUnits();
-	actSet.reset();
+	assert(actSet.size()==0); // will hold the literals that need their activity bumped
 	for(int v: confl_data.vars) actSet.add(confl_data.getLit(v));
 	while(true){
 		if (decisionLevel() == 0) {
@@ -1031,6 +1032,7 @@ void analyze(CRef confl){
 	}
 	assert(confl_data.getSlack()<0);
 	for(int l: actSet.getKeys()) if(l!=0) varBumpActivity(abs(l));
+	actSet.reset();
 }
 
 /**
@@ -1147,11 +1149,10 @@ void setNbVariables(long long nvars){
 void learnConstraint(Constraint<long long,__int128>& confl){
 	assert(confl.getDegree()>0);
 	assert(confl.getDegree()<=1e9);
-
+	assert(confl.isSaturated());
 	confl.copyTo(tmpConstraint);
 	backjumpTo(tmpConstraint.getAssertionLevel());
 	assert(qhead==(int)trail.size()); // jumped back sufficiently far to catch up with qhead
-
 	long long slk = tmpConstraint.getSlack();
 	if(slk<0){
 		if(logProof()) tmpConstraint.logInconsistency();
@@ -1643,7 +1644,7 @@ void extractCore(CRef confl, Constraint<int,long long>& outCore, int l_assump=0)
 	// Set all assumptions in front of the trail, all propagations later. This makes it easy to do decision learning.
 	// For this, we first copy the trail, then backjump to 0, then rebuild the trail.
 	// Otherwise, reordering the trail messes up the slacks of the watched constraints (see undoOne()).
-	tmpSet.reset(); // holds the assumptions
+	assert(tmpSet.size()==0); // will hold the assumptions
 	std::vector<int> props; // holds the propagations
 	props.reserve(trail.size());
 	assert(trail_lim.size()>0);
@@ -1690,6 +1691,7 @@ void extractCore(CRef confl, Constraint<int,long long>& outCore, int l_assump=0)
 	for(int v: outCore.vars) if(!tmpSet.has(-outCore.getLit(v))) outCore.weaken(-outCore.coefs[v],v);
 	outCore.postProcess();
 	assert(assumpSlack(tmpSet,outCore)<0);
+	tmpSet.reset();
 	backjumpTo(0);
 }
 
