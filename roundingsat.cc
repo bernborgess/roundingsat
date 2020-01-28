@@ -256,7 +256,7 @@ struct Constraint{
 	void init(Clause& C){
 		assert(isReset()); // don't use a Constraint used by other stuff
 		addRhs(C.degree());
-		for(size_t i=0;i<C.size();++i) addLhs(C.coef(i), C.lits()[i]);
+		for(size_t i=0;i<C.size();++i){ assert(C.coef(i)!=0); addLhs(C.coef(i), C.lits()[i]); }
 		if(logProof()) resetBuffer(C.id);
 	}
 
@@ -296,13 +296,8 @@ struct Constraint{
 	// NOTE: erasing variables with coef 0 in addLhs would lead to invalidated iteration (e.g., for loops that weaken)
 	void addLhs(SMALL c, int l){ // treats negative literals as 1-v
 		assert(l!=0);
-		if(c==0) return; // TODO: replace by calls to removeZeroes() at appropriate points
 		int v = l;
-		if(l<0){
-			rhs -= c;
-			c = -c;
-			v = -l;
-		}
+		if(l<0){ rhs -= c; c = -c; v = -l; }
 		assert(v<(int)coefs.size());
 		if(coefs[v]==_unused_()) vars.push_back(v), coefs[v]=0;
 		coefs[v]+=c;
@@ -331,8 +326,14 @@ struct Constraint{
 		assert((getLit(v)!=0 && Level[-getLit(v)]==-1)==(coefs[v]>0 && Level[-v]==-1) || (coefs[v]<0 && Level[v]==-1));
 		return (coefs[v]>0 && Level[-v]==-1) || (coefs[v]<0 && Level[v]==-1);
 	}
+	LARGE getSlack() const {
+		LARGE slack = -rhs;
+		for(int v: vars) if(Level[v]!=-1 || (Level[-v]==-1 && coefs[v]>0)) slack+=coefs[v];
+		return slack;
+	}
 
 	inline void weaken(SMALL m, int l){ // add m*(l>=0) if m>0 and -m*(-l>=-1) if m<0
+		if(m==0) return;
 		if(logProof()){
 			if(m>0) proofBuffer << (l<0?"~x":"x") << abs(l) <<  " " << proofMult(m) << "+ ";
 			else proofBuffer << (l<0?"x":"~x") << abs(l) <<  " " << proofMult(-m) << "+ ";
@@ -382,7 +383,7 @@ struct Constraint{
 	}
 
 	template<class S, class L>
-	void copyTo(Constraint<S,L>& out, S mult=1) const { // TODO: refactor to replace by add(...)
+	void copyTo(Constraint<S,L>& out, S mult=1) const { // NOTE: more efficient than add(...)
 		assert(out.isReset());
 		out.addRhs(mult*rhs);
 		out.resize(coefs.size());
@@ -394,18 +395,13 @@ struct Constraint{
 		}
 	}
 
-	LARGE getSlack() const {
-		LARGE slack = -rhs;
-		for(int v: vars) if(Level[v]!=-1 || (Level[-v]==-1 && coefs[v]>0)) slack+=coefs[v];
-		return slack;
-	}
-
 	template<class S, class L>
 	void add(const Constraint<S,L>& c, SMALL mult=1, bool saturateAndReduce=true){
 		if(logProof()) proofBuffer << c.proofBuffer.str() << proofMult(mult) << "+ ";
 		for(int v: c.vars) addLhs(mult*c.coefs[v],v);
 		addRhs(mult*c.rhs);
 		if(!saturateAndReduce) return;
+		removeZeroes();
 		LARGE deg = saturate();
 		if (deg > (int) 1e9) roundToOne(ceildiv<LARGE>(deg,1e9),!originalRoundToOne);
 		assert(getDegree() <= (int)1e9);
@@ -678,11 +674,12 @@ struct Constraint{
 		o << ">= " << rhs << " ;\n";
 	}
 };
+using intConstr = Constraint<int,long long>;
+using longConstr = Constraint<long long,__int128>;
 
-Constraint<int, long long> objective_func;
-Constraint<int, long long> tmpConstraint;
-Constraint<long long, __int128> confl_data;
-Constraint<int, long long> logConstraint;
+intConstr tmpConstraint;
+longConstr confl_data;
+intConstr logConstraint;
 
 template<class S, class L>
 ostream & operator<<(ostream & o, const Constraint<S,L>& C) {
@@ -697,11 +694,9 @@ ostream & operator<<(ostream & o, const Constraint<S,L>& C) {
 	return o;
 }
 ostream & operator<<(ostream & o, Clause & C) {
-	// TODO: improve performance
-	Constraint<int,long long> aux;
-	aux.resize(n+1);
-	aux.init(C);
-	o << aux;
+	logConstraint.init(C);
+	o << logConstraint;
+	logConstraint.reset();
 	return o;
 }
 
@@ -774,7 +769,7 @@ struct {
 	}
 	int sz_constr(int length) { return (sizeof(Clause)+sizeof(int)*length+sizeof(int)*length)/sizeof(uint32_t); }
 
-	CRef alloc(const Constraint<int,long long>& constraint, long long proofID, bool learnt, bool locked){
+	CRef alloc(const intConstr& constraint, long long proofID, bool learnt, bool locked){
 		long long degree = constraint.getDegree();
 		assert(degree>0);
 		assert(degree<=1e9);
@@ -902,7 +897,7 @@ void uncheckedEnqueue(int p, CRef from=CRef_Undef){
 }
 
 // @pre: removeUnits and removeZeroes executed on constraint
-CRef attachConstraint(Constraint<int,long long>& constraint, bool learnt, bool locked=false){
+CRef attachConstraint(intConstr& constraint, bool learnt, bool locked=false){
 	// sort from smallest to largest coefficient
 	std::sort(constraint.vars.begin(),constraint.vars.end(),[&](int v1,int v2){
 		return abs(constraint.coefs[v1])>abs(constraint.coefs[v2]); });
@@ -1147,7 +1142,7 @@ void setNbVariables(long long nvars){
 // ---------------------------------------------------------------------
 // Constraint addition
 
-void learnConstraint(Constraint<long long,__int128>& confl){
+void learnConstraint(longConstr& confl){
 	assert(confl.getDegree()>0);
 	assert(confl.getDegree()<=1e9);
 	assert(confl.isSaturated());
@@ -1176,7 +1171,7 @@ void learnConstraint(Constraint<long long,__int128>& confl){
 	tmpConstraint.reset();
 }
 
-CRef addInputConstraint(Constraint<int, long long>& c, bool initial=false){
+CRef addInputConstraint(intConstr& c, bool initial=false){
 	assert(decisionLevel()==0);
 	assert(learnts.size()==0 || !initial);
 	if(logProof()){
@@ -1225,8 +1220,8 @@ int read_number(const string & s) {
 	return answer;
 }
 
-void opb_read(istream & in) {
-	Constraint<int,long long> inverted;
+void opb_read(istream & in, intConstr& objective) {
+	intConstr inverted;
 	bool first_constraint = true; _unused(first_constraint);
 	for (string line; getline(in, line);) {
 		if (line.empty()) continue;
@@ -1269,7 +1264,7 @@ void opb_read(istream & in) {
 				tmpConstraint.addLhs(coef,l);
 			}
 			if(opt_line){
-				tmpConstraint.copyTo(objective_func);
+				tmpConstraint.copyTo(objective);
 				tmpConstraint.reset();
 			}else{
 				tmpConstraint.addRhs(read_number(line0.substr(line0.find("=") + 1)));
@@ -1289,8 +1284,8 @@ void opb_read(istream & in) {
 	orig_n=n;
 }
 
-void wcnf_read(istream & in, long long top) {
-	objective_func.reset();
+void wcnf_read(istream & in, long long top, intConstr& objective) {
+	assert(objective.isReset());
 	for (string line; getline(in, line);) {
 		if (line.empty() || line[0] == 'c') continue;
 		else {
@@ -1305,15 +1300,15 @@ void wcnf_read(istream & in, long long top) {
 				if(weight>1e9) exit_ERROR({"Clause weight exceeds 10^9: ",std::to_string(weight)});
 				if(weight<0) exit_ERROR({"Negative clause weight: ",std::to_string(weight)});
 				setNbVariables(n+1); // increases n to n+1
-				objective_func.resize(n+1);
-				objective_func.addLhs(weight,n);
+				objective.resize(n+1);
+				objective.addLhs(weight,n);
 				tmpConstraint.addLhs(1,n);
 			} // else hard clause
 			addInputConstraint(tmpConstraint,true);
 			tmpConstraint.reset();
 		}
 	}
-	orig_n = n-objective_func.vars.size();
+	orig_n = n-objective.vars.size();
 }
 
 void cnf_read(istream & in) {
@@ -1332,7 +1327,7 @@ void cnf_read(istream & in) {
 	orig_n=n;
 }
 
-void file_read(istream & in) {
+void file_read(istream & in, intConstr& objective) {
 	for (string line; getline(in, line);) {
 		if (line.empty() || line[0] == 'c') continue;
 		if (line[0] == 'p') {
@@ -1347,7 +1342,7 @@ void file_read(istream & in) {
 			}else if(type == "wcnf"){
 				is >> line; // skip nbConstraints
 				long long top; is >> top;
-				wcnf_read(in, top);
+				wcnf_read(in, top, objective);
 				return;
 			}
 		} else if (line[0] == '*' && line.substr(0, 13) == "* #variable= ") {
@@ -1355,7 +1350,7 @@ void file_read(istream & in) {
 			int n;
 			is >> n;
 			setNbVariables(n);
-			opb_read(in);
+			opb_read(in,objective);
 			return;
 		}
 	}
@@ -1631,7 +1626,7 @@ LARGE assumpSlack(const IntSet& assumptions, const Constraint<SMALL, LARGE>& cor
 	return slack;
 }
 
-void extractCore(CRef confl, Constraint<int,long long>& outCore, int l_assump=0){
+void extractCore(CRef confl, intConstr& outCore, int l_assump=0){
 	assert(confl!=CRef_Undef);
 
 	if(l_assump!=0){ // l_assump is an assumption propagated to the opposite value
@@ -1698,7 +1693,7 @@ void extractCore(CRef confl, Constraint<int,long long>& outCore, int l_assump=0)
 
 enum SolveState { SAT, UNSAT, INPROCESSING };
 
-SolveState solve(const vector<int>& assumptions, Constraint<int,long long>& out) {
+SolveState solve(const vector<int>& assumptions, intConstr& out) {
 	out.reset();
 	backjumpTo(0); // ensures assumptions are reset
 	std::vector<unsigned int> assumptions_lim={0};
@@ -1786,13 +1781,13 @@ inline void printObjBounds(long long lower, long long upper){
 	else printf("c bounds          - >= %10lld\n",lower);
 }
 
-void handleNewSolution(const Constraint<int,long long>& origObjective, long long& lastObjectiveBoundID){
+void handleNewSolution(const intConstr& origObj, long long& lastObjectiveBoundID){
 	int prev_val = last_sol_obj_val; _unused(prev_val);
-	last_sol_obj_val = -origObjective.getRhs();
-	for(int v: origObjective.vars) last_sol_obj_val+=origObjective.coefs[v]*last_sol[v];
+	last_sol_obj_val = -origObj.getRhs();
+	for(int v: origObj.vars) last_sol_obj_val+=origObj.coefs[v]*last_sol[v];
 	assert(last_sol_obj_val<prev_val);
 
-	origObjective.copyTo(tmpConstraint,-1);
+	origObj.copyTo(tmpConstraint,-1);
 	tmpConstraint.addRhs(-last_sol_obj_val+1);
 	lastObjectiveBoundID=last_proofID+1; // The next constraint added to the proof will be the unaltered upper bound
 	CRef cr = addInputConstraint(tmpConstraint);
@@ -1817,28 +1812,28 @@ struct LazyVar{
 	int idx;
 	int nvars;
 
-	LazyVar(const Constraint<int, long long>& core, int startvar, int m):
+	LazyVar(const intConstr& core, int startvar, int m):
 	rhs(core.getDegree()),mult(m),currentvar(startvar),idx(0),nvars(core.vars.size()-rhs){
 		assert(core.isCardinality());
 		lhs.reserve(core.vars.size());
 		for(int v: core.vars) lhs.push_back(core.getLit(v));
 	}
 
-	void getAtLeastConstraint(Constraint<int, long long>& out){
+	void getAtLeastConstraint(intConstr& out){
 		// X >= (k+i+1)yi (equivalent to yi ==> X>k+i)
 		assert(out.isReset());
 		for(int l: lhs) out.addLhs(1,l);
 		out.addLhs(-(rhs+idx+1),currentvar);
 	}
 
-	void getAtMostConstraint(Constraint<int, long long>& out){
+	void getAtMostConstraint(intConstr& out){
 		// ~X >= (n-k-i)~yi (equivalent to ~yi ==> X=<k+i)
 		assert(out.isReset());
 		for(int l: lhs) out.addLhs(1,-l);
 		out.addLhs(-(lhs.size()-rhs-idx),-currentvar);
 	}
 
-	void getSymBreakingConstraint(Constraint<int, long long>& out, int prevvar){
+	void getSymBreakingConstraint(intConstr& out, int prevvar){
 		// y-- + ~y >= 1 (equivalent to y-- >= y)
 		assert(idx>0);
 		assert(out.isReset());
@@ -1855,30 +1850,33 @@ ostream & operator<<(ostream & o, LazyVar* lv) {
 	return o;
 }
 
-__int128 lowerBoundFromCoreAggregate(Constraint<int,long long>& origObjective, Constraint<long long,__int128>& coreAggregate){
-	__int128 b = coreAggregate.getDegree()-origObjective.getDegree();
-	for(int v: coreAggregate.vars) if(origObjective.getLit(v)==0) b-=abs(coreAggregate.coefs[v]);
+__int128 lowerBoundFromCoreAggregate(intConstr& origObj, longConstr& coreAggregate){
+	__int128 b = coreAggregate.getDegree()-origObj.getDegree();
+	for(int v: coreAggregate.vars) if(origObj.getLit(v)==0) b-=abs(coreAggregate.coefs[v]);
 	return b;
 }
 
-bool testCoreAggregate(const Constraint<int,long long>& origObjective, const Constraint<long long,__int128>& coreAggregate, const Constraint<int, long long>& objective){
+bool testCoreAggregate(const intConstr& origObj, const longConstr& coreAggregate, const longConstr& reformObj){
 	for(int v=0; v<=n; ++v){
-		if(origObjective.getLit(v)==0){
-			assert(objective.getCoef(v)==-coreAggregate.getCoef(v));
+		if(origObj.getLit(v)==0){
+			assert(reformObj.getCoef(v)==-coreAggregate.getCoef(v));
 		}else{
-			assert(origObjective.getCoef(v)==coreAggregate.getCoef(v)+objective.getCoef(v));
+			assert(origObj.getCoef(v)==coreAggregate.getCoef(v)+reformObj.getCoef(v));
 		}
 	}
 	return true;
 }
 
-void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,long long>& core, long long& lower_bound,
-                         std::vector<LazyVar*>& lazyVars, Constraint<long long,__int128>& coreAggregate,
-                         Constraint<int,long long>& origObjective){ // TODO: typedef IntConstraint and LongConstraint
+void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lower_bound,
+                         std::vector<LazyVar*>& lazyVars, longConstr& coreAggregate,
+                         intConstr& origObj){ // TODO: typedef IntConstraint and LongConstraint
+	reformObj.removeZeroes();
+	origObj.removeZeroes();
+	coreAggregate.removeZeroes();
 	// take care of derived unit lits
 	long long prev_lower = lower_bound; _unused(prev_lower);
-	lower_bound = -objective.removeUnits(false);
-	origObjective.removeUnits(false);
+	lower_bound = -reformObj.removeUnits(false);
+	origObj.removeUnits(false);
 	coreAggregate.removeUnits(false);
 	if(core.getDegree()==0){
 		assert(lower_bound>prev_lower);
@@ -1890,11 +1888,10 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 	// adjust the lower bound
 	long long degree = core.getDegree();
 	if(degree>1) ++NCORECARDINALITIES;
-	assert(degree<=1e9); assert(degree>0);
 	int mult = INF;
 	for(int v: core.vars){
-		assert(objective.getLit(v)!=0);
-		mult=min(mult,abs(objective.coefs[v]));
+		assert(reformObj.getLit(v)!=0);
+		mult=min((long long)mult,abs(reformObj.coefs[v]));
 	}
 	assert(mult<INF); assert(mult>0);
 	lower_bound+=degree*mult;
@@ -1905,12 +1902,11 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 		setNbVariables(newN);
 		core.resize(newN+1);
 		coreAggregate.resize(newN+1);
-		objective.resize(newN+1);
+		reformObj.resize(newN+1);
 		// reformulate the objective
-		objective.add(core,-mult,false);
-		objective.addLhs(mult,newN); // add only one variable for now
-		objective.removeZeroes();
-		assert(lower_bound==-objective.getDegree());
+		reformObj.add(core,-mult,false);
+		reformObj.addLhs(mult,newN); // add only one variable for now
+		assert(lower_bound==-reformObj.getDegree());
 		// add first lazy constraint
 		LazyVar* lv = new LazyVar(core,newN,mult);
 		lazyVars.push_back(lv);
@@ -1923,7 +1919,7 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 		// check for new lazy variables
 		for(int i=0; i<(int)lazyVars.size(); ++i){
 			LazyVar* lv=lazyVars[i];
-			if(objective.getCoef(lv->currentvar)<=0){
+			if(reformObj.getCoef(lv->currentvar)<=0){
 				lv->idx++;
 				if(lv->idx==lv->nvars){ swapErase(lazyVars,i--); delete lv; continue; }
 				// add auxiliary variable
@@ -1931,11 +1927,11 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 				setNbVariables(newN);
 				core.resize(newN+1);
 				coreAggregate.resize(newN+1);
-				objective.resize(newN+1);
+				reformObj.resize(newN+1);
 				int oldvar = lv->currentvar;
 				lv->currentvar = newN;
 				// reformulate the objective
-				objective.addLhs(lv->mult,newN);
+				reformObj.addLhs(lv->mult,newN);
 				// add necessary lazy constraints
 				lv->getAtLeastConstraint(tmpConstraint);
 				addInputConstraint(tmpConstraint);
@@ -1956,13 +1952,12 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 		setNbVariables(newN);
 		core.resize(newN+1);
 		coreAggregate.resize(newN+1);
-		objective.resize(newN+1);
+		reformObj.resize(newN+1);
 		// reformulate the objective
 		for(int v=oldN+1; v<=newN; ++v) core.addLhs(-1,v);
 		core.copyTo(tmpConstraint,-1);
-		objective.add(tmpConstraint,mult,false);
-		objective.removeZeroes();
-		assert(lower_bound==-objective.getDegree());
+		reformObj.add(tmpConstraint,mult,false);
+		assert(lower_bound==-reformObj.getDegree());
 		// add channeling constraints
 		addInputConstraint(tmpConstraint);
 		tmpConstraint.reset();
@@ -1974,9 +1969,8 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 		// Due to tmpConstraint being a simple cardinality, this is the case.
 		coreAggregate.add(tmpConstraint,mult,false);
 		tmpConstraint.reset();
-		coreAggregate.removeZeroes();
-		assert(testCoreAggregate(origObjective,coreAggregate,objective));
-		assert(-objective.getDegree()==lowerBoundFromCoreAggregate(origObjective,coreAggregate));
+		assert(testCoreAggregate(origObj,coreAggregate,reformObj));
+		assert(-reformObj.getDegree()==lowerBoundFromCoreAggregate(origObj,coreAggregate));
 		for(int v=oldN+1; v<newN; ++v){ // add symmetry breaking constraints
 			assert(tmpConstraint.isReset());
 			tmpConstraint.addRhs(1);
@@ -1988,25 +1982,25 @@ void handleInconsistency(Constraint<int,long long>& objective, Constraint<int,lo
 	}
 }
 
-void optimize(Constraint<int,long long>& objective, Constraint<int,long long>& core){
-	assert(objective.vars.size() > 0);
-	// NOTE: -objective.getDegree() keeps track of the offset of the reformulated objective (or after removing unit lits)
-	objective.removeZeroes();
-	long long lower_bound = -objective.removeUnits(false);
+void optimize(intConstr& origObj, intConstr& core){
+	assert(origObj.vars.size() > 0);
+	// NOTE: -origObj.getDegree() keeps track of the offset of the reformulated objective (or after removing unit lits)
+	origObj.removeZeroes();
+	long long lower_bound = -origObj.removeUnits(false);
 
 	long long opt_coef_sum = 0;
-	for (int v: objective.vars) opt_coef_sum+=abs(objective.coefs[v]);
+	for (int v: origObj.vars) opt_coef_sum+=abs(origObj.coefs[v]);
 	if (opt_coef_sum > (int) 1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
 
-	Constraint<int,long long> origObjective;
-	objective.copyTo(origObjective);
-	Constraint<long long,__int128> coreAggregate;
+	longConstr reformObj;
+	origObj.copyTo(reformObj);
+	longConstr coreAggregate;
 	coreAggregate.resize(n+1);
 	long long lastObjectiveBoundID = 0;
 
 	std::vector<int> assumps;
 	std::vector<LazyVar*> lazyVars;
-	assumps.reserve(objective.vars.size());
+	assumps.reserve(reformObj.vars.size());
 	size_t upper_time=0, lower_time=0;
 	SolveState reply = SolveState::UNSAT;
 	while(true){
@@ -2014,10 +2008,11 @@ void optimize(Constraint<int,long long>& objective, Constraint<int,long long>& c
 		if(reply!=SolveState::INPROCESSING) printObjBounds(lower_bound,last_sol_obj_val);
 		assumps.clear();
 		if(opt_mode==1 || opt_mode==2 || (opt_mode>2 && lower_time<upper_time)){ // use core-guided step
-			for(int v: objective.vars) { assert(objective.getLit(v)!=0); assumps.push_back(-objective.getLit(v)); }
+			reformObj.removeZeroes();
+			for(int v: reformObj.vars) { assert(reformObj.getLit(v)!=0); assumps.push_back(-reformObj.getLit(v)); }
 			std::sort(assumps.begin(),assumps.end(),[&](int l1,int l2){
-				return objective.getCoef(-l1)>objective.getCoef(-l2) ||
-				       (objective.getCoef(-l1)==objective.getCoef(-l2) && abs(l1)<abs(l2));
+				return reformObj.getCoef(-l1)>reformObj.getCoef(-l2) ||
+				       (reformObj.getCoef(-l1)==reformObj.getCoef(-l2) && abs(l1)<abs(l2));
 			});
 		}
 		assert(last_sol_obj_val>lower_bound);
@@ -2027,19 +2022,19 @@ void optimize(Constraint<int,long long>& objective, Constraint<int,long long>& c
 		else lower_time+=DETERMINISTICTIME-current_time;
 		if(reply==SolveState::SAT){
 			++NSOLS;
-			handleNewSolution(origObjective,lastObjectiveBoundID);
+			handleNewSolution(origObj,lastObjectiveBoundID);
 		}	else if(reply==SolveState::UNSAT) {
 			++NCORES;
 			if(core.getSlack()<0){
 				if(logProof()) core.logInconsistency();
 				exit_UNSAT();
 			}
-			handleInconsistency(objective,core,lower_bound,lazyVars,coreAggregate,origObjective);
+			handleInconsistency(reformObj,core,lower_bound,lazyVars,coreAggregate,origObj);
 		} // else reply==SolveState::INPROCESSING, keep looping
 		if(lower_bound>=last_sol_obj_val){
 			printObjBounds(lower_bound,last_sol_obj_val);
 			if(logProof()){
-				origObjective.copyTo(tmpConstraint,-1);
+				origObj.copyTo(tmpConstraint,-1);
 				tmpConstraint.addRhs(-last_sol_obj_val+1);
 				tmpConstraint.resetBuffer(lastObjectiveBoundID); assert(lastObjectiveBoundID>0);
 				coreAggregate.add(tmpConstraint,1,false);
@@ -2055,11 +2050,14 @@ void optimize(Constraint<int,long long>& objective, Constraint<int,long long>& c
 int main(int argc, char**argv){
 	initial_time = cpuTime();
 	init();
+	intConstr objective;
+	intConstr inconsistency;
+
 	signal(SIGINT, SIGINT_exit);
 	signal(SIGTERM,SIGINT_exit);
 	signal(SIGXCPU,SIGINT_exit);
-	string filename = read_options(argc, argv);
 
+	string filename = read_options(argc, argv);
 	if(logProof()){
 		formula_out = ofstream(proof_log_name+".formula");
 		formula_out << "* #variable= 0 #constraint= 0\n";
@@ -2068,35 +2066,28 @@ int main(int argc, char**argv){
 		proof_out << "pseudo-Boolean proof version 1.0\n";
 		proof_out << "l 1\n"; ++last_proofID;
 	}
-
 	if (!filename.empty()) {
 		ifstream fin(filename);
-		if (!fin)  exit_ERROR({"Could not open ",filename});
-		file_read(fin);
+		if (!fin) exit_ERROR({"Could not open ",filename});
+		file_read(fin,objective);
 	} else {
 		if (verbosity > 0) std::cout << "c No filename given, reading from standard input." << std::endl;
-		file_read(cin);
+		file_read(cin,objective);
 	}
 	if(logProof()) formula_out << "* INPUT FORMULA ABOVE - AUXILIARY AXIOMS BELOW\n";
+	std::cout << "c #variables=" << orig_n << " #constraints=" << clauses.size() << std::endl;
+
 	signal(SIGINT, SIGINT_interrupt);
 	signal(SIGTERM,SIGINT_interrupt);
 	signal(SIGXCPU,SIGINT_interrupt);
 
-	std::cout << "c #variables=" << orig_n << " #constraints=" << clauses.size() << std::endl;
-
-	Constraint<int,long long> inconsistency;
-
-	if(objective_func.vars.size() > 0){
-		optimize(objective_func,inconsistency);
-	}else{
-		// TODO: fix empty objective function
-		while(true){
-			SolveState reply = solve({},inconsistency);
-			if(reply==SolveState::SAT) exit_SAT();
-			else if(reply==SolveState::UNSAT){
-				if(logProof()) inconsistency.logInconsistency();
-				exit_UNSAT();
-			}
+	if(objective.vars.size() > 0) optimize(objective,inconsistency);
+	else while(true){
+		SolveState reply = solve({},inconsistency);
+		if(reply==SolveState::SAT) exit_SAT();
+		else if(reply==SolveState::UNSAT){
+			if(logProof()) inconsistency.logInconsistency();
+			exit_UNSAT();
 		}
 	}
 }
