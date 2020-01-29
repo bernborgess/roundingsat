@@ -81,14 +81,14 @@ __int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
 long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
 long long NGCD=0, NCARDDETECT=0, NCORECARDINALITIES=0, NCORES=0, NSOLS=0;
 long long NWEAKENEDNONIMPLYING=0, NWEAKENEDNONIMPLIED=0;
-double rinc = 2;
-int rfirst = 100;
-int nbclausesbeforereduce=2000;
-int incReduceDB=300;
-int cnt_reduceDB=0;
+double rinc=2;
+long long rfirst=100;
+long long nbclausesbeforereduce=2000;
+long long incReduceDB=300;
+long long cnt_reduceDB=0;
 bool originalRoundToOne=false;
 int opt_mode=0;
-int curr_restarts=0;
+long long curr_restarts=0;
 long long nconfl_to_restart=0;
 bool print_sol = false;
 string proof_log_name = "";
@@ -403,11 +403,11 @@ struct Constraint{
 		if(!saturateAndReduce) return;
 		removeZeroes();
 		LARGE deg = saturate();
-		if (deg > (int) 1e9) roundToOne(ceildiv<LARGE>(deg,1e9),!originalRoundToOne);
-		assert(getDegree() <= (int)1e9);
+		if(deg > (LARGE)1e9) roundToOne(ceildiv<LARGE>(deg,1e9),!originalRoundToOne);
+		assert(getDegree() <= (LARGE)1e9);
 	}
 
-	void roundToOne(SMALL d, bool partial){
+	void roundToOne(const SMALL d, bool partial){
 		assert(isSaturated());
 		assert(d>0);
 		if(d==1) return;
@@ -421,7 +421,7 @@ struct Constraint{
 				}else{
 					assert((Level[v]==-1)==(coefs[v]>0));
 					if(coefs[v]<0){
-						int weakening = d+(coefs[v]%d);
+						SMALL weakening = d+(coefs[v]%d);
 						coefs[v]-=weakening;
 						rhs-=weakening;
 					}else coefs[v]+=d-(coefs[v]%d);
@@ -478,7 +478,7 @@ struct Constraint{
 		assert(skippable<=(int)vars.size()-largeCoefsNeeded);
 
 		if(logProof()){
-			int div_coef = abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
+			SMALL div_coef = abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
 			for(int i=0; i<skippable; ++i){ // weaken small vars
 				int l = getLit(vars[i]);
 				SMALL d = getCoef(l);
@@ -518,7 +518,7 @@ struct Constraint{
 			_gcd = gcd(_gcd,(unsigned int) abs(coefs[v]));
 			if(_gcd==1) return false;
 		}
-		assert(_gcd>1);
+		assert(_gcd>1); assert(_gcd<(unsigned int)INF);
 		for (int v: vars) coefs[v] /= (int)_gcd;
 		// NOTE: as all coefficients are divisible, we can ceildiv the rhs instead of the degree
 		rhs=ceildiv_safe<LARGE>(rhs,_gcd);
@@ -1245,8 +1245,8 @@ void opb_read(istream & in, intConstr& objective) {
 			vector<string> tokens;
 			{ string tmp; while (is >> tmp) tokens.push_back(tmp); }
 			if (tokens.size() % 2 != 0) exit_ERROR({"No support for non-linear constraints."});
-			for (int i=0; i<(int)tokens.size(); i+=2) if (find(tokens[i].begin(),tokens[i].end(),'x')!=tokens[i].end()) exit_ERROR({"No support for non-linear constraints."});
-			for (int i=0; i<(int)tokens.size(); i+=2) {
+			for (int i=0; i<(long long)tokens.size(); i+=2) if (find(tokens[i].begin(),tokens[i].end(),'x')!=tokens[i].end()) exit_ERROR({"No support for non-linear constraints."});
+			for (int i=0; i<(long long)tokens.size(); i+=2) {
 				string scoef = tokens[i];
 				string var = tokens[i+1];
 				int coef = read_number(scoef);
@@ -1334,7 +1334,7 @@ void file_read(istream & in, intConstr& objective) {
 			istringstream is (line);
 			is >> line; // skip 'p'
 			string type; is >> type;
-			int n; is >> n;
+			long long n; is >> n;
 			setNbVariables(n);
 			if(type=="cnf"){
 				cnf_read(in);
@@ -1347,8 +1347,7 @@ void file_read(istream & in, intConstr& objective) {
 			}
 		} else if (line[0] == '*' && line.substr(0, 13) == "* #variable= ") {
 			istringstream is (line.substr(13));
-			int n;
-			is >> n;
+			long long n; is >> n;
 			setNbVariables(n);
 			opb_read(in,objective);
 			return;
@@ -1477,8 +1476,8 @@ void print_stats() {
 	printf("c propagations %lld\n", NPROP);
 	printf("c decisions %lld\n", NDECIDE);
 	printf("c conflicts %lld\n", NCONFL);
-	printf("c restarts %d\n", curr_restarts);
-	printf("c inprocessing phases %d\n", cnt_reduceDB);
+	printf("c restarts %lld\n", curr_restarts);
+	printf("c inprocessing phases %lld\n", cnt_reduceDB);
 	printf("c clauses learned %lld\n", NCLAUSESLEARNED);
 	printf("c cardinalities learned %lld\n", NCARDINALITIESLEARNED);
 	printf("c general constraints learned %lld\n", NGENERALSLEARNED);
@@ -1566,7 +1565,7 @@ void usage(int argc, char**argv) {
 	printf("\n");
 	printf("  --var-decay=arg  Set the VSIDS decay factor (0.5<=arg<1; default %lf).\n",var_decay);
 	printf("  --rinc=arg       Set the base of the Luby restart sequence (floating point number >=1; default %lf).\n",rinc);
-	printf("  --rfirst=arg     Set the interval of the Luby restart sequence (integer >=1; default %d).\n",rfirst);
+	printf("  --rfirst=arg     Set the interval of the Luby restart sequence (integer >=1; default %lld).\n",rfirst);
 	printf("  --original-rto=arg Set whether to use RoundingSat's original round-to-one conflict analysis (0 or 1; default %d).\n",originalRoundToOne);
 	printf("  --opt-mode=arg   Set optimization mode: 0 linear, 1(2) (lazy) core-guided, 3(4) (lazy) hybrid (default %d).\n",opt_mode);
 	printf("  --proof-log=arg  Set a filename for the proof logs (string).\n");
@@ -1898,7 +1897,7 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 
 	if((opt_mode==2 || opt_mode==4) && core.vars.size()-degree>1){
 		// add auxiliary variable
-		int newN = n+1;
+		long long newN = n+1;
 		setNbVariables(newN);
 		core.resize(newN+1);
 		coreAggregate.resize(newN+1);
@@ -1923,7 +1922,7 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 				lv->idx++;
 				if(lv->idx==lv->nvars){ swapErase(lazyVars,i--); delete lv; continue; }
 				// add auxiliary variable
-				int newN = n+1;
+				long long newN = n+1;
 				setNbVariables(newN);
 				core.resize(newN+1);
 				coreAggregate.resize(newN+1);
@@ -1947,8 +1946,8 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 		}
 	}else{
 		// add auxiliary variables
-		int oldN = n;
-		int newN = oldN-degree+core.vars.size();
+		long long oldN = n;
+		long long newN = oldN-degree+core.vars.size();
 		setNbVariables(newN);
 		core.resize(newN+1);
 		coreAggregate.resize(newN+1);
@@ -1990,7 +1989,7 @@ void optimize(intConstr& origObj, intConstr& core){
 
 	long long opt_coef_sum = 0;
 	for (int v: origObj.vars) opt_coef_sum+=abs(origObj.coefs[v]);
-	if (opt_coef_sum > (int) 1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
+	if (opt_coef_sum > (long long)1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
 
 	longConstr reformObj;
 	origObj.copyTo(reformObj);
