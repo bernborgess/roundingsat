@@ -506,10 +506,10 @@ struct Constraint{
 	bool divideByGCD(){
 		assert(isSaturated());
 		if(isCardinality()) return false;
-		int mn=INF;
+		SMALL mn=INF;
 		for(int v: vars){
 			SMALL c = abs(coefs[v]);
-			mn=min<LARGE>(mn,c);
+			mn=min(mn,c);
 			if(c==1 || c>1e9) return false; // TODO: large coefs currently unsupported
 		}
 		assert(mn<INF); assert(mn>0);
@@ -610,14 +610,14 @@ struct Constraint{
 			if(abs(coefs[v])<=wiggle_room && !increasesSlack(v)) vars[i]=vars[j], vars[j]=v, ++j;
 		}
 		std::sort(vars.begin(),vars.begin()+j,[&](int v1,int v2){
-			int c1=abs(coefs[v1]); assert(c1<=wiggle_room);
-			int c2=abs(coefs[v2]); assert(c2<=wiggle_room);
+			SMALL c1=abs(coefs[v1]); assert(c1<=wiggle_room);
+			SMALL c2=abs(coefs[v2]); assert(c2<=wiggle_room);
 			return c1<c2 || (c1==c2 && Pos[v1]>Pos[v2]);
 		});
 		for(int i=0; i<j; ++i){
 			int v = vars[i];
 			assert(!increasesSlack(v));
-			int c = abs(coefs[v]);
+			SMALL c = abs(coefs[v]);
 			wiggle_room-=c;
 			if(wiggle_room<0) break;
 			weaken(-coefs[v],v);
@@ -924,7 +924,7 @@ CRef attachConstraint(intConstr& constraint, bool learnt, bool locked=false){
 		falsifieds.reserve(C.size());
 		for(int i=0; i<(int)C.size(); ++i) if(~Level[-lits[i]] && Pos[abs(lits[i])]<qhead) falsifieds.push_back(i);
 		std::sort(falsifieds.begin(),falsifieds.end(),[&](int i1,int i2){ return Pos[abs(lits[i1])]>Pos[abs(lits[i2])]; });
-		int diff = C.largestCoef()-C.slack;
+		long long diff = C.largestCoef()-C.slack;
 		for(int i: falsifieds){
 			assert(!C.isWatched(i));
 			diff-=coefs[i];
@@ -995,6 +995,7 @@ void analyze(CRef confl){
 			exit_UNSAT();
 		}
 		int l = trail.back();
+		assert(abs(confl_data.getCoef(-l))<INF);
 		int confl_coef_l = confl_data.getCoef(-l);
 		if(confl_coef_l>0) {
 			if (confl_data.falsifiedCurrentLvlIsOne()) {
@@ -1661,6 +1662,7 @@ void extractCore(CRef confl, intConstr& outCore, int l_assump=0){
 	long long assumpslk = assumpSlack(tmpSet,confl_data);
 	while(assumpslk>=0){
 		int l = trail.back();
+		assert(abs(confl_data.getCoef(-l))<INF);
 		int confl_coef_l = confl_data.getCoef(-l);
 		if(confl_coef_l>0) {
 			tmpConstraint.init(ca[Reason[abs(l)]]);
@@ -1695,8 +1697,8 @@ enum SolveState { SAT, UNSAT, INPROCESSING };
 SolveState solve(const vector<int>& assumptions, intConstr& out) {
 	out.reset();
 	backjumpTo(0); // ensures assumptions are reset
-	std::vector<unsigned int> assumptions_lim={0};
-	assumptions_lim.reserve(assumptions.size()+1);
+	std::vector<int> assumptions_lim={0};
+	assumptions_lim.reserve((int)assumptions.size()+1);
 	while (true) {
 		CRef confl = propagate();
 		if (confl != CRef_Undef) {
@@ -1718,7 +1720,7 @@ SolveState solve(const vector<int>& assumptions, intConstr& out) {
 					if(verbosity>2){
 						// memory usage
 						cout<<"c total clause space: "<<ca.cap*4/1024./1024.<<"MB"<<endl;
-						cout<<"c total #watches: ";{int cnt=0;for(int l=-n;l<=n;l++)cnt+=(int)adj[l].size();cout<<cnt<<endl;}
+						cout<<"c total #watches: ";{long long cnt=0;for(int l=-n;l<=n;l++)cnt+=(long long)adj[l].size();cout<<cnt<<endl;}
 					}
 				}
 			}
@@ -1746,7 +1748,7 @@ SolveState solve(const vector<int>& assumptions, intConstr& out) {
 			}
 			int next = 0;
 			if((int)assumptions_lim.size()>decisionLevel()+1)assumptions_lim.resize(decisionLevel()+1);
-			while(assumptions_lim.back()<assumptions.size()){
+			while(assumptions_lim.back()<(int)assumptions.size()){
 				assert(decisionLevel()==(int)assumptions_lim.size()-1);
 				int l_assump = assumptions[assumptions_lim.back()];
 				if (~Level[-l_assump]){ // found conflicting assumption
@@ -1806,7 +1808,7 @@ struct LazyVar{
 	std::vector<int> lhs;
 	int rhs;
 	// info
-	int mult;
+	int mult; // TODO: add long long to int check?
 	int currentvar;
 	int idx;
 	int nvars;
@@ -1887,10 +1889,10 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 	// adjust the lower bound
 	long long degree = core.getDegree();
 	if(degree>1) ++NCORECARDINALITIES;
-	int mult = INF;
+	long long mult = INF;
 	for(int v: core.vars){
 		assert(reformObj.getLit(v)!=0);
-		mult=min((long long)mult,abs(reformObj.coefs[v]));
+		mult=min(mult,abs(reformObj.coefs[v]));
 	}
 	assert(mult<INF); assert(mult>0);
 	lower_bound+=degree*mult;
