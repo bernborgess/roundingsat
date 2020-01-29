@@ -27,7 +27,6 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ***********************************************************************/
 
-using namespace std;
 #include <vector>
 #include <iostream>
 #include <sstream>
@@ -97,9 +96,9 @@ int opt_mode=0;
 long long curr_restarts=0;
 long long nconfl_to_restart=0;
 bool print_sol = false;
-string proof_log_name = "";
+std::string proof_log_name = "";
 bool logProof(){ return !proof_log_name.empty(); }
-ofstream proof_out; ofstream formula_out;
+std::ofstream proof_out; std::ofstream formula_out;
 long long last_proofID = 0; long long last_formID = 0;
 std::vector<long long> unitIDs;
 
@@ -116,7 +115,7 @@ int verbosity = 1;
 // currently, the maximum number of variables is hardcoded (variable N), and most arrays are of fixed size.
 int n = 0;
 int orig_n = 0;
-vector<CRef> formula_constrs, learnts, external;
+std::vector<CRef> formula_constrs, learnts, external;
 struct Watch {
 	CRef cref;
 	int idx;
@@ -124,15 +123,15 @@ struct Watch {
 	bool operator==(const Watch& other)const{return other.cref==cref && other.idx==idx;}
 };
 
-vector<vector<Watch>> _adj={{}}; vector<vector<Watch>>::iterator adj;
-vector<int> _Level={-1}; vector<int>::iterator Level;
-vector<int> trail, trail_lim, Pos;
-vector<CRef> Reason;
+std::vector<std::vector<Watch>> _adj={{}}; std::vector<std::vector<Watch>>::iterator adj;
+std::vector<int> _Level={-1}; std::vector<int>::iterator Level;
+std::vector<int> trail, trail_lim, Pos;
+std::vector<CRef> Reason;
 int qhead; // for unit propagation
 int last_sol_obj_val = INF;
 inline bool foundSolution(){return last_sol_obj_val<INF;}
-vector<bool> last_sol;
-vector<int> phase;
+std::vector<bool> last_sol;
+std::vector<int> phase;
 inline void newDecisionLevel() { trail_lim.push_back(trail.size()); }
 inline int decisionLevel() { return trail_lim.size(); }
 
@@ -165,11 +164,11 @@ struct Constr { // TODO: heuristic info actually not needed in cache-sensitive C
 
 	inline void setStatus(DeletionStatus ds){ header.status=(unsigned) ds; }
 	inline DeletionStatus getStatus(){ return (DeletionStatus) header.status; }
-	inline void setLBD(unsigned int lbd){ header.lbd=min(header.lbd,lbd); }
+	inline void setLBD(unsigned int lbd){ header.lbd=std::min(header.lbd,lbd); }
 	inline unsigned int lbd() const { return header.lbd; }
 	inline bool learnt() const { return header.learnt; }
-	inline int largestCoef() { return abs(coefs()[0]); }
-	inline int coef(int i) { return abs(data[header.size+i]); }
+	inline int largestCoef() { return std::abs(coefs()[0]); }
+	inline int coef(int i) { return std::abs(data[header.size+i]); }
 	inline int lit(int i) { return data[i]; }
 	inline bool isWatched(int idx) { return coefs()[idx]<0; }
 	inline void undoFalsified(int idx) {
@@ -183,7 +182,7 @@ struct Constr { // TODO: heuristic info actually not needed in cache-sensitive C
 		for(int i=0; i<sz; ++i) {
 			int l = data[i];
 			int c = data[sz+i];
-			if(c<0 && (Level[-l]==-1 || Pos[abs(l)]>=qhead)) result+=c;
+			if(c<0 && (Level[-l]==-1 || Pos[std::abs(l)]>=qhead)) result+=c;
 		}
 		return -result;
 	}
@@ -217,9 +216,9 @@ struct Constr { // TODO: heuristic info actually not needed in cache-sensitive C
 		}else if(slack>=0){ // keep the watch, check for propagation
 			int i=watchIdx;
 			DETERMINISTICTIME-=i;
-			for(; i<Csize && abs(cfs[i])>slack; ++i){ // NOTE: second innermost loop of RoundingSat
+			for(; i<Csize && std::abs(cfs[i])>slack; ++i){ // NOTE: second innermost loop of RoundingSat
 				const int l = lts[i];
-				if(Pos[abs(l)]==-1) uncheckedEnqueue(l,cr);
+				if(Pos[std::abs(l)]==-1) uncheckedEnqueue(l,cr);
 			}
 			DETERMINISTICTIME+=i;
 			watchIdx=i;
@@ -271,14 +270,14 @@ unsigned int gcd(unsigned int u, unsigned int v){
 }
 
 template<class T>
-inline string proofMult(T mult){
+inline std::string proofMult(T mult){
 	return (mult==1?"":std::to_string(mult)+" * ");
 }
 
 template<class SMALL, class LARGE> // LARGE should be able to fit sums of SMALL
 struct Constraint{
 	std::vector<int> vars;
-	vector<SMALL> coefs;
+	std::vector<SMALL> coefs;
 	LARGE rhs = 0;
 	static constexpr SMALL _unused_(){ return std::numeric_limits<SMALL>::max(); }
 	std::stringstream proofBuffer;
@@ -358,15 +357,15 @@ struct Constraint{
 	inline LARGE getRhs() const { return rhs; }
 	inline LARGE getDegree() const {
 		LARGE result = rhs;
-		for (int v: vars) result -= min<SMALL>(0,coefs[v]); // considering negative coefficients
+		for (int v: vars) result -= std::min<SMALL>(0,coefs[v]); // considering negative coefficients
 		return result;
 	}
 	inline SMALL getCoef(int l) const {
-		assert(abs(l)<coefs.size());
-		return coefs[abs(l)]==_unused_()?0:(l<0?-coefs[-l]:coefs[l]);
+		assert(std::abs(l)<coefs.size());
+		return coefs[std::abs(l)]==_unused_()?0:(l<0?-coefs[-l]:coefs[l]);
 	}
 	inline int getLit(int l) const { // NOTE: always check for answer "0"!
-		int v = abs(l);
+		int v = std::abs(l);
 		if(v>=(int)coefs.size()) return 0;
 		SMALL c = coefs[v];
 		if(c==0 || c==_unused_()) return 0;
@@ -386,8 +385,8 @@ struct Constraint{
 	inline void weaken(SMALL m, int l){ // add m*(l>=0) if m>0 and -m*(-l>=-1) if m<0
 		if(m==0) return;
 		if(logProof()){
-			if(m>0) proofBuffer << (l<0?"~x":"x") << abs(l) <<  " " << proofMult(m) << "+ ";
-			else proofBuffer << (l<0?"x":"~x") << abs(l) <<  " " << proofMult(-m) << "+ ";
+			if(m>0) proofBuffer << (l<0?"~x":"x") << std::abs(l) <<  " " << proofMult(m) << "+ ";
+			else proofBuffer << (l<0?"x":"~x") << std::abs(l) <<  " " << proofMult(-m) << "+ ";
 		}
 		addLhs(m,l); // TODO: optimize this method by not calling addLhs
 		if(m<0) addRhs(m);
@@ -406,7 +405,7 @@ struct Constraint{
 		}
 		for (int v: vars){
 			if(coefs[v]<-w) rhs-=coefs[v]+w, coefs[v]=-w;
-			else coefs[v]=min<LARGE>(coefs[v],w);
+			else coefs[v]=std::min<LARGE>(coefs[v],w);
 		}
 		assert(isSaturated());
 		assert(w==getDegree()); // degree is invariant under saturation
@@ -415,7 +414,7 @@ struct Constraint{
 
 	bool isSaturated(){
 		LARGE w = getDegree();
-		for(int v:vars) if(abs(coefs[v])>w) return false;
+		for(int v:vars) if(std::abs(coefs[v])>w) return false;
 		return true;
 	}
 
@@ -429,7 +428,7 @@ struct Constraint{
 			int l = getLit(v);
 			if(l==0) continue;
 			lits.push_back(l);
-			cs.push_back(min<LARGE>(getCoef(l),w));
+			cs.push_back(std::min<LARGE>(getCoef(l),w));
 		}
 	}
 
@@ -488,14 +487,14 @@ struct Constraint{
 	}
 
 	bool isCardinality() const {
-		for(int v: vars) if(abs(coefs[v])>1) return false;
+		for(int v: vars) if(std::abs(coefs[v])>1) return false;
 		return true;
 	}
 
 	bool simplifyToCardinality(bool equivalencePreserving){ // TODO: return degree?
 		assert(isSaturated());
 		if(isCardinality()) return false;
-		sort(vars.begin(),vars.end(),[&](int v1, int v2){return abs(coefs[v1])<abs(coefs[v2]);});
+		sort(vars.begin(),vars.end(),[&](int v1, int v2){return std::abs(coefs[v1])<std::abs(coefs[v2]);});
 		LARGE degree = getDegree();
 		assert(degree>0);
 		assert(coefs[vars[0]]!=0);
@@ -504,7 +503,7 @@ struct Constraint{
 		LARGE largeCoefSum=0;
 		while(largeCoefsNeeded<(int)vars.size() && largeCoefSum<degree){
 			++largeCoefsNeeded;
-			largeCoefSum+=abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
+			largeCoefSum+=std::abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
 		}
 		assert(largeCoefsNeeded>0);
 		if(largeCoefSum<degree){
@@ -515,30 +514,30 @@ struct Constraint{
 		int skippable=0;
 		if(equivalencePreserving){
 			LARGE smallCoefSum=0;
-			for(int i=0; i<largeCoefsNeeded; ++i) smallCoefSum+=abs(coefs[vars[i]]);
+			for(int i=0; i<largeCoefsNeeded; ++i) smallCoefSum+=std::abs(coefs[vars[i]]);
 			if(smallCoefSum<degree) return false;
 			// else, we have an equivalent cardinality constraint
 		}else{
-			LARGE wiggleroom=degree-largeCoefSum+abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
+			LARGE wiggleroom=degree-largeCoefSum+std::abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
 			assert(wiggleroom>0);
-			while(skippable<(int)vars.size() && wiggleroom>abs(coefs[vars[skippable]])){
-				wiggleroom-=abs(coefs[vars[skippable]]);
+			while(skippable<(int)vars.size() && wiggleroom>std::abs(coefs[vars[skippable]])){
+				wiggleroom-=std::abs(coefs[vars[skippable]]);
 				++skippable;
 			}
 		}
 		assert(skippable<=(int)vars.size()-largeCoefsNeeded);
 
 		if(logProof()){
-			SMALL div_coef = abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
+			SMALL div_coef = std::abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
 			for(int i=0; i<skippable; ++i){ // weaken small vars
 				int l = getLit(vars[i]);
 				SMALL d = getCoef(l);
-				proofBuffer << (l>0?"~x":"x") << abs(l) << " " << proofMult(d) << "+ ";
+				proofBuffer << (l>0?"~x":"x") << std::abs(l) << " " << proofMult(d) << "+ ";
 			}
 			for(int i=vars.size()-largeCoefsNeeded; i<(int)vars.size(); ++i){ // partially weaken large vars
 				int l = getLit(vars[i]);
 				SMALL d = getCoef(l)-div_coef;
-				proofBuffer << (l>0?"~x":"x") << abs(l) << " " << proofMult(d) << "+ ";
+				proofBuffer << (l>0?"~x":"x") << std::abs(l) << " " << proofMult(d) << "+ ";
 			}
 			if(div_coef>1) proofBuffer << div_coef << " d ";
 		}
@@ -559,14 +558,14 @@ struct Constraint{
 		if(isCardinality()) return false;
 		SMALL mn=INF;
 		for(int v: vars){
-			SMALL c = abs(coefs[v]);
-			mn=min(mn,c);
+			SMALL c = std::abs(coefs[v]);
+			mn=std::min(mn,c);
 			if(c==1 || c>1e9) return false; // TODO: large coefs currently unsupported
 		}
 		assert(mn<INF); assert(mn>0);
 		unsigned int _gcd = mn;
 		for(int v: vars){
-			_gcd = gcd(_gcd,(unsigned int) abs(coefs[v]));
+			_gcd = gcd(_gcd,(unsigned int) std::abs(coefs[v]));
 			if(_gcd==1) return false;
 		}
 		assert(_gcd>1); assert(_gcd<(unsigned int)INF);
@@ -612,14 +611,14 @@ struct Constraint{
 		if(slack<0) return 0;
 
 		// create useful datastructures
-		std::sort(vars.begin(),vars.end(),[&](int v1,int v2){ return abs(coefs[v1])>abs(coefs[v2]); });
+		std::sort(vars.begin(),vars.end(),[&](int v1,int v2){ return std::abs(coefs[v1])>std::abs(coefs[v2]); });
 		std::vector<int> litsByPos;
 		litsByPos.reserve(vars.size());
 		for(int v: vars){
 			int l = getLit(v); assert(l!=0);
 			if(~Level[-l]) litsByPos.push_back(-l);
 		}
-		std::sort(litsByPos.begin(),litsByPos.end(),[&](int l1,int l2){ return Pos[abs(l1)]<Pos[abs(l2)]; });
+		std::sort(litsByPos.begin(),litsByPos.end(),[&](int l1,int l2){ return Pos[std::abs(l1)]<Pos[std::abs(l2)]; });
 
 		// calculate earliest propagating decision level by decreasing slack one decision level at a time
 		auto posIt = litsByPos.cbegin();
@@ -627,14 +626,14 @@ struct Constraint{
 		int assertionLevel = 0;
 		while(true){
 			while(posIt!=litsByPos.cend() && Level[*posIt]<=assertionLevel){
-				slack-=abs(coefs[abs(*posIt)]);
+				slack-=std::abs(coefs[std::abs(*posIt)]);
 				++posIt;
 			}
-			if(slack<0){ assertionLevel=max(assertionLevel-1,0); break; }
+			if(slack<0){ assertionLevel=std::max(assertionLevel-1,0); break; }
 			while((unsigned int)assertionLevel>=(unsigned int)Level[getLit(*coefIt)]) ++coefIt;
 			// NOTE: unsigned int cast ensures assertionLevel < -1
 			assert(coefIt!=vars.cend());
-			if(slack<abs(coefs[*coefIt])) break;
+			if(slack<std::abs(coefs[*coefIt])) break;
 			++assertionLevel;
 		}
 		assert(assertionLevel<decisionLevel());
@@ -643,7 +642,7 @@ struct Constraint{
 
 	void weakenNonImplied(LARGE slack){
 		for (int v: vars){
-			if (abs(coefs[v])<=slack && increasesSlack(v)){
+			if (std::abs(coefs[v])<=slack && increasesSlack(v)){
 				assert(coefs[v]!=0);
 				weaken(-coefs[v],v);
 				++NWEAKENEDNONIMPLIED;
@@ -658,17 +657,17 @@ struct Constraint{
 		int j=0;
 		for(int i=0; i<(int)vars.size(); ++i){
 			int v = vars[i];
-			if(abs(coefs[v])<=wiggle_room && !increasesSlack(v)) vars[i]=vars[j], vars[j]=v, ++j;
+			if(std::abs(coefs[v])<=wiggle_room && !increasesSlack(v)) vars[i]=vars[j], vars[j]=v, ++j;
 		}
 		std::sort(vars.begin(),vars.begin()+j,[&](int v1,int v2){
-			SMALL c1=abs(coefs[v1]); assert(c1<=wiggle_room);
-			SMALL c2=abs(coefs[v2]); assert(c2<=wiggle_room);
+			SMALL c1=std::abs(coefs[v1]); assert(c1<=wiggle_room);
+			SMALL c2=std::abs(coefs[v2]); assert(c2<=wiggle_room);
 			return c1<c2 || (c1==c2 && Pos[v1]>Pos[v2]);
 		});
 		for(int i=0; i<j; ++i){
 			int v = vars[i];
 			assert(!increasesSlack(v));
-			SMALL c = abs(coefs[v]);
+			SMALL c = std::abs(coefs[v]);
 			wiggle_room-=c;
 			if(wiggle_room<0) break;
 			weaken(-coefs[v],v);
@@ -680,8 +679,8 @@ struct Constraint{
 	void heuristicWeakening(LARGE slk){
 		SMALL smallestPropagated=_unused_(); // smallest coefficient of propagated literals
 		if (slk >= 0) for (int v: vars){
-			SMALL c = abs(coefs[v]);
-			if (Pos[v]==-1 && c>slk) smallestPropagated = min(smallestPropagated, c);
+			SMALL c = std::abs(coefs[v]);
+			if (Pos[v]==-1 && c>slk) smallestPropagated = std::min(smallestPropagated, c);
 		}
 		if(smallestPropagated==_unused_()) return; // no propagation, no idea what to weaken
 		weakenNonImplied(slk);
@@ -709,14 +708,14 @@ struct Constraint{
 		assert(decisionLevel()==0);
 		removeUnits();
 		for(int v: vars) if(v!=v_unit) weaken(-coefs[v],v);
-		long long d = max((long long)abs(coefs[v_unit]),getDegree());
+		long long d = std::max((long long)std::abs(coefs[v_unit]),getDegree());
 		if(d>1) proofBuffer << d << " d ";
 		if(coefs[v_unit]>0){ coefs[v_unit]=1; rhs=1; }
 		else{ coefs[v_unit]=-1; rhs=0; }
 		logAsProofLine();
 	}
 
-	void toStreamAsOPB(ofstream& o) const {
+	void toStreamAsOPB(std::ofstream& o) const {
 		for(int v: vars){
 			SMALL c=coefs[v];
 			if(c==0) continue;
@@ -733,18 +732,18 @@ longConstr confl_data;
 intConstr logConstraint;
 
 template<class S, class L>
-ostream & operator<<(ostream & o, const Constraint<S,L>& C) {
+std::ostream & operator<<(std::ostream & o, const Constraint<S,L>& C) {
 	std::vector<int> vars = C.vars;
 	sort(vars.begin(),vars.end(), [](S v1, S v2) { return v1<v2; });
 	for(int v: vars){
 		int l = C.getLit(v);
 		if(l==0) continue;
-		o << C.getCoef(l) << "x" << l << ":" << (~Level[l]?"t":(~Level[-l]?"f":"u")) << "@" << max(Level[l],Level[-l]) << "," << Pos[abs(l)] << " ";
+		o << C.getCoef(l) << "x" << l << ":" << (~Level[l]?"t":(~Level[-l]?"f":"u")) << "@" << std::max(Level[l],Level[-l]) << "," << Pos[std::abs(l)] << " ";
 	}
 	o << ">= " << C.getDegree();
 	return o;
 }
-ostream & operator<<(ostream & o, Constr& C) {
+std::ostream & operator<<(std::ostream & o, Constr& C) {
 	logConstraint.init(C);
 	o << logConstraint;
 	logConstraint.reset();
@@ -753,9 +752,9 @@ ostream & operator<<(ostream & o, Constr& C) {
 
 struct IntSet{
 private:
-	vector<bool> _values={false};
-	vector<bool>::iterator values=_values.begin();
-	vector<int> keys;
+	std::vector<bool> _values={false};
+	std::vector<bool>::iterator values=_values.begin();
+	std::vector<int> keys;
 	static constexpr bool _unused_(){ return false; }
 
 public:
@@ -845,7 +844,7 @@ struct {
 			int v = constraint.vars[i];
 			assert(constraint.getLit(v)!=0);
 			constr->lits()[i]=constraint.getLit(v);
-			constr->coefs()[i]=abs(constraint.coefs[v]);
+			constr->coefs()[i]=std::abs(constraint.coefs[v]);
 		}
 		return {(uint32_t)(at-sz_constr(length))};
 	}
@@ -856,15 +855,15 @@ struct {
 // ---------------------------------------------------------------------
 // VSIDS
 
-vector<double> activity;
+std::vector<double> activity;
 struct{
 	int cap=0;
 	// segment tree (fast implementation of priority queue).
-	vector<int> tree = {-1,-1};
+	std::vector<int> tree = {-1,-1};
 	void resize(int newsize) {
 		if (cap >= newsize) return;
 		// insert elements in such order that tie breaking remains intact
-		vector<int> variables;
+		std::vector<int> variables;
 		while (!empty()) variables.push_back(removeMax());
 		tree.clear();
 		while(cap<newsize) cap=cap*resize_factor+1;
@@ -926,8 +925,8 @@ void cBumpActivity (Constr& c) {
 // Search
 
 void uncheckedEnqueue(int p, CRef from=CRef_Undef){
-	assert(Pos[abs(p)]==-1);
-	int v = abs(p);
+	assert(Pos[std::abs(p)]==-1);
+	int v = std::abs(p);
 	Reason[v] = from;
 	++NPROP;
 	if(decisionLevel()==0){
@@ -951,7 +950,7 @@ void uncheckedEnqueue(int p, CRef from=CRef_Undef){
 CRef attachConstraint(intConstr& constraint, bool learnt, bool locked=false){
 	// sort from smallest to largest coefficient
 	std::sort(constraint.vars.begin(),constraint.vars.end(),[&](int v1,int v2){
-		return abs(constraint.coefs[v1])>abs(constraint.coefs[v2]); });
+		return std::abs(constraint.coefs[v1])>std::abs(constraint.coefs[v2]); });
 
 	if(logProof()) constraint.logAsProofLine();
 	CRef cr = ca.alloc(constraint,last_proofID,learnt,locked);
@@ -961,7 +960,7 @@ CRef attachConstraint(intConstr& constraint, bool learnt, bool locked=false){
 
 	for(int i=0; i<(int)C.size() && C.slack<C.largestCoef(); ++i){
 		int l = lits[i];
-		if(Level[-l]==-1 || Pos[abs(l)]>=qhead){
+		if(Level[-l]==-1 || Pos[std::abs(l)]>=qhead){
 			assert(!C.isWatched(i));
 			C.slack+=coefs[i];
 			coefs[i]=-coefs[i];
@@ -973,8 +972,8 @@ CRef attachConstraint(intConstr& constraint, bool learnt, bool locked=false){
 		// set sufficient falsified watches
 		std::vector<int> falsifieds;
 		falsifieds.reserve(C.size());
-		for(int i=0; i<(int)C.size(); ++i) if(~Level[-lits[i]] && Pos[abs(lits[i])]<qhead) falsifieds.push_back(i);
-		std::sort(falsifieds.begin(),falsifieds.end(),[&](int i1,int i2){ return Pos[abs(lits[i1])]>Pos[abs(lits[i2])]; });
+		for(int i=0; i<(int)C.size(); ++i) if(~Level[-lits[i]] && Pos[std::abs(lits[i])]<qhead) falsifieds.push_back(i);
+		std::sort(falsifieds.begin(),falsifieds.end(),[&](int i1,int i2){ return Pos[std::abs(lits[i1])]>Pos[std::abs(lits[i2])]; });
 		long long diff = C.largestCoef()-C.slack;
 		for(int i: falsifieds){
 			assert(!C.isWatched(i));
@@ -984,7 +983,7 @@ CRef attachConstraint(intConstr& constraint, bool learnt, bool locked=false){
 			if(diff<=0) break;
 		}
 		// perform initial propagation
-		for(int i=0; i<(int)C.size() && abs(coefs[i])>C.slack; ++i) if(Pos[abs(lits[i])]==-1) uncheckedEnqueue(lits[i],cr);
+		for(int i=0; i<(int)C.size() && std::abs(coefs[i])>C.slack; ++i) if(Pos[std::abs(lits[i])]==-1) uncheckedEnqueue(lits[i],cr);
 	}
 	return cr;
 }
@@ -997,7 +996,7 @@ void undoOne(){
 		--qhead;
 		++NBACKJUMP;
 	}
-	int v = abs(l);
+	int v = std::abs(l);
 	trail.pop_back();
 	Level[l] = -1;
 	Pos[v] = -1;
@@ -1045,18 +1044,18 @@ void analyze(CRef confl){
 			exit_UNSAT();
 		}
 		int l = trail.back();
-		assert(abs(confl_data.getCoef(-l))<INF);
+		assert(std::abs(confl_data.getCoef(-l))<INF);
 		int confl_coef_l = confl_data.getCoef(-l);
 		if(confl_coef_l>0) {
 			if (confl_data.falsifiedCurrentLvlIsOne()) {
 				break;
 			} else {
-				assert(Reason[abs(l)] != CRef_Undef);
+				assert(Reason[std::abs(l)] != CRef_Undef);
 				if(originalRoundToOne){
 					confl_data.roundToOne(confl_coef_l,false);
 					confl_coef_l=1;
 				}
-				Constr& reasonC = ca[Reason[abs(l)]];
+				Constr& reasonC = ca[Reason[std::abs(l)]];
 				if (reasonC.learnt()) {
 					cBumpActivity(reasonC);
 					recomputeLBD(reasonC);
@@ -1078,7 +1077,7 @@ void analyze(CRef confl){
 		undoOne();
 	}
 	assert(confl_data.getSlack()<0);
-	for(int l: actSet.getKeys()) if(l!=0) vBumpActivity(abs(l));
+	for(int l: actSet.getKeys()) if(l!=0) vBumpActivity(std::abs(l));
 	actSet.reset();
 }
 
@@ -1090,7 +1089,7 @@ void analyze(CRef confl){
 CRef propagate() {
 	while(qhead<(int)trail.size()){
 		int p=trail[qhead++];
-		vector<Watch> & ws = adj[-p];
+		std::vector<Watch> & ws = adj[-p];
 		for(int it_ws=0; it_ws<(int)ws.size(); ++it_ws){
 			++DETERMINISTICTIME;
 			CRef cr = ws[it_ws].cref;
@@ -1223,7 +1222,7 @@ CRef addInputConstraint(intConstr& c, bool initial=false){
 /*
  * The OPB parser does not support nonlinear constraints like "+1 x1 x2 +1 x3 x4 >= 1;"
  */
-int read_number(const string & s) {
+int read_number(const std::string & s) {
 	long long answer = 0;
 	for (char c : s) if ('0' <= c && c <= '9') {
 		answer *= 10, answer += c - '0';
@@ -1233,38 +1232,38 @@ int read_number(const string & s) {
 	return answer;
 }
 
-void opb_read(istream & in, intConstr& objective) {
+void opb_read(std::istream & in, intConstr& objective) {
 	intConstr inverted;
 	bool first_constraint = true; _unused(first_constraint);
-	for (string line; getline(in, line);) {
+	for (std::string line; getline(in, line);) {
 		if (line.empty()) continue;
 		else if (line[0] == '*') continue;
 		else {
 			for (char & c : line) if (c == ';') c = ' ';
 			bool opt_line = line.substr(0, 4) == "min:";
-			string line0;
+			std::string line0;
 			if (opt_line) line = line.substr(4), assert(first_constraint);
 			else {
-				string symbol;
-				if (line.find(">=") != string::npos) symbol = ">=";
+				std::string symbol;
+				if (line.find(">=") != std::string::npos) symbol = ">=";
 				else symbol = "=";
-				assert(line.find(symbol) != string::npos);
+				assert(line.find(symbol) != std::string::npos);
 				line0 = line;
 				line = line.substr(0, line.find(symbol));
 			}
 			first_constraint = false;
-			istringstream is (line);
+			std::istringstream is (line);
 			assert(tmpConstraint.isReset());
-			vector<string> tokens;
-			{ string tmp; while (is >> tmp) tokens.push_back(tmp); }
+			std::vector<std::string> tokens;
+			{ std::string tmp; while (is >> tmp) tokens.push_back(tmp); }
 			if (tokens.size() % 2 != 0) exit_ERROR({"No support for non-linear constraints."});
 			for (int i=0; i<(long long)tokens.size(); i+=2) if (find(tokens[i].begin(),tokens[i].end(),'x')!=tokens[i].end()) exit_ERROR({"No support for non-linear constraints."});
 			for (int i=0; i<(long long)tokens.size(); i+=2) {
-				string scoef = tokens[i];
-				string var = tokens[i+1];
+				std::string scoef = tokens[i];
+				std::string var = tokens[i+1];
 				int coef = read_number(scoef);
 				bool negated = false;
-				string origvar = var;
+				std::string origvar = var;
 				if (!var.empty() && var[0] == '~') {
 					negated = true;
 					var = var.substr(1);
@@ -1282,7 +1281,7 @@ void opb_read(istream & in, intConstr& objective) {
 			}else{
 				tmpConstraint.addRhs(read_number(line0.substr(line0.find("=") + 1)));
 				// Handle equality case with two constraints
-				bool equality = line0.find(" = ") != string::npos;
+				bool equality = line0.find(" = ") != std::string::npos;
 				if(equality) tmpConstraint.copyTo(inverted,-1);
 				// NOTE: addInputConstraint modifies tmpConstraint, so the inverted version is stored first
 				addInputConstraint(tmpConstraint,true);
@@ -1297,12 +1296,12 @@ void opb_read(istream & in, intConstr& objective) {
 	orig_n=n;
 }
 
-void wcnf_read(istream & in, long long top, intConstr& objective) {
+void wcnf_read(std::istream & in, long long top, intConstr& objective) {
 	assert(objective.isReset());
-	for (string line; getline(in, line);) {
+	for (std::string line; getline(in, line);) {
 		if (line.empty() || line[0] == 'c') continue;
 		else {
-			istringstream is (line);
+			std::istringstream is (line);
 			long long weight; is >> weight;
 			if(weight==0) continue;
 			assert(tmpConstraint.isReset());
@@ -1324,11 +1323,11 @@ void wcnf_read(istream & in, long long top, intConstr& objective) {
 	orig_n = n-objective.vars.size();
 }
 
-void cnf_read(istream & in) {
-	for (string line; getline(in, line);) {
+void cnf_read(std::istream & in) {
+	for (std::string line; getline(in, line);) {
 		if (line.empty() || line[0] == 'c') continue;
 		else {
-			istringstream is (line);
+			std::istringstream is (line);
 			assert(tmpConstraint.isReset());
 			tmpConstraint.addRhs(1);
 			int l;
@@ -1340,13 +1339,13 @@ void cnf_read(istream & in) {
 	orig_n=n;
 }
 
-void file_read(istream & in, intConstr& objective) {
-	for (string line; getline(in, line);) {
+void file_read(std::istream & in, intConstr& objective) {
+	for (std::string line; getline(in, line);) {
 		if (line.empty() || line[0] == 'c') continue;
 		if (line[0] == 'p') {
-			istringstream is (line);
+			std::istringstream is (line);
 			is >> line; // skip 'p'
-			string type; is >> type;
+			std::string type; is >> type;
 			long long n; is >> n;
 			setNbVariables(n);
 			if(type=="cnf"){
@@ -1359,7 +1358,7 @@ void file_read(istream & in, intConstr& objective) {
 				return;
 			}
 		} else if (line[0] == '*' && line.substr(0, 13) == "* #variable= ") {
-			istringstream is (line.substr(13));
+			std::istringstream is (line.substr(13));
 			long long n; is >> n;
 			setNbVariables(n);
 			opb_read(in,objective);
@@ -1390,7 +1389,7 @@ void garbage_collect(){
 	sort(learnts.begin(), learnts.end(), [](CRef x,CRef y){return x.ofs<y.ofs;}); // we have to sort here, because reduceDB shuffles them.
 	ca.wasted=0;
 	ca.at=ofs_learnts;
-	vector<CRef> learnts_old = learnts;
+	std::vector<CRef> learnts_old = learnts;
 	for(CRef & cr : learnts){
 		size_t length = ca[cr].size();
 		memmove(ca.memory+ca.at, ca.memory+cr.ofs, sizeof(uint32_t)*ca.sz_constr(length));
@@ -1454,18 +1453,17 @@ void reduceDB(){
 
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
-static double luby(double y, int x){
+double luby(double y, int x){
 	// Find the finite subsequence that contains index 'x', and the
 	// size of that subsequence:
 	int size, seq;
 	for (size = 1, seq = 0; size < x+1; seq++, size = 2*size+1);
-
-	while (size-1 != x){
+	while(size != x+1){
 		size = (size-1)>>1;
 		seq--;
+		assert(size!=0);
 		x = x % size;
 	}
-
 	return pow(y, seq);
 }
 
@@ -1512,7 +1510,7 @@ long long lhs(Constr& C, const std::vector<bool>& sol){
 	long long result = 0;
 	for(size_t j=0; j<C.size(); ++j){
 		int l = C.lit(j);
-		result+=((l>0)==sol[abs(l)])*C.coef(j);
+		result+=((l>0)==sol[std::abs(l)])*C.coef(j);
 	}
 	return result;
 }
@@ -1535,7 +1533,7 @@ void printSol(){
 
 void exit_SAT() {
 	print_stats();
-	if(foundSolution()) cout << "o " << last_sol_obj_val << endl;
+	if(foundSolution()) std::cout << "o " << last_sol_obj_val << std::endl;
 	puts("s SATISFIABLE");
 	printSol();
 	exit(10);
@@ -1544,8 +1542,8 @@ void exit_SAT() {
 void exit_UNSAT() {
 	print_stats();
 	if(foundSolution()){
-		cout << "o " << last_sol_obj_val << endl;
-		cout << "s OPTIMUM FOUND" << endl;
+		std::cout << "o " << last_sol_obj_val << std::endl;
+		std::cout << "s OPTIMUM FOUND" << std::endl;
 		printSol();
 		exit(30);
 	}else{
@@ -1562,8 +1560,8 @@ void exit_INDETERMINATE() {
 }
 
 void exit_ERROR(const std::initializer_list<std::string>& messages){
-	cout << "Error: ";
-	for(const string& m: messages) cout << m;
+	std::cout << "Error: ";
+	for(const std::string& m: messages) std::cout << m;
 	std::cout << std::endl;
 	exit(1);
 }
@@ -1586,35 +1584,35 @@ void usage(int argc, char**argv) {
 
 typedef bool (*func)(double);
 template <class T>
-void getOptionNum(const map<string, string>& opt_val, const string& option, func test, T& val){
+void getOptionNum(const std::map<std::string, std::string>& opt_val, const std::string& option, func test, T& val){
 	if (opt_val.count(option)) {
 		double v = atof(opt_val.at(option).c_str());
 		if (test(v)) val=v;
 		else exit_ERROR({"Invalid value for ",option,": ",opt_val.at(option),".\nCheck usage with --help option."});
 	}
 }
-void getOptionStr(const map<string, string>& opt_val, const string& option, string& val){
+void getOptionStr(const std::map<std::string, std::string>& opt_val, const std::string& option, std::string& val){
 	if(opt_val.count(option)) val=opt_val.at(option);
 }
 
-string read_options(int argc, char**argv) {
-	string filename = "";
+std::string read_options(int argc, char**argv) {
+	std::string filename = "";
 	for(int i=1;i<argc;i++){
 		if (!strcmp(argv[i], "--help")) {
 			usage(argc, argv);
 			exit(1);
 		}
 	}
-	vector<string> opts={"print-sol","verbosity", "var-decay", "rinc", "rfirst", "original-rto", "opt-mode", "proof-log"};
-	map<string, string> opt_val;
+	std::vector<std::string> opts={"print-sol","verbosity", "var-decay", "rinc", "rfirst", "original-rto", "opt-mode", "proof-log"};
+	std::map<std::string, std::string> opt_val;
 	for(int i=1;i<argc;i++){
-		if (string(argv[i]).substr(0,2) != "--") filename = argv[i];
+		if (std::string(argv[i]).substr(0,2) != "--") filename = argv[i];
 		else {
 			bool found = false;
-			for(string& key : opts) {
-				if (string(argv[i]).substr(0,key.size()+3)=="--"+key+"=") {
+			for(std::string& key : opts) {
+				if (std::string(argv[i]).substr(0,key.size()+3)=="--"+key+"=") {
 					found = true;
-					opt_val[key] = string(argv[i]).substr(key.size()+3);
+					opt_val[key] = std::string(argv[i]).substr(key.size()+3);
 				}
 			}
 			if (!found) exit_ERROR({"Unknown option: ",argv[i],".\nCheck usage with --help option."});
@@ -1643,9 +1641,9 @@ void extractCore(CRef confl, intConstr& outCore, int l_assump=0){
 
 	if(l_assump!=0){ // l_assump is an assumption propagated to the opposite value
 		assert(~Level[-l_assump]);
-		int pos = Pos[abs(l_assump)];
+		int pos = Pos[std::abs(l_assump)];
 		while((int)trail.size()>pos) undoOne();
-		assert(Pos[abs(l_assump)]==-1);
+		assert(Pos[std::abs(l_assump)]==-1);
 		decide(l_assump);
 	}
 
@@ -1658,13 +1656,13 @@ void extractCore(CRef confl, intConstr& outCore, int l_assump=0){
 	assert(trail_lim.size()>0);
 	for(int i=trail_lim[0]; i<(int)trail.size(); ++i){ // TODO: also set propagated assumptions as decisions?
 		int l = trail[i];
-		if(Reason[abs(l)]==CRef_Undef) tmpSet.add(l); // decision, hence assumption
+		if(Reason[std::abs(l)]==CRef_Undef) tmpSet.add(l); // decision, hence assumption
 		else props.push_back(l);
 	}
 	backjumpTo(0);
 
 	for(int l: tmpSet.getKeys()) decide(l);
-	for(int l: props) { assert(Reason[abs(l)]!=CRef_Undef); uncheckedEnqueue(l,Reason[abs(l)]); }
+	for(int l: props) { assert(Reason[std::abs(l)]!=CRef_Undef); uncheckedEnqueue(l,Reason[std::abs(l)]); }
 
 	confl_data.init(ca[confl]);
 	confl_data.removeUnits();
@@ -1674,10 +1672,10 @@ void extractCore(CRef confl, intConstr& outCore, int l_assump=0){
 	long long assumpslk = assumpSlack(tmpSet,confl_data);
 	while(assumpslk>=0){
 		int l = trail.back();
-		assert(abs(confl_data.getCoef(-l))<INF);
+		assert(std::abs(confl_data.getCoef(-l))<INF);
 		int confl_coef_l = confl_data.getCoef(-l);
 		if(confl_coef_l>0) {
-			tmpConstraint.init(ca[Reason[abs(l)]]);
+			tmpConstraint.init(ca[Reason[std::abs(l)]]);
 			tmpConstraint.removeUnits();
 			tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack()); // NOTE: also saturates
 			assert(tmpConstraint.getCoef(l)>tmpConstraint.getSlack());
@@ -1706,7 +1704,7 @@ void extractCore(CRef confl, intConstr& outCore, int l_assump=0){
 
 enum SolveState { SAT, UNSAT, INPROCESSING };
 
-SolveState solve(const vector<int>& assumptions, intConstr& out) {
+SolveState solve(const std::vector<int>& assumptions, intConstr& out) {
 	out.reset();
 	backjumpTo(0); // ensures assumptions are reset
 	std::vector<int> assumptions_lim={0};
@@ -1731,8 +1729,8 @@ SolveState solve(const vector<int>& assumptions, intConstr& out) {
 //					print_stats();
 					if(verbosity>2){
 						// memory usage
-						cout<<"c total constraint space: "<<ca.cap*4/1024./1024.<<"MB"<<endl;
-						cout<<"c total #watches: ";{long long cnt=0;for(int l=-n;l<=n;l++)cnt+=(long long)adj[l].size();cout<<cnt<<endl;}
+						std::cout<<"c total constraint space: "<<ca.cap*4/1024./1024.<<"MB"<<std::endl;
+						std::cout<<"c total #watches: ";{long long cnt=0;for(int l=-n;l<=n;l++)cnt+=(long long)adj[l].size();std::cout<<cnt<<std::endl;}
 					}
 				}
 			}
@@ -1765,7 +1763,7 @@ SolveState solve(const vector<int>& assumptions, intConstr& out) {
 				int l_assump = assumptions[assumptions_lim.back()];
 				if (~Level[-l_assump]){ // found conflicting assumption
 					if(Level[-l_assump]==0) backjumpTo(0), out.reset(); // negated assumption is unit
-					else extractCore(Reason[abs(l_assump)],out,l_assump);
+					else extractCore(Reason[std::abs(l_assump)],out,l_assump);
 					return SolveState::UNSAT;
 				}
 				if (~Level[l_assump]){ // assumption already propagated
@@ -1856,7 +1854,7 @@ struct LazyVar{
 	}
 };
 
-ostream & operator<<(ostream & o, LazyVar* lv) {
+std::ostream & operator<<(std::ostream & o, LazyVar* lv) {
 	o << lv->currentvar << " " << lv->idx << " " << lv->nvars << " | ";
 	for(int l: lv->lhs) o << "+x" << l << " ";
 	o << ">= " << lv->rhs;
@@ -1865,7 +1863,7 @@ ostream & operator<<(ostream & o, LazyVar* lv) {
 
 __int128 lowerBoundFromCoreAggregate(intConstr& origObj, longConstr& coreAggregate){
 	__int128 b = coreAggregate.getDegree()-origObj.getDegree();
-	for(int v: coreAggregate.vars) if(origObj.getLit(v)==0) b-=abs(coreAggregate.coefs[v]);
+	for(int v: coreAggregate.vars) if(origObj.getLit(v)==0) b-=std::abs(coreAggregate.coefs[v]);
 	return b;
 }
 
@@ -1882,7 +1880,7 @@ bool testCoreAggregate(const intConstr& origObj, const longConstr& coreAggregate
 
 void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lower_bound,
                          std::vector<LazyVar*>& lazyVars, longConstr& coreAggregate,
-                         intConstr& origObj){ // TODO: typedef IntConstraint and LongConstraint
+                         intConstr& origObj){
 	reformObj.removeZeroes();
 	origObj.removeZeroes();
 	coreAggregate.removeZeroes();
@@ -1904,7 +1902,7 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 	long long mult = INF;
 	for(int v: core.vars){
 		assert(reformObj.getLit(v)!=0);
-		mult=min(mult,abs(reformObj.coefs[v]));
+		mult=std::min<long long>(mult,std::abs(reformObj.coefs[v]));
 	}
 	assert(mult<INF); assert(mult>0);
 	lower_bound+=degree*mult;
@@ -2002,7 +2000,7 @@ void optimize(intConstr& origObj, intConstr& core){
 	long long lower_bound = -origObj.removeUnits(false);
 
 	long long opt_coef_sum = 0;
-	for (int v: origObj.vars) opt_coef_sum+=abs(origObj.coefs[v]);
+	for (int v: origObj.vars) opt_coef_sum+=std::abs(origObj.coefs[v]);
 	if (opt_coef_sum > (long long)1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
 
 	longConstr reformObj;
@@ -2025,7 +2023,7 @@ void optimize(intConstr& origObj, intConstr& core){
 			for(int v: reformObj.vars) { assert(reformObj.getLit(v)!=0); assumps.push_back(-reformObj.getLit(v)); }
 			std::sort(assumps.begin(),assumps.end(),[&](int l1,int l2){
 				return reformObj.getCoef(-l1)>reformObj.getCoef(-l2) ||
-				       (reformObj.getCoef(-l1)==reformObj.getCoef(-l2) && abs(l1)<abs(l2));
+				       (reformObj.getCoef(-l1)==reformObj.getCoef(-l2) && std::abs(l1)<std::abs(l2));
 			});
 		}
 		assert(last_sol_obj_val>lower_bound);
@@ -2070,22 +2068,22 @@ int main(int argc, char**argv){
 	signal(SIGTERM,SIGINT_exit);
 	signal(SIGXCPU,SIGINT_exit);
 
-	string filename = read_options(argc, argv);
+	std::string filename = read_options(argc, argv);
 	if(logProof()){
-		formula_out = ofstream(proof_log_name+".formula");
+		formula_out = std::ofstream(proof_log_name+".formula");
 		formula_out << "* #variable= 0 #constraint= 0\n";
 		formula_out << " >= 0 ;\n"; ++last_formID;
-		proof_out = ofstream(proof_log_name+".proof");
+		proof_out = std::ofstream(proof_log_name+".proof");
 		proof_out << "pseudo-Boolean proof version 1.0\n";
 		proof_out << "l 1\n"; ++last_proofID;
 	}
 	if (!filename.empty()) {
-		ifstream fin(filename);
+		std::ifstream fin(filename);
 		if (!fin) exit_ERROR({"Could not open ",filename});
 		file_read(fin,objective);
 	} else {
 		if (verbosity > 0) std::cout << "c No filename given, reading from standard input." << std::endl;
-		file_read(cin,objective);
+		file_read(std::cin,objective);
 	}
 	if(logProof()) formula_out << "* INPUT FORMULA ABOVE - AUXILIARY AXIOMS BELOW\n";
 	std::cout << "c #variables=" << orig_n << " #constraints=" << formula_constrs.size() << std::endl;
