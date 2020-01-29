@@ -43,9 +43,15 @@ using namespace std;
 #define _unused(x) ((void)(x)) // marks variables unused in release mode
 
 std::ostream& operator<<(std::ostream& os, __int128 x){
-	if(x<0) return os << "-" << -x;
-	if(x<=std::numeric_limits<uint64_t>::max()) return os << (uint64_t) x;
-	return os << x/10 << (short)(x%10);
+	if(x<0){ os << "-"; x = -x; }
+	uint64_t tenPow18 = 1000000000000000000;
+	uint64_t x1 = x%tenPow18; x/=tenPow18;
+	if(x>0){
+		uint64_t x2 = x%tenPow18; x/=tenPow18;
+		if(x>0) os << (unsigned short) (x%tenPow18);
+		os << x2;
+	}
+	return os << x1;
 }
 
 template<class T> inline void swapErase(T& indexable, size_t index){
@@ -235,7 +241,10 @@ struct Constraint{
 	static constexpr SMALL _unused_(){ return std::numeric_limits<SMALL>::max(); }
 	std::stringstream proofBuffer;
 
-	Constraint(){ reset(); }
+	Constraint(){
+		assert(std::numeric_limits<SMALL>::is_specialized); // otherwise, we can not use std::numeric_limits<SMALL>
+		reset();
+	}
 
 	inline void resize(size_t s){ if(s>coefs.size()) coefs.resize(s,_unused_()); }
 
