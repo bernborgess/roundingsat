@@ -137,7 +137,9 @@ inline void newDecisionLevel() { trail_lim.push_back(trail.size()); }
 inline int decisionLevel() { return trail_lim.size(); }
 
 enum DeletionStatus { LOCKED, UNLOCKED, FORCEDELETE, MARKEDFORDELETE };
+enum WatchStatus { FOUNDNEW, FOUNDNONE, CONFLICTING };
 
+void uncheckedEnqueue(int p, CRef from);
 struct Clause { // TODO: heuristic info actually not needed in cache-sensitive Clause...
 	long long id;
 	float act;
@@ -168,6 +170,7 @@ struct Clause { // TODO: heuristic info actually not needed in cache-sensitive C
 	inline bool learnt() const { return header.learnt; }
 	inline int largestCoef() { return abs(coefs()[0]); }
 	inline int coef(int i) { return abs(data[header.size+i]); }
+	inline int lit(int i) { return data[i]; }
 	inline bool isWatched(int idx) { return coefs()[idx]<0; }
 	inline void undoFalsified(int idx) {
 		assert(isWatched(idx));
@@ -183,6 +186,45 @@ struct Clause { // TODO: heuristic info actually not needed in cache-sensitive C
 			if(c<0 && (Level[-l]==-1 || Pos[abs(l)]>=qhead)) result+=c;
 		}
 		return -result;
+	}
+	inline WatchStatus propagateWatch(CRef cr, int idx){
+		const int * const lts = lits(); int * const cfs = coefs();
+		const int Csize = size(); const int ClargestCoef = largestCoef();
+		const int c = cfs[idx];
+		assert(c<0);
+		slack+=c;
+		if(slack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
+			if(nbackjump<NBACKJUMP){ nbackjump=NBACKJUMP; watchIdx=0; }
+			int i=watchIdx;
+			DETERMINISTICTIME-=i;
+			for(; i<Csize && slack<ClargestCoef; ++i){ // NOTE: first innermost loop of RoundingSat
+				const int l = lts[i];
+				const int cf = cfs[i];
+				if(cf>0 && Level[-l]==-1){
+					slack+=cf;
+					cfs[i]=-cf;
+					adj[l].emplace_back(cr,i);
+				}
+			}
+			DETERMINISTICTIME+=i;
+			watchIdx=i;
+			if(slack<ClargestCoef){ assert(i==Csize); watchIdx=0; }
+		} // else we did not find enough watches last time, so we can skip looking for them now
+
+		if(slack>=ClargestCoef){
+			cfs[idx]=-c;
+			return WatchStatus::FOUNDNEW;
+		}else if(slack>=0){ // keep the watch, check for propagation
+			int i=watchIdx;
+			DETERMINISTICTIME-=i;
+			for(; i<Csize && abs(cfs[i])>slack; ++i){ // NOTE: second innermost loop of RoundingSat
+				const int l = lts[i];
+				if(Pos[abs(l)]==-1) uncheckedEnqueue(l,cr);
+			}
+			DETERMINISTICTIME+=i;
+			watchIdx=i;
+			return WatchStatus::FOUNDNONE;
+		}else return WatchStatus::CONFLICTING;
 	}
 };
 
@@ -265,7 +307,7 @@ struct Constraint{
 	void init(Clause& C){
 		assert(isReset()); // don't use a Constraint used by other stuff
 		addRhs(C.degree());
-		for(size_t i=0;i<C.size();++i){ assert(C.coef(i)!=0); addLhs(C.coef(i), C.lits()[i]); }
+		for(size_t i=0;i<C.size();++i){ assert(C.coef(i)!=0); addLhs(C.coef(i), C.lit(i)); }
 		if(logProof()) resetBuffer(C.id);
 	}
 
@@ -784,9 +826,9 @@ struct {
 		assert(degree<=1e9);
 		// as the constraint should be saturated, the coefficients are between 1 and 1e9 as well.
 		int w = (int)degree;
-
 		assert(!constraint.vars.empty());
 		unsigned int length = constraint.vars.size();
+
 		// note: coefficients can be arbitrarily ordered (we don't sort them in descending order for example)
 		// during maintenance of watches the order will be shuffled.
 		capacity(at + sz_constr(length));
@@ -980,8 +1022,7 @@ void decide(int l){
 void recomputeLBD(Clause& C) {
 	if(C.lbd()<=2) return;
 	assert(tmpSet.size()==0);
-	int * lits = C.lits();
-	for (int i=0; i<(int)C.size(); i++) if (~Level[-lits[i]]) tmpSet.add(Level[-lits[i]]);
+	for (int i=0; i<(int)C.size(); i++) if (~Level[-C.lit(i)]) tmpSet.add(Level[-C.lit(i)]);
 	C.setLBD(tmpSet.size());
 	tmpSet.reset();
 }
@@ -1044,65 +1085,27 @@ void analyze(CRef confl){
 /**
  * Unit propagation with watched literals.
  *
- * post condition: the propagation queue is empty (even if there was a conflict).
+ * post condition: all watches up to trail[qhead] have been propagated
  */
 CRef propagate() {
-	CRef confl = CRef_Undef;
-	while(qhead<(int)trail.size() && confl==CRef_Undef){
+	while(qhead<(int)trail.size()){
 		int p=trail[qhead++];
 		vector<Watch> & ws = adj[-p];
 		for(int it_ws=0; it_ws<(int)ws.size(); ++it_ws){
 			++DETERMINISTICTIME;
 			CRef cr = ws[it_ws].cref;
-			int idx = ws[it_ws].idx;
 			Clause & C = ca[cr];
 			if(C.getStatus()>=FORCEDELETE){ swapErase(ws,it_ws--); continue; }
-			const int * const lits = C.lits(); int * const coefs = C.coefs();
-			const int Csize = C.size(); const int ClargestCoef = C.largestCoef();
-			int Cslack = C.slack;
-			const int c = coefs[idx];
-			assert(c<0);
-			Cslack+=c;
-			if(Cslack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
-				if(C.nbackjump<NBACKJUMP){ C.nbackjump=NBACKJUMP; C.watchIdx=0; }
-				int i=C.watchIdx;
-				DETERMINISTICTIME-=i;
-				for(; i<Csize && Cslack<ClargestCoef; ++i){ // NOTE: first innermost loop of RoundingSat
-					const int l = lits[i];
-					const int cf = coefs[i];
-					if(cf>0 && Level[-l]==-1){
-						Cslack+=cf;
-						coefs[i]=-cf;
-						adj[l].emplace_back(cr,i);
-					}
-				}
-				DETERMINISTICTIME+=i;
-				C.watchIdx=i;
-				if(Cslack<ClargestCoef){ assert(i==Csize); C.watchIdx=0; }
-			} // else we did not find enough watches last time, so we can skip looking for them now
-			C.slack=Cslack;
-
-			if(Cslack>=ClargestCoef){ // new watches are sufficient, remove previous watch
-				coefs[idx]=-c;
-				swapErase(ws,it_ws--);
-			}else if(Cslack>=0){ // keep the watch, check for propagation
-				int i=C.watchIdx;
-				DETERMINISTICTIME-=i;
-				for(; i<Csize && abs(coefs[i])>Cslack; ++i){ // NOTE: second innermost loop of RoundingSat
-					const int l = lits[i];
-					if(Pos[abs(l)]==-1) uncheckedEnqueue(l,cr);
-				}
-				DETERMINISTICTIME+=i;
-				C.watchIdx=i;
-			}else{ // conflict, clean up current level and stop propagation
-				confl=cr;
+			WatchStatus wstat = C.propagateWatch(cr,ws[it_ws].idx);
+			if(wstat==WatchStatus::FOUNDNEW) swapErase(ws,it_ws--);
+			else if(wstat==WatchStatus::CONFLICTING){ // clean up current level and stop propagation
 				for(int i=0; i<=it_ws; ++i){ const Watch& w=ws[i]; ca[w.cref].undoFalsified(w.idx); }
 				--qhead;
-				break;
+				return cr;
 			}
 		}
 	}
-	return confl;
+	return CRef_Undef;
 }
 
 int pickBranchLit(){
@@ -1307,7 +1310,7 @@ void wcnf_read(istream & in, long long top, intConstr& objective) {
 			int l;
 			while (is >> l, l) tmpConstraint.addLhs(1,l);
 			if(weight<top){ // soft clause
-				if(weight>1e9) exit_ERROR({"Clause weight exceeds 10^9: ",std::to_string(weight)});
+				if(weight>1e9) exit_ERROR({"Constraint weight exceeds 10^9: ",std::to_string(weight)});
 				if(weight<0) exit_ERROR({"Negative clause weight: ",std::to_string(weight)});
 				setNbVariables(n+1); // increases n to n+1
 				objective.resize(n+1);
@@ -1508,7 +1511,7 @@ void print_stats() {
 long long lhs(Clause& C, const std::vector<bool>& sol){
 	long long result = 0;
 	for(size_t j=0; j<C.size(); ++j){
-		int l = C.lits()[j];
+		int l = C.lit(j);
 		result+=((l>0)==sol[abs(l)])*C.coef(j);
 	}
 	return result;
