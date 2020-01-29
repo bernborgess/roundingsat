@@ -58,7 +58,7 @@ template<class T> inline void swapErase(T& indexable, size_t index){
 	indexable.pop_back();
 }
 
-template<class T> inline bool contains(const std::vector<T> v, const T& x){
+template<class T> inline bool contains(const std::vector<T>& v, const T& x){
 	return std::find(v.cbegin(),v.cend(),x)!=v.cend();
 }
 
@@ -68,7 +68,7 @@ void exit_SAT(),exit_UNSAT(),exit_INDETERMINATE(),exit_ERROR(const std::initiali
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <unistd.h>
-static inline double cpuTime(void) {
+static inline double cpuTime() {
 	struct rusage ru;
 	getrusage(RUSAGE_SELF, &ru);
 	return (double)ru.ru_utime.tv_sec + (double)ru.ru_utime.tv_usec / 1000000; }
@@ -96,7 +96,7 @@ int opt_mode=0;
 long long curr_restarts=0;
 long long nconfl_to_restart=0;
 bool print_sol = false;
-std::string proof_log_name = "";
+std::string proof_log_name;
 bool logProof(){ return !proof_log_name.empty(); }
 std::ofstream proof_out; std::ofstream formula_out;
 long long last_proofID = 0; long long last_formID = 0;
@@ -162,15 +162,15 @@ struct Constr { // TODO: heuristic info actually not needed in cache-sensitive C
 	inline int * lits() { return data; }
 	inline int * coefs() { return (int*)(data+header.size); }
 
-	inline void setStatus(DeletionStatus ds){ header.status=(unsigned) ds; }
-	inline DeletionStatus getStatus(){ return (DeletionStatus) header.status; }
+	inline void setStatus(DeletionStatus ds){ header.status=(unsigned int) ds; }
+	inline DeletionStatus getStatus() const { return (DeletionStatus) header.status; }
 	inline void setLBD(unsigned int lbd){ header.lbd=std::min(header.lbd,lbd); }
 	inline unsigned int lbd() const { return header.lbd; }
 	inline bool learnt() const { return header.learnt; }
-	inline int largestCoef() { return std::abs(coefs()[0]); }
-	inline int coef(int i) { return std::abs(data[header.size+i]); }
-	inline int lit(int i) { return data[i]; }
-	inline bool isWatched(int idx) { return coefs()[idx]<0; }
+	inline int largestCoef() const { return std::abs(data[header.size]); }
+	inline int coef(int i) const { return std::abs(data[header.size+i]); }
+	inline int lit(int i) const { return data[i]; }
+	inline bool isWatched(int idx) const { return data[header.size+idx]<0; }
 	inline void undoFalsified(int idx) {
 		assert(isWatched(idx));
 		slack += coef(idx);
@@ -295,7 +295,7 @@ struct Constraint{
 		proofBuffer << proofID << " ";
 	}
 
-	bool isReset(){ return vars.size()==0 && rhs==0; }
+	bool isReset() const { return vars.size()==0 && rhs==0; }
 	void reset(){
 		for(int v: vars) coefs[v]=_unused_();
 		vars.clear();
@@ -412,7 +412,7 @@ struct Constraint{
 		return w;
 	}
 
-	bool isSaturated(){
+	bool isSaturated() const {
 		LARGE w = getDegree();
 		for(int v:vars) if(std::abs(coefs[v])>w) return false;
 		return true;
@@ -738,7 +738,7 @@ std::ostream & operator<<(std::ostream & o, const Constraint<S,L>& C) {
 	for(int v: vars){
 		int l = C.getLit(v);
 		if(l==0) continue;
-		o << C.getCoef(l) << "x" << l << ":" << (~Level[l]?"t":(~Level[-l]?"f":"u")) << "@" << std::max(Level[l],Level[-l]) << "," << Pos[std::abs(l)] << " ";
+		o << C.getCoef(l) << "x" << l << ":" << ((~Level[l])?"t":((~Level[-l])?"f":"u")) << "@" << std::max(Level[l],Level[-l]) << "," << Pos[std::abs(l)] << " ";
 	}
 	o << ">= " << C.getDegree();
 	return o;
@@ -836,7 +836,7 @@ struct {
 		at += sz_constr(length);
 		constr->id = proofID;
 		constr->act = 0;
-		constr->header = {0,learnt,length,(unsigned) (locked?LOCKED:UNLOCKED),length};
+		constr->header = {0,learnt,length,(unsigned int)(locked?LOCKED:UNLOCKED),length};
 		constr->nbackjump = 0;
 		constr->slack = -w;
 		constr->watchIdx = 0;
@@ -876,8 +876,8 @@ struct{
 			else break;
 		}
 	}
-	bool empty() { return tree[1] == -1; }
-	bool inHeap(int v) { return tree[v+cap+1] != -1; }
+	bool empty() const { return tree[1] == -1; }
+	bool inHeap(int v) const { return tree[v+cap+1] != -1; }
 	void insert(int x) {
 		assert(x<=cap);
 		if (inHeap(x)) return;
@@ -1596,7 +1596,7 @@ void getOptionStr(const std::map<std::string, std::string>& opt_val, const std::
 }
 
 std::string read_options(int argc, char**argv) {
-	std::string filename = "";
+	std::string filename;
 	for(int i=1;i<argc;i++){
 		if (!strcmp(argv[i], "--help")) {
 			usage(argc, argv);
