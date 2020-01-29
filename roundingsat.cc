@@ -89,7 +89,7 @@ long long NGCD=0, NCARDDETECT=0, NCORECARDINALITIES=0, NCORES=0, NSOLS=0;
 long long NWEAKENEDNONIMPLYING=0, NWEAKENEDNONIMPLIED=0;
 double rinc=2;
 long long rfirst=100;
-long long nbclausesbeforereduce=2000;
+long long nbconstrsbeforereduce=2000;
 long long incReduceDB=300;
 long long cnt_reduceDB=0;
 bool originalRoundToOne=false;
@@ -116,7 +116,7 @@ int verbosity = 1;
 // currently, the maximum number of variables is hardcoded (variable N), and most arrays are of fixed size.
 int n = 0;
 int orig_n = 0;
-vector<CRef> clauses, learnts, external;
+vector<CRef> formula_constrs, learnts, external;
 struct Watch {
 	CRef cref;
 	int idx;
@@ -140,7 +140,7 @@ enum DeletionStatus { LOCKED, UNLOCKED, FORCEDELETE, MARKEDFORDELETE };
 enum WatchStatus { FOUNDNEW, FOUNDNONE, CONFLICTING };
 
 void uncheckedEnqueue(int p, CRef from);
-struct Clause { // TODO: heuristic info actually not needed in cache-sensitive Clause...
+struct Constr { // TODO: heuristic info actually not needed in cache-sensitive Constr...
 	long long id;
 	float act;
 	struct {
@@ -304,7 +304,7 @@ struct Constraint{
 		if(logProof()) resetBuffer(1); // NOTE: proofID 1 equals the constraint 0 >= 0
 	}
 
-	void init(Clause& C){
+	void init(Constr& C){
 		assert(isReset()); // don't use a Constraint used by other stuff
 		addRhs(C.degree());
 		for(size_t i=0;i<C.size();++i){ assert(C.coef(i)!=0); addLhs(C.coef(i), C.lit(i)); }
@@ -744,7 +744,7 @@ ostream & operator<<(ostream & o, const Constraint<S,L>& C) {
 	o << ">= " << C.getDegree();
 	return o;
 }
-ostream & operator<<(ostream & o, Clause & C) {
+ostream & operator<<(ostream & o, Constr& C) {
 	logConstraint.init(C);
 	o << logConstraint;
 	logConstraint.reset();
@@ -783,7 +783,7 @@ IntSet tmpSet;
 IntSet actSet;
 
 // ---------------------------------------------------------------------
-// Memory. Maximum supported size of learnt clause database is 16GB
+// Memory. Maximum supported size of learnt constraint database is 16GB
 
 class OutOfMemoryException{};
 static inline void* xrealloc(void *ptr, size_t size)
@@ -818,7 +818,7 @@ struct {
 		assert(cap > 0);
 		memory = (uint32_t*) xrealloc(memory, sizeof(uint32_t) * cap);
 	}
-	int sz_constr(int length) { return (sizeof(Clause)+sizeof(int)*length+sizeof(int)*length)/sizeof(uint32_t); }
+	int sz_constr(int length) { return (sizeof(Constr)+sizeof(int)*length+sizeof(int)*length)/sizeof(uint32_t); }
 
 	CRef alloc(const intConstr& constraint, long long proofID, bool learnt, bool locked){
 		long long degree = constraint.getDegree();
@@ -832,8 +832,8 @@ struct {
 		// note: coefficients can be arbitrarily ordered (we don't sort them in descending order for example)
 		// during maintenance of watches the order will be shuffled.
 		capacity(at + sz_constr(length));
-		Clause * constr = (Clause*)(memory+at);
-		new (constr) Clause;
+		Constr * constr = (Constr*)(memory+at);
+		new (constr) Constr;
 		at += sz_constr(length);
 		constr->id = proofID;
 		constr->act = 0;
@@ -849,15 +849,13 @@ struct {
 		}
 		return {(uint32_t)(at-sz_constr(length))};
 	}
-	Clause& operator[](CRef cr) { return (Clause&)*(memory+cr.ofs); }
-	const Clause& operator[](CRef cr) const { return (Clause&)*(memory+cr.ofs); }
+	Constr& operator[](CRef cr) { return (Constr&)*(memory+cr.ofs); }
+	const Constr& operator[](CRef cr) const { return (Constr&)*(memory+cr.ofs); }
 } ca;
 
 // ---------------------------------------------------------------------
 // VSIDS
 
-double var_decay=0.95;
-double var_inc=1.0;
 vector<double> activity;
 struct{
 	int cap=0;
@@ -899,28 +897,30 @@ struct{
 	}
 } order_heap;
 
-void varDecayActivity() { var_inc *= (1 / var_decay); }
-void varBumpActivity(int v){
+double v_vsids_decay=0.95;
+double v_vsids_inc=1.0;
+void vDecayActivity() { v_vsids_inc *= (1 / v_vsids_decay); }
+void vBumpActivity(int v){
 	assert(v>0);
-	if ( (activity[v] += var_inc) > 1e100 ) {
+	if ( (activity[v] += v_vsids_inc) > 1e100 ) {
 		// Rescale:
 		for (int i = 1; i <= n; i++)
 			activity[i] *= 1e-100;
-		var_inc *= 1e-100; }
+		v_vsids_inc *= 1e-100; }
 
 	// Update order_heap with respect to new activity:
 	if (order_heap.inHeap(v))
 		order_heap.percolateUp(v); }
-// CLAUSE VSIDS --------------------------------------------------------
-double cla_inc=1.0;
-double clause_decay=0.999;
-void claDecayActivity() { cla_inc *= (1 / clause_decay); }
-void claBumpActivity (Clause& c) {
-		if ( (c.act += cla_inc) > 1e20 ) {
+
+double c_vsids_inc=1.0;
+double c_vsids_decay=0.999;
+void cDecayActivity() { c_vsids_inc *= (1 / c_vsids_decay); }
+void cBumpActivity (Constr& c) {
+		if ( (c.act += c_vsids_inc) > 1e20 ) {
 			// Rescale:
 			for (size_t i = 0; i < learnts.size(); i++)
 				ca[learnts[i]].act *= 1e-20;
-			cla_inc *= 1e-20; } }
+			c_vsids_inc *= 1e-20; } }
 
 // ---------------------------------------------------------------------
 // Search
@@ -934,7 +934,7 @@ void uncheckedEnqueue(int p, CRef from=CRef_Undef){
 		Reason[v] = CRef_Undef; // no need to keep track of reasons for unit literals
 		assert(from!=CRef_Undef);
 		if(logProof()){
-			Clause& C = ca[from];
+			Constr& C = ca[from];
 			logConstraint.init(C);
 			logConstraint.logUnit(v);
 			logConstraint.reset();
@@ -956,8 +956,8 @@ CRef attachConstraint(intConstr& constraint, bool learnt, bool locked=false){
 	if(logProof()) constraint.logAsProofLine();
 	CRef cr = ca.alloc(constraint,last_proofID,learnt,locked);
 	if (learnt) learnts.push_back(cr);
-	else clauses.push_back(cr);
-	Clause& C = ca[cr]; int* lits = C.lits(); int* coefs = C.coefs();
+	else formula_constrs.push_back(cr);
+	Constr& C = ca[cr]; int* lits = C.lits(); int* coefs = C.coefs();
 
 	for(int i=0; i<(int)C.size() && C.slack<C.largestCoef(); ++i){
 		int l = lits[i];
@@ -1019,7 +1019,7 @@ void decide(int l){
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 
-void recomputeLBD(Clause& C) {
+void recomputeLBD(Constr& C) {
 	if(C.lbd()<=2) return;
 	assert(tmpSet.size()==0);
 	for (int i=0; i<(int)C.size(); i++) if (~Level[-C.lit(i)]) tmpSet.add(Level[-C.lit(i)]);
@@ -1028,9 +1028,9 @@ void recomputeLBD(Clause& C) {
 }
 
 void analyze(CRef confl){
-	Clause & C = ca[confl];
+	Constr& C = ca[confl];
 	if (C.learnt()) {
-		claBumpActivity(C);
+		cBumpActivity(C);
 		recomputeLBD(C);
 	}
 
@@ -1056,9 +1056,9 @@ void analyze(CRef confl){
 					confl_data.roundToOne(confl_coef_l,false);
 					confl_coef_l=1;
 				}
-				Clause& reasonC = ca[Reason[abs(l)]];
+				Constr& reasonC = ca[Reason[abs(l)]];
 				if (reasonC.learnt()) {
-					claBumpActivity(reasonC);
+					cBumpActivity(reasonC);
 					recomputeLBD(reasonC);
 				}
 				tmpConstraint.init(reasonC);
@@ -1078,7 +1078,7 @@ void analyze(CRef confl){
 		undoOne();
 	}
 	assert(confl_data.getSlack()<0);
-	for(int l: actSet.getKeys()) if(l!=0) varBumpActivity(abs(l));
+	for(int l: actSet.getKeys()) if(l!=0) vBumpActivity(abs(l));
 	actSet.reset();
 }
 
@@ -1094,7 +1094,7 @@ CRef propagate() {
 		for(int it_ws=0; it_ws<(int)ws.size(); ++it_ws){
 			++DETERMINISTICTIME;
 			CRef cr = ws[it_ws].cref;
-			Clause & C = ca[cr];
+			Constr& C = ca[cr];
 			if(C.getStatus()>=FORCEDELETE){ swapErase(ws,it_ws--); continue; }
 			WatchStatus wstat = C.propagateWatch(cr,ws[it_ws].idx);
 			if(wstat==WatchStatus::FOUNDNEW) swapErase(ws,it_ws--);
@@ -1172,7 +1172,7 @@ void learnConstraint(longConstr& confl){
 	assert(tmpConstraint.isSaturated());
 
 	CRef cr = attachConstraint(tmpConstraint,true);
-	Clause & C = ca[cr];
+	Constr& C = ca[cr];
 	recomputeLBD(C);
 
 	LEARNEDLENGTHSUM+=C.size();
@@ -1310,7 +1310,7 @@ void wcnf_read(istream & in, long long top, intConstr& objective) {
 			int l;
 			while (is >> l, l) tmpConstraint.addLhs(1,l);
 			if(weight<top){ // soft clause
-				if(weight>1e9) exit_ERROR({"Constraint weight exceeds 10^9: ",std::to_string(weight)});
+				if(weight>1e9) exit_ERROR({"Clause weight exceeds 10^9: ",std::to_string(weight)});
 				if(weight<0) exit_ERROR({"Negative clause weight: ",std::to_string(weight)});
 				setNbVariables(n+1); // increases n to n+1
 				objective.resize(n+1);
@@ -1373,7 +1373,7 @@ void file_read(istream & in, intConstr& objective) {
 // Garbage collection
 
 // We assume in the garbage collection method that reduceDB() is the
-// only place where clauses are deleted.
+// only place where constraints are deleted.
 void garbage_collect(){
 	assert(decisionLevel()==0); // so we don't need to update the pointer of Reason<CRef>
 	if (verbosity > 0) puts("c GARBAGE COLLECT");
@@ -1385,8 +1385,8 @@ void garbage_collect(){
 		}
 		adj[l].erase(adj[l].begin()+j,adj[l].end());
 	}
-	// clauses, learnts, adj[-n..n], reason[-n..n].
-	uint32_t ofs_learnts=0;for(CRef cr:clauses)ofs_learnts+=ca.sz_constr(ca[cr].size());
+	// constraints, learnts, adj[-n..n], reason[-n..n].
+	uint32_t ofs_learnts=0;for(CRef cr:formula_constrs)ofs_learnts+=ca.sz_constr(ca[cr].size());
 	sort(learnts.begin(), learnts.end(), [](CRef x,CRef y){return x.ofs<y.ofs;}); // we have to sort here, because reduceDB shuffles them.
 	ca.wasted=0;
 	ca.at=ofs_learnts;
@@ -1422,7 +1422,7 @@ struct reduceDB_lt {
 
 void removeConstraint(CRef cr){
 	assert(decisionLevel()==0);
-	Clause& c = ca[cr];
+	Constr& c = ca[cr];
 	assert(c.getStatus()!=MARKEDFORDELETE);
 	assert(c.getStatus()!=LOCKED);
 	c.setStatus(MARKEDFORDELETE);
@@ -1436,11 +1436,11 @@ void reduceDB(){
 	size_t i, j;
 
 	sort(learnts.begin(), learnts.end(), reduceDB_lt());
-	if(ca[learnts[learnts.size() / 2]].lbd()<=3) nbclausesbeforereduce += 1000;
-	// Don't delete binary or locked clauses. From the rest, delete clauses from the first half
-	// and clauses with activity smaller than 'extra_lim':
+	if(ca[learnts[learnts.size() / 2]].lbd()<=3) nbconstrsbeforereduce += 1000;
+	// Don't delete binary or locked constraints. From the rest, delete constraints from the first half
+	// and constraints with activity smaller than 'extra_lim':
 	for (i = j = 0; i < learnts.size(); i++){
-		Clause& c = ca[learnts[i]];
+		Constr& c = ca[learnts[i]];
 		if (c.getStatus()==FORCEDELETE){
 			removeConstraint(learnts[i]);
 		}else if (c.lbd()>2 && c.size() > 2 && c.getStatus()==UNLOCKED && i < learnts.size() / 2)
@@ -1508,7 +1508,7 @@ void print_stats() {
 	}
 }
 
-long long lhs(Clause& C, const std::vector<bool>& sol){
+long long lhs(Constr& C, const std::vector<bool>& sol){
 	long long result = 0;
 	for(size_t j=0; j<C.size(); ++j){
 		int l = C.lit(j);
@@ -1518,8 +1518,8 @@ long long lhs(Clause& C, const std::vector<bool>& sol){
 }
 
 bool checksol() {
-	for(CRef cr: clauses){
-		Clause& C = ca[cr];
+	for(CRef cr: formula_constrs){
+		Constr& C = ca[cr];
 		int degree = C.degree();
 		if(lhs(C,last_sol)<degree) return false;
 	}
@@ -1576,7 +1576,7 @@ void usage(int argc, char**argv) {
 	printf("  --print-sol=arg  Prints the solution if found (default %d).\n",print_sol);
 	printf("  --verbosity=arg  Set the verbosity of the output (default %d).\n",verbosity);
 	printf("\n");
-	printf("  --var-decay=arg  Set the VSIDS decay factor (0.5<=arg<1; default %lf).\n",var_decay);
+	printf("  --var-decay=arg  Set the VSIDS decay factor (0.5<=arg<1; default %lf).\n",v_vsids_decay);
 	printf("  --rinc=arg       Set the base of the Luby restart sequence (floating point number >=1; default %lf).\n",rinc);
 	printf("  --rfirst=arg     Set the interval of the Luby restart sequence (integer >=1; default %lld).\n",rfirst);
 	printf("  --original-rto=arg Set whether to use RoundingSat's original round-to-one conflict analysis (0 or 1; default %d).\n",originalRoundToOne);
@@ -1622,7 +1622,7 @@ string read_options(int argc, char**argv) {
 	}
 	getOptionNum(opt_val,"print-sol",[](double x)->bool{return x==0 || x==1;},print_sol);
 	getOptionNum(opt_val,"verbosity",[](double x)->bool{return true;},verbosity);
-	getOptionNum(opt_val,"var-decay",[](double x)->bool{return x>=0.5 && x<1;},var_decay);
+	getOptionNum(opt_val,"var-decay",[](double x)->bool{return x>=0.5 && x<1;},v_vsids_decay);
 	getOptionNum(opt_val,"rinc",[](double x)->bool{return x>=1;},rinc);
 	getOptionNum(opt_val,"rfirst",[](double x)->bool{return x>=1;},rfirst);
 	getOptionNum(opt_val,"original-rto",[](double x)->bool{return x==0 || x==1;},originalRoundToOne);
@@ -1722,8 +1722,8 @@ SolveState solve(const vector<int>& assumptions, intConstr& out) {
 				}
 				exit_UNSAT();
 			}
-			varDecayActivity();
-			claDecayActivity();
+			vDecayActivity();
+			cDecayActivity();
 			NCONFL++; nconfl_to_restart--;
 			if(NCONFL%1000==0){
 				if (verbosity > 0) {
@@ -1731,7 +1731,7 @@ SolveState solve(const vector<int>& assumptions, intConstr& out) {
 //					print_stats();
 					if(verbosity>2){
 						// memory usage
-						cout<<"c total clause space: "<<ca.cap*4/1024./1024.<<"MB"<<endl;
+						cout<<"c total constraint space: "<<ca.cap*4/1024./1024.<<"MB"<<endl;
 						cout<<"c total #watches: ";{long long cnt=0;for(int l=-n;l<=n;l++)cnt+=(long long)adj[l].size();cout<<cnt<<endl;}
 					}
 				}
@@ -1751,10 +1751,10 @@ SolveState solve(const vector<int>& assumptions, intConstr& out) {
 				backjumpTo(0);
 				double rest_base = luby(rinc, curr_restarts++);
 				nconfl_to_restart = (long long) rest_base * rfirst;
-				if(NCONFL >= (cnt_reduceDB+1)*nbclausesbeforereduce) {
+				if(NCONFL >= (cnt_reduceDB+1)*nbconstrsbeforereduce) {
 					++cnt_reduceDB;
 					reduceDB();
-					while(NCONFL >= cnt_reduceDB*nbclausesbeforereduce) nbclausesbeforereduce += incReduceDB;
+					while(NCONFL >= cnt_reduceDB*nbconstrsbeforereduce) nbconstrsbeforereduce += incReduceDB;
 					return SolveState::INPROCESSING;
 				}
 			}
@@ -2088,7 +2088,7 @@ int main(int argc, char**argv){
 		file_read(cin,objective);
 	}
 	if(logProof()) formula_out << "* INPUT FORMULA ABOVE - AUXILIARY AXIOMS BELOW\n";
-	std::cout << "c #variables=" << orig_n << " #constraints=" << clauses.size() << std::endl;
+	std::cout << "c #variables=" << orig_n << " #constraints=" << formula_constrs.size() << std::endl;
 
 	signal(SIGINT, SIGINT_interrupt);
 	signal(SIGTERM,SIGINT_interrupt);
