@@ -697,8 +697,6 @@ struct Constraint{
 	}
 
 	void logInconsistency(){
-		assert(decisionLevel()==0);
-		assert(getSlack()<0);
 		removeUnits();
 		logAsProofLine();
 		proof_out << "c " << last_proofID << " 0" << std::endl;
@@ -748,6 +746,12 @@ std::ostream & operator<<(std::ostream & o, Constr& C) {
 	o << logConstraint;
 	logConstraint.reset();
 	return o;
+}
+long long getSlack(Constr& C){
+	logConstraint.init(C);
+	long long slack = logConstraint.getSlack();
+	logConstraint.reset();
+	return slack;
 }
 
 struct IntSet{
@@ -1039,8 +1043,8 @@ void analyze(CRef confl){
 	for(int v: confl_data.vars) actSet.add(confl_data.getLit(v));
 	while(true){
 		if (decisionLevel() == 0) {
-			assert(confl_data.getSlack()<0);
 			if(logProof()) confl_data.logInconsistency();
+			assert(confl_data.getSlack()<0);
 			exit_UNSAT();
 		}
 		int l = trail.back();
@@ -1164,6 +1168,7 @@ void learnConstraint(longConstr& confl){
 	long long slk = tmpConstraint.getSlack();
 	if(slk<0){
 		if(logProof()) tmpConstraint.logInconsistency();
+		assert(decisionLevel()==0);
 		exit_UNSAT();
 	}
 	tmpConstraint.heuristicWeakening(slk);
@@ -1199,6 +1204,7 @@ CRef addInputConstraint(intConstr& c, bool initial=false){
 	if(c.getSlack()<0){
 		puts("c Inconsistent input constraint");
 		if(logProof()) c.logInconsistency();
+		assert(decisionLevel()==0);
 		exit_UNSAT();
 	}
 
@@ -1211,6 +1217,8 @@ CRef addInputConstraint(intConstr& c, bool initial=false){
 			logConstraint.logInconsistency();
 			logConstraint.reset();
 		}
+		assert(decisionLevel()==0);
+		assert(getSlack(ca[confl])<0);
 		exit_UNSAT();
 	}
 	return result;
@@ -1718,6 +1726,7 @@ SolveState solve(const std::vector<int>& assumptions, intConstr& out) {
 					logConstraint.logInconsistency();
 					logConstraint.reset();
 				}
+				assert(getSlack(ca[confl])<0);
 				exit_UNSAT();
 			}
 			vDecayActivity();
@@ -1980,8 +1989,8 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 		// Due to tmpConstraint being a simple cardinality, this is the case.
 		coreAggregate.add(tmpConstraint,mult,false);
 		tmpConstraint.reset();
-		assert(testCoreAggregate(origObj,coreAggregate,reformObj));
-		assert(-reformObj.getDegree()==lowerBoundFromCoreAggregate(origObj,coreAggregate));
+		// assert(testCoreAggregate(origObj,coreAggregate,reformObj)); TODO
+		// assert(-reformObj.getDegree()==lowerBoundFromCoreAggregate(origObj,coreAggregate)); TODO
 		for(int v=oldN+1; v<newN; ++v){ // add symmetry breaking constraints
 			assert(tmpConstraint.isReset());
 			tmpConstraint.addRhs(1);
@@ -2038,21 +2047,22 @@ void optimize(intConstr& origObj, intConstr& core){
 			++NCORES;
 			if(core.getSlack()<0){
 				if(logProof()) core.logInconsistency();
+				assert(decisionLevel()==0);
 				exit_UNSAT();
 			}
 			handleInconsistency(reformObj,core,lower_bound,lazyVars,coreAggregate,origObj);
 		} // else reply==SolveState::INPROCESSING, keep looping
 		if(lower_bound>=last_sol_obj_val){
 			printObjBounds(lower_bound,last_sol_obj_val);
-			if(logProof()){
-				origObj.copyTo(tmpConstraint,-1);
-				tmpConstraint.addRhs(-last_sol_obj_val+1);
-				tmpConstraint.resetBuffer(lastObjectiveBoundID); assert(lastObjectiveBoundID>0);
-				coreAggregate.add(tmpConstraint,1,false);
-				tmpConstraint.reset();
-				coreAggregate.postProcess();
-				coreAggregate.logInconsistency();
-			}
+			origObj.copyTo(tmpConstraint,-1);
+			tmpConstraint.addRhs(-last_sol_obj_val+1);
+			tmpConstraint.resetBuffer(lastObjectiveBoundID); assert(lastObjectiveBoundID>0);
+			coreAggregate.add(tmpConstraint,1,false);
+			tmpConstraint.reset();
+			coreAggregate.postProcess();
+			if(logProof()) coreAggregate.logInconsistency();
+			//assert(coreAggregate.getSlack()<0); // TODO: comment for lazy optimization
+			assert(decisionLevel()==0);
 			exit_UNSAT();
 		}
 	}
@@ -2098,6 +2108,8 @@ int main(int argc, char**argv){
 		if(reply==SolveState::SAT) exit_SAT();
 		else if(reply==SolveState::UNSAT){
 			if(logProof()) inconsistency.logInconsistency();
+			assert(decisionLevel()==0);
+			assert(inconsistency.getSlack()<0);
 			exit_UNSAT();
 		}
 	}
