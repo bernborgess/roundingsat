@@ -80,7 +80,7 @@ const int resize_factor=2;
 const int INF=1e9+1;
 
 double initial_time;
-long long NBACKJUMP=0, DETERMINISTICTIME=0;
+long long NBACKJUMP=0, DETERMINISTICTIME=1;
 long long NCONFL=0, NDECIDE=0, NPROP=0;
 __int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
 long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
@@ -418,23 +418,10 @@ struct Constraint{
 		return true;
 	}
 
-	template<class COEFS, class RHS>
-	void getNormalForm(std::vector<int>& lits, std::vector<COEFS>& cs, RHS& w) const {
-		lits.clear(); cs.clear();
-		w=getDegree();
-		if(w<=0) return;
-		lits.reserve(vars.size()); cs.reserve(vars.size());
-		for(int v: vars){
-			int l = getLit(v);
-			if(l==0) continue;
-			lits.push_back(l);
-			cs.push_back(std::min<LARGE>(getCoef(l),w));
-		}
-	}
-
 	template<class S, class L>
-	void copyTo(Constraint<S,L>& out, S mult=1) const { // NOTE: more efficient than add(...)
+	void copyTo(Constraint<S,L>& out, bool inverted=false) const {
 		assert(out.isReset());
+		int mult=(inverted?-1:1);
 		out.addRhs(mult*rhs);
 		out.resize(coefs.size());
 		out.vars=vars;
@@ -687,10 +674,17 @@ struct Constraint{
 		weakenNonImplying(smallestPropagated,slk);
 	}
 
+	void logInput() {
+		toStreamAsOPB(formula_out);
+		proof_out << "l " << ++last_formID << "\n";
+		resetBuffer(++last_proofID); // ensure consistent proofBuffer
+	}
+
 	void logAsProofLine(){
 		proof_out << "p " << proofBuffer.str() << "0\n";
 		resetBuffer(++last_proofID); // ensure consistent proofBuffer
 		#if !NDEBUG
+		proof_out << "* " << DETERMINISTICTIME << "\n";
 		proof_out << "e " << last_proofID << " ";
 		toStreamAsOPB(proof_out);
 		#endif
@@ -936,6 +930,7 @@ void uncheckedEnqueue(int p, CRef from=CRef_Undef){
 	if(decisionLevel()==0){
 		Reason[v] = CRef_Undef; // no need to keep track of reasons for unit literals
 		assert(from!=CRef_Undef);
+		++DETERMINISTICTIME; // NOTE: helps for proof log debugging
 		if(logProof()){
 			Constr& C = ca[from];
 			logConstraint.init(C);
@@ -1091,6 +1086,7 @@ void analyze(CRef confl){
  * post condition: all watches up to trail[qhead] have been propagated
  */
 CRef propagate() {
+	++DETERMINISTICTIME; // NOTE: helps for proof log debugging
 	while(qhead<(int)trail.size()){
 		int p=trail[qhead++];
 		std::vector<Watch> & ws = adj[-p];
@@ -1191,11 +1187,7 @@ void learnConstraint(longConstr& confl){
 CRef addInputConstraint(intConstr& c, bool initial=false){
 	assert(decisionLevel()==0);
 	assert(learnts.size()==0 || !initial);
-	if(logProof()){
-		c.toStreamAsOPB(formula_out);
-		proof_out << "l " << ++last_formID << "\n";
-		c.resetBuffer(++last_proofID); // ensure consistent proofBuffer
-	}
+	if(logProof()) c.logInput();
 	c.postProcess();
 	long long degree = c.getDegree();
 	if(degree > (long long) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
@@ -1290,7 +1282,7 @@ void opb_read(std::istream & in, intConstr& objective) {
 				tmpConstraint.addRhs(read_number(line0.substr(line0.find("=") + 1)));
 				// Handle equality case with two constraints
 				bool equality = line0.find(" = ") != std::string::npos;
-				if(equality) tmpConstraint.copyTo(inverted,-1);
+				if(equality) tmpConstraint.copyTo(inverted,true);
 				// NOTE: addInputConstraint modifies tmpConstraint, so the inverted version is stored first
 				addInputConstraint(tmpConstraint,true);
 				tmpConstraint.reset();
@@ -1807,7 +1799,7 @@ void handleNewSolution(const intConstr& origObj, long long& lastObjectiveBoundID
 	for(int v: origObj.vars) last_sol_obj_val+=origObj.coefs[v]*last_sol[v];
 	assert(last_sol_obj_val<prev_val);
 
-	origObj.copyTo(tmpConstraint,-1);
+	origObj.copyTo(tmpConstraint,true);
 	tmpConstraint.addRhs(-last_sol_obj_val+1);
 	lastObjectiveBoundID=last_proofID+1; // The next constraint added to the proof will be the unaltered upper bound
 	CRef cr = addInputConstraint(tmpConstraint);
@@ -1975,7 +1967,7 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 		reformObj.resize(newN+1);
 		// reformulate the objective
 		for(int v=oldN+1; v<=newN; ++v) core.addLhs(-1,v);
-		core.copyTo(tmpConstraint,-1);
+		core.copyTo(tmpConstraint,true);
 		reformObj.add(tmpConstraint,mult,false);
 		assert(lower_bound==-reformObj.getDegree());
 		// add channeling constraints
@@ -2054,7 +2046,7 @@ void optimize(intConstr& origObj, intConstr& core){
 		} // else reply==SolveState::INPROCESSING, keep looping
 		if(lower_bound>=last_sol_obj_val){
 			printObjBounds(lower_bound,last_sol_obj_val);
-			origObj.copyTo(tmpConstraint,-1);
+			origObj.copyTo(tmpConstraint,true);
 			tmpConstraint.addRhs(-last_sol_obj_val+1);
 			tmpConstraint.resetBuffer(lastObjectiveBoundID); assert(lastObjectiveBoundID>0);
 			coreAggregate.add(tmpConstraint,1,false);
