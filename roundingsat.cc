@@ -156,7 +156,7 @@ struct Constr { // TODO: heuristic info actually not needed in cache-sensitive C
 	// TODO: is above really true?
 	int watchIdx;
 	// ordinary data
-	int data[0]; // TODO: data as pairs of coef-lit instead of list of all lits, then all coefs?
+	int data[]; // TODO: data as pairs of coef-lit instead of list of all lits, then all coefs?
 
 	inline size_t size() const { return header.size; }
 	inline int * lits() { return data; }
@@ -792,7 +792,7 @@ static inline void* xrealloc(void *ptr, size_t size)
 		return mem;
 }
 struct {
-	uint32_t* memory;
+	uint32_t* memory; // TODO: why not uint64_t?
 	uint32_t at=0, cap=0;
 	uint32_t wasted=0; // for GC
 	void capacity(uint32_t min_cap){
@@ -806,11 +806,8 @@ struct {
 			// using 'uint32_t' as indices so that as much as possible of this space can be used.
 			uint32_t delta = ((cap >> 1) + (cap >> 3) + 2) & ~1;
 			cap += delta;
-
-			if (cap <= prev_cap)
-				throw OutOfMemoryException();
+			if (cap <= prev_cap) throw OutOfMemoryException();
 		}
-		// printf(" .. (%p) cap = %u\n", this, cap);
 
 		assert(cap > 0);
 		memory = (uint32_t*) xrealloc(memory, sizeof(uint32_t) * cap);
@@ -828,10 +825,11 @@ struct {
 
 		// note: coefficients can be arbitrarily ordered (we don't sort them in descending order for example)
 		// during maintenance of watches the order will be shuffled.
-		capacity(at + sz_constr(length));
-		Constr * constr = (Constr*)(memory+at);
-		new (constr) Constr;
+		uint32_t old_at = at;
 		at += sz_constr(length);
+		capacity(at);
+		Constr* constr = (Constr*)(memory+old_at);
+		new (constr) Constr;
 		constr->id = proofID;
 		constr->act = 0;
 		constr->header = {0,learnt,length,(unsigned int)(locked?LOCKED:UNLOCKED),length};
@@ -844,7 +842,7 @@ struct {
 			constr->lits()[i]=constraint.getLit(v);
 			constr->coefs()[i]=std::abs(constraint.coefs[v]);
 		}
-		return {(uint32_t)(at-sz_constr(length))};
+		return CRef{old_at};
 	}
 	Constr& operator[](CRef cr) { return (Constr&)*(memory+cr.ofs); }
 	const Constr& operator[](CRef cr) const { return (Constr&)*(memory+cr.ofs); }
@@ -1472,11 +1470,13 @@ double luby(double y, int x){
 
 bool asynch_interrupt = false;
 static void SIGINT_interrupt(int signum){
+	_unused(signum);
 	asynch_interrupt = true;
 }
 
 static void SIGINT_exit(int signum){
-	printf("\n"); printf("*** INTERRUPTED ***\n");
+	_unused(signum);
+	printf("\n*** INTERRUPTED ***\n");
 	exit(1);
 }
 
@@ -1566,8 +1566,8 @@ void exit_ERROR(const std::initializer_list<std::string>& messages){
 	exit(1);
 }
 
-void usage(int argc, char**argv) {
-	printf("Usage: %s [OPTION] instance.(opb|cnf|wcnf)\n", argv[0]);
+void usage(char* name) {
+	printf("Usage: %s [OPTION] instance.(opb|cnf|wcnf)\n", name);
 	printf("\n");
 	printf("Options:\n");
 	printf("  --help           Prints this help message.\n");
@@ -1599,7 +1599,7 @@ std::string read_options(int argc, char**argv) {
 	std::string filename;
 	for(int i=1;i<argc;i++){
 		if (!strcmp(argv[i], "--help")) {
-			usage(argc, argv);
+			usage(argv[0]);
 			exit(1);
 		}
 	}
@@ -1619,7 +1619,7 @@ std::string read_options(int argc, char**argv) {
 		}
 	}
 	getOptionNum(opt_val,"print-sol",[](double x)->bool{return x==0 || x==1;},print_sol);
-	getOptionNum(opt_val,"verbosity",[](double x)->bool{return true;},verbosity);
+	getOptionNum(opt_val,"verbosity",[](double)->bool{return true;},verbosity);
 	getOptionNum(opt_val,"var-decay",[](double x)->bool{return x>=0.5 && x<1;},v_vsids_decay);
 	getOptionNum(opt_val,"rinc",[](double x)->bool{return x>=1;},rinc);
 	getOptionNum(opt_val,"rfirst",[](double x)->bool{return x>=1;},rfirst);
