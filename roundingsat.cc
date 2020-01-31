@@ -119,8 +119,8 @@ int orig_n = 0;
 std::vector<CRef> formula_constrs, learnts, external;
 struct Watch {
 	CRef cref;
-	int idx;
-	Watch(CRef cr,int i):cref(cr),idx(i){};
+	unsigned int idx;
+	Watch(CRef cr, unsigned int i):cref(cr),idx(i){};
 	bool operator==(const Watch& other)const{return other.cref==cref && other.idx==idx;}
 };
 
@@ -150,79 +150,71 @@ struct Constr { // TODO: heuristic info actually not needed in cache-sensitive C
 		unsigned status       : 2;
 		unsigned size         : 30;
 	} header;
-	// watch data
 	long long nbackjump;
 	long long slack; // sum of non-falsified watches minus w.
 	// NOTE: will never be larger than 2 * non-falsified watch, so fits in 32 bit for the n-watched literal scheme
 	// TODO: is above really true?
-	int watchIdx;
-	// ordinary data
-	int data[]; // TODO: data as pairs of coef-lit instead of list of all lits, then all coefs?
+	unsigned int watchIdx;
+	int data[];
 
-	inline size_t size() const { return header.size; }
-	inline int * lits() { return data; }
-	inline int * coefs() { return (int*)(data+header.size); }
-
+	inline unsigned int size() const { return header.size; }
 	inline void setStatus(DeletionStatus ds){ header.status=(unsigned int) ds; }
 	inline DeletionStatus getStatus() const { return (DeletionStatus) header.status; }
 	inline void setLBD(unsigned int lbd){ header.lbd=std::min(header.lbd,lbd); }
 	inline unsigned int lbd() const { return header.lbd; }
 	inline bool learnt() const { return header.learnt; }
-	inline int largestCoef() const { return std::abs(data[header.size]); }
-	inline int coef(int i) const { return std::abs(data[header.size+i]); }
-	inline int lit(int i) const { return data[i]; }
-	inline bool isWatched(int idx) const { return data[header.size+idx]<0; }
-	inline void undoFalsified(int idx) {
-		assert(isWatched(idx));
-		slack += coef(idx);
+	inline int largestCoef() const { return std::abs(data[0]); }
+	inline int coef(unsigned int i) const { return std::abs(data[i<<1]); }
+	inline int lit(unsigned int i) const { return data[(i<<1)+1]; }
+	inline bool isWatched(unsigned int i) const { assert(i%2==0); return data[i]<0; }
+	inline void undoFalsified(unsigned int i) {
+		assert(i%2==0);
+		assert(isWatched(i));
+		slack -= data[i];
 		watchIdx=0;
 	}
 	inline int degree() const {
 		int result = slack;
-		int sz = size();
-		for(int i=0; i<sz; ++i) {
-			int l = data[i];
-			int c = data[sz+i];
+		unsigned int sz2 = 2*size();
+		for(unsigned int i=0; i<sz2; i+=2) {
+			int c = data[i];
+			int l = data[i+1];
 			if(c<0 && (Level[-l]==-1 || Pos[std::abs(l)]>=qhead)) result+=c;
 		}
 		return -result;
 	}
-	inline WatchStatus propagateWatch(CRef cr, int idx){
-		const int * const lts = lits(); int * const cfs = coefs();
-		const int Csize = size(); const int ClargestCoef = largestCoef();
-		const int c = cfs[idx];
+	inline WatchStatus propagateWatch(CRef cr, unsigned int idx){
+		assert(idx%2==0);
+		const unsigned int Csize2 = 2*size(); const int ClargestCoef = largestCoef();
+		const int c = data[idx];
 		assert(c<0);
 		slack+=c;
 		if(slack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
 			if(nbackjump<NBACKJUMP){ nbackjump=NBACKJUMP; watchIdx=0; }
-			int i=watchIdx;
-			DETERMINISTICTIME-=i;
-			for(; i<Csize && slack<ClargestCoef; ++i){ // NOTE: first innermost loop of RoundingSat
-				const int l = lts[i];
-				const int cf = cfs[i];
+			DETERMINISTICTIME-=watchIdx;
+			for(; watchIdx<Csize2 && slack<ClargestCoef; watchIdx+=2){ // NOTE: first innermost loop of RoundingSat
+				const int cf = data[watchIdx];
+				const int l = data[watchIdx+1];
 				if(cf>0 && Level[-l]==-1){
 					slack+=cf;
-					cfs[i]=-cf;
-					adj[l].emplace_back(cr,i);
+					data[watchIdx]=-cf;
+					adj[l].emplace_back(cr,watchIdx);
 				}
 			}
-			DETERMINISTICTIME+=i;
-			watchIdx=i;
-			if(slack<ClargestCoef){ assert(i==Csize); watchIdx=0; }
+			DETERMINISTICTIME+=watchIdx;
+			if(slack<ClargestCoef){ assert(i==Csize2); watchIdx=0; }
 		} // else we did not find enough watches last time, so we can skip looking for them now
 
 		if(slack>=ClargestCoef){
-			cfs[idx]=-c;
+			data[idx]=-c;
 			return WatchStatus::FOUNDNEW;
 		}else if(slack>=0){ // keep the watch, check for propagation
-			int i=watchIdx;
-			DETERMINISTICTIME-=i;
-			for(; i<Csize && std::abs(cfs[i])>slack; ++i){ // NOTE: second innermost loop of RoundingSat
-				const int l = lts[i];
+			DETERMINISTICTIME-=watchIdx;
+			for(; watchIdx<Csize2 && std::abs(data[watchIdx])>slack; watchIdx+=2){ // NOTE: second innermost loop of RoundingSat
+				const int l = data[watchIdx+1];
 				if(Pos[std::abs(l)]==-1) uncheckedEnqueue(l,cr);
 			}
-			DETERMINISTICTIME+=i;
-			watchIdx=i;
+			DETERMINISTICTIME+=watchIdx;
 			return WatchStatus::FOUNDNONE;
 		}else return WatchStatus::CONFLICTING;
 	}
@@ -845,11 +837,11 @@ struct {
 		constr->nbackjump = 0;
 		constr->slack = -w;
 		constr->watchIdx = 0;
-		for(unsigned int i=0;i<length;i++){
+		for(unsigned int i=0; i<length; ++i){
 			int v = constraint.vars[i];
 			assert(constraint.getLit(v)!=0);
-			constr->lits()[i]=constraint.getLit(v);
-			constr->coefs()[i]=std::abs(constraint.coefs[v]);
+			constr->data[(i<<1)]=std::abs(constraint.coefs[v]);
+			constr->data[(i<<1)+1]=constraint.getLit(v);
 		}
 		return CRef{old_at};
 	}
@@ -962,14 +954,14 @@ CRef attachConstraint(intConstr& constraint, bool learnt, bool locked=false){
 	CRef cr = ca.alloc(constraint,last_proofID,learnt,locked);
 	if (learnt) learnts.push_back(cr);
 	else formula_constrs.push_back(cr);
-	Constr& C = ca[cr]; int* lits = C.lits(); int* coefs = C.coefs();
+	Constr& C = ca[cr]; int* data = C.data;
 
-	for(int i=0; i<(int)C.size() && C.slack<C.largestCoef(); ++i){
-		int l = lits[i];
+	for(unsigned int i=0; i<2*C.size() && C.slack<C.largestCoef(); i+=2){
+		int l = data[i+1];
 		if(Level[-l]==-1 || Pos[std::abs(l)]>=qhead){
 			assert(!C.isWatched(i));
-			C.slack+=coefs[i];
-			coefs[i]=-coefs[i];
+			C.slack+=data[i];
+			data[i]=-data[i];
 			adj[l].push_back({cr,i});
 		}
 	}
@@ -978,18 +970,21 @@ CRef attachConstraint(intConstr& constraint, bool learnt, bool locked=false){
 		// set sufficient falsified watches
 		std::vector<int> falsifieds;
 		falsifieds.reserve(C.size());
-		for(int i=0; i<(int)C.size(); ++i) if(~Level[-lits[i]] && Pos[std::abs(lits[i])]<qhead) falsifieds.push_back(i);
-		std::sort(falsifieds.begin(),falsifieds.end(),[&](int i1,int i2){ return Pos[std::abs(lits[i1])]>Pos[std::abs(lits[i2])]; });
+		for(unsigned int i=0; i<2*C.size(); i+=2) if(~Level[-data[i+1]] && Pos[std::abs(data[i+1])]<qhead) falsifieds.push_back(i);
+		std::sort(falsifieds.begin(),falsifieds.end(),[&](unsigned i1,unsigned i2){
+			return Pos[std::abs(data[i1+1])]>Pos[std::abs(data[i2+1])]; });
 		long long diff = C.largestCoef()-C.slack;
-		for(int i: falsifieds){
+		for(unsigned int i: falsifieds){
 			assert(!C.isWatched(i));
-			diff-=coefs[i];
-			coefs[i]=-coefs[i];
-			adj[lits[i]].push_back({cr,i});
+			diff-=data[i];
+			data[i]=-data[i];
+			adj[data[i+1]].push_back({cr,i});
 			if(diff<=0) break;
 		}
 		// perform initial propagation
-		for(int i=0; i<(int)C.size() && std::abs(coefs[i])>C.slack; ++i) if(Pos[std::abs(lits[i])]==-1) uncheckedEnqueue(lits[i],cr);
+		for(unsigned int i=0; i<2*C.size() && std::abs(data[i])>C.slack; i+=2) if(Pos[std::abs(data[i+1])]==-1) {
+			uncheckedEnqueue(data[i+1],cr);
+		}
 	}
 	return cr;
 }
