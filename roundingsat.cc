@@ -438,7 +438,7 @@ struct Constraint{
 		assert(c._unused_()<=_unused_()); // don't add large stuff into small stuff
 		if(logProof()) proofBuffer << c.proofBuffer.str() << proofMult(mult) << "+ ";
 		for(int v: c.vars) addLhs(mult*c.coefs[v],v);
-		addRhs(mult*c.rhs);
+		addRhs((LARGE)mult*(LARGE)c.rhs);
 		if(!saturateAndReduce) return;
 		removeZeroes();
 		LARGE deg = saturate();
