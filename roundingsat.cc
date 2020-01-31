@@ -101,6 +101,7 @@ bool logProof(){ return !proof_log_name.empty(); }
 std::ofstream proof_out; std::ofstream formula_out;
 long long last_proofID = 0; long long last_formID = 0;
 std::vector<long long> unitIDs;
+long long logStartTime=0;
 
 struct CRef {
 	uint32_t ofs;
@@ -434,6 +435,7 @@ struct Constraint{
 
 	template<class S, class L>
 	void add(const Constraint<S,L>& c, SMALL mult=1, bool saturateAndReduce=true){
+		assert(c._unused_()<=_unused_()); // don't add large stuff into small stuff
 		if(logProof()) proofBuffer << c.proofBuffer.str() << proofMult(mult) << "+ ";
 		for(int v: c.vars) addLhs(mult*c.coefs[v],v);
 		addRhs(mult*c.rhs);
@@ -674,25 +676,30 @@ struct Constraint{
 		weakenNonImplying(smallestPropagated,slk);
 	}
 
-	void logInput() {
+	void logAsInput() {
 		toStreamAsOPB(formula_out);
 		proof_out << "l " << ++last_formID << "\n";
 		resetBuffer(++last_proofID); // ensure consistent proofBuffer
 	}
 
-	void logAsProofLine(){
-		proof_out << "p " << proofBuffer.str() << "0\n";
-		resetBuffer(++last_proofID); // ensure consistent proofBuffer
-		#if !NDEBUG
-		proof_out << "* " << DETERMINISTICTIME << "\n";
-		proof_out << "e " << last_proofID << " ";
-		toStreamAsOPB(proof_out);
-		#endif
+	void logAsProofLine(std::string info){
+		_unused(info);
+		if(logStartTime<DETERMINISTICTIME){
+			proof_out << "p " << proofBuffer.str() << "0\n";
+			resetBuffer(++last_proofID); // ensure consistent proofBuffer
+			#if !NDEBUG
+			proof_out << "* " << DETERMINISTICTIME << " " << info << "\n";
+			proof_out << "e " << last_proofID << " ";
+			toStreamAsOPB(proof_out);
+			#endif
+		}else{
+			logAsInput();
+		}
 	}
 
 	void logInconsistency(){
 		removeUnits();
-		logAsProofLine();
+		logAsProofLine("i");
 		proof_out << "c " << last_proofID << " 0" << std::endl;
 	}
 
@@ -704,16 +711,18 @@ struct Constraint{
 		if(d>1) proofBuffer << d << " d ";
 		if(coefs[v_unit]>0){ coefs[v_unit]=1; rhs=1; }
 		else{ coefs[v_unit]=-1; rhs=0; }
-		logAsProofLine();
+		logAsProofLine("u");
 	}
 
 	void toStreamAsOPB(std::ofstream& o) const {
 		for(int v: vars){
-			SMALL c=coefs[v];
-			if(c==0) continue;
-			o << (c<0?"":"+") << c << " x" << v << " ";
+			int l = getLit(v);
+			if(l==0) continue;
+			SMALL c=getCoef(l);
+			assert(c>0);
+			o << "+" << c << (l<0?" ~x":" x") << v << " ";
 		}
-		o << ">= " << rhs << " ;\n";
+		o << ">= " << getDegree() << " ;\n";
 	}
 };
 using intConstr = Constraint<int,long long>;
@@ -949,7 +958,7 @@ CRef attachConstraint(intConstr& constraint, bool learnt, bool locked=false){
 	std::sort(constraint.vars.begin(),constraint.vars.end(),[&](int v1,int v2){
 		return std::abs(constraint.coefs[v1])>std::abs(constraint.coefs[v2]); });
 
-	if(logProof()) constraint.logAsProofLine();
+	if(logProof()) constraint.logAsProofLine("a");
 	CRef cr = ca.alloc(constraint,last_proofID,learnt,locked);
 	if (learnt) learnts.push_back(cr);
 	else formula_constrs.push_back(cr);
@@ -1185,7 +1194,7 @@ void learnConstraint(longConstr& confl){
 CRef addInputConstraint(intConstr& c, bool initial=false){
 	assert(decisionLevel()==0);
 	assert(learnts.size()==0 || !initial);
-	if(logProof()) c.logInput();
+	if(logProof()) c.logAsInput();
 	c.postProcess();
 	long long degree = c.getDegree();
 	if(degree > (long long) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
@@ -1691,6 +1700,7 @@ void extractCore(CRef confl, intConstr& outCore, int l_assump=0){
 		assert(decisionLevel()==tmpSet.size());
 		undoOne();
 	}
+	assert(confl_data.getDegree()<INF); assert(confl_data.isSaturated());
 	confl_data.copyTo(outCore);
 	confl_data.reset();
 
@@ -1862,23 +1872,6 @@ std::ostream & operator<<(std::ostream & o, LazyVar* lv) {
 	return o;
 }
 
-__int128 lowerBoundFromCoreAggregate(intConstr& origObj, longConstr& coreAggregate){
-	__int128 b = coreAggregate.getDegree()-origObj.getDegree();
-	for(int v: coreAggregate.vars) if(origObj.getLit(v)==0) b-=std::abs(coreAggregate.coefs[v]);
-	return b;
-}
-
-bool testCoreAggregate(const intConstr& origObj, const longConstr& coreAggregate, const longConstr& reformObj){
-	for(int v=0; v<=n; ++v){
-		if(origObj.getLit(v)==0){
-			assert(reformObj.getCoef(v)==-coreAggregate.getCoef(v));
-		}else{
-			assert(origObj.getCoef(v)==coreAggregate.getCoef(v)+reformObj.getCoef(v));
-		}
-	}
-	return true;
-}
-
 void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lower_bound,
                          std::vector<LazyVar*>& lazyVars, longConstr& coreAggregate,
                          intConstr& origObj){
@@ -1981,8 +1974,6 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 		// Due to tmpConstraint being a simple cardinality, this is the case.
 		coreAggregate.add(tmpConstraint,mult,false);
 		tmpConstraint.reset();
-		// assert(testCoreAggregate(origObj,coreAggregate,reformObj)); TODO
-		// assert(-reformObj.getDegree()==lowerBoundFromCoreAggregate(origObj,coreAggregate)); TODO
 		for(int v=oldN+1; v<newN; ++v){ // add symmetry breaking constraints
 			assert(tmpConstraint.isReset());
 			tmpConstraint.addRhs(1);
