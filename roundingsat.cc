@@ -306,7 +306,7 @@ public:
 		if(logProof()) resetBuffer(C.id);
 	}
 
-	long long removeUnits(bool doSaturation=true){ // TODO: merge with removeZeroes()
+	void removeUnits(bool doSaturation=true){ // TODO: merge with removeZeroes()
 		if(logProof()){
 			for(int v: vars){
 				int l = getLit(v); SMALL c = getCoef(l);
@@ -326,8 +326,7 @@ public:
 				swapErase(vars,i--);
 			}
 		}
-		if(doSaturation) return saturate();
-		else return getDegree();
+		if(doSaturation) saturate();
 	}
 
 	void removeZeroes(){
@@ -391,20 +390,19 @@ public:
 		if(m<0) addRhs(m);
 	}
 
-	LARGE saturate(){ // returns degree
+	void saturate(){
 		if(logProof() && !isSaturated()) proofBuffer << "s "; // log saturation only if it modifies the constraint
 		LARGE w = getDegree();
-		if(w<=0){
+		if(w<=0){ // NOTE: does not call reset(0), as we do not want to reset the buffer
 			for(int v: vars) coefs[v]=_unused_();
-			vars.clear(); rhs=0;
-			return 0;
+			vars.clear(); rhs=0; degree=0;
+			return;
 		}
 		for (int v: vars){
 			if(coefs[v]<-w) rhs-=coefs[v]+w, coefs[v]=-w;
 			else coefs[v]=std::min<LARGE>(coefs[v],w);
 		}
 		assert(isSaturated());
-		return w;
 	}
 
 	bool isSaturated() {
@@ -435,8 +433,8 @@ public:
 		addRhs((LARGE)mult*(LARGE)c.getRhs()); // resets degree
 		if(!saturateAndReduce) return;
 		removeZeroes();
-		LARGE deg = saturate();
-		if(deg > (LARGE)1e9) roundToOne(ceildiv<LARGE>(deg,1e9),!originalRoundToOne);
+		saturate();
+		if(getDegree() > (LARGE)1e9) roundToOne(ceildiv<LARGE>(getDegree(),1e9),!originalRoundToOne);
 		assert(getDegree() <= (LARGE)1e9);
 	}
 
@@ -1876,10 +1874,11 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 	origObj.removeZeroes();
 	coreAggregate.removeZeroes();
 	// take care of derived unit lits
-	long long prev_lower = lower_bound; _unused(prev_lower);
-	lower_bound = -reformObj.removeUnits(false);
+	reformObj.removeUnits(false);
 	origObj.removeUnits(false);
 	coreAggregate.removeUnits(false);
+	long long prev_lower = lower_bound; _unused(prev_lower);
+	lower_bound = -reformObj.getDegree();
 	if(core.getDegree()==0){
 		assert(lower_bound>prev_lower);
 		return; // apparently only unit assumptions were derived
@@ -1985,7 +1984,8 @@ void optimize(intConstr& origObj, intConstr& core){
 	assert(origObj.vars.size() > 0);
 	// NOTE: -origObj.getDegree() keeps track of the offset of the reformulated objective (or after removing unit lits)
 	origObj.removeZeroes();
-	long long lower_bound = -origObj.removeUnits(false);
+	origObj.removeUnits(false);
+	long long lower_bound = -origObj.getDegree();
 
 	long long opt_coef_sum = 0;
 	for (int v: origObj.vars) opt_coef_sum+=std::abs(origObj.coefs[v]);
