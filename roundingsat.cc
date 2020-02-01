@@ -404,7 +404,6 @@ public:
 			else coefs[v]=std::min<LARGE>(coefs[v],w);
 		}
 		assert(isSaturated());
-		assert(w==getDegree()); // degree is invariant under saturation
 		return w;
 	}
 
@@ -479,18 +478,18 @@ public:
 		assert(isSaturated());
 		if(isCardinality()) return false;
 		sort(vars.begin(),vars.end(),[&](int v1, int v2){return std::abs(coefs[v1])<std::abs(coefs[v2]);});
-		LARGE dg = getDegree();
-		assert(dg>0);
+		const LARGE w = getDegree();
+		assert(w>0);
 		assert(coefs[vars[0]]!=0); // all zeroes are removed
 
 		int largeCoefsNeeded=0;
 		LARGE largeCoefSum=0;
-		while(largeCoefsNeeded<(int)vars.size() && largeCoefSum<dg){
+		while(largeCoefsNeeded<(int)vars.size() && largeCoefSum<w){
 			++largeCoefsNeeded;
 			largeCoefSum+=std::abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
 		}
 		assert(largeCoefsNeeded>0);
-		if(largeCoefSum<dg){
+		if(largeCoefSum<w){
 			for(int v: vars) weaken(-coefs[v],v);
 			return true; // trivial inconsistency
 		}
@@ -499,10 +498,10 @@ public:
 		if(equivalencePreserving){
 			LARGE smallCoefSum=0;
 			for(int i=0; i<largeCoefsNeeded; ++i) smallCoefSum+=std::abs(coefs[vars[i]]);
-			if(smallCoefSum<dg) return false;
+			if(smallCoefSum<w) return false;
 			// else, we have an equivalent cardinality constraint
 		}else{
-			LARGE wiggleroom=dg-largeCoefSum+std::abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
+			LARGE wiggleroom=w-largeCoefSum+std::abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
 			assert(wiggleroom>0);
 			while(skippable<(int)vars.size() && wiggleroom>std::abs(coefs[vars[skippable]])){
 				wiggleroom-=std::abs(coefs[vars[skippable]]);
@@ -818,11 +817,10 @@ struct {
 	int sz_constr(int length) { return (sizeof(Constr)+sizeof(int)*length+sizeof(int)*length)/sizeof(uint32_t); }
 
 	CRef alloc(intConstr& constraint, long long proofID, bool learnt, bool locked){
-		long long degree = constraint.getDegree();
-		assert(degree>0);
-		assert(degree<=1e9);
+		assert(constraint.getDegree()>0);
+		assert(constraint.getDegree()<=1e9);
 		// as the constraint should be saturated, the coefficients are between 1 and 1e9 as well.
-		int w = (int)degree;
+		int w = (int)constraint.getDegree();
 		assert(!constraint.vars.empty());
 		unsigned int length = constraint.vars.size();
 
@@ -1193,9 +1191,8 @@ CRef addInputConstraint(intConstr& c, bool initial=false){
 	assert(learnts.size()==0 || !initial);
 	if(logProof()) c.logAsInput();
 	c.postProcess();
-	long long degree = c.getDegree();
-	if(degree > (long long) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
-	if(degree<=0) return CRef_Undef; // already satisfied.
+	if(c.getDegree()>(long long) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
+	if(c.getDegree()<=0) return CRef_Undef; // already satisfied.
 
 	if(c.getSlack()<0){
 		puts("c Inconsistent input constraint");
@@ -1888,17 +1885,16 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 	core.simplifyToCardinality(false);
 
 	// adjust the lower bound
-	long long degree = core.getDegree();
-	if(degree>1) ++NCORECARDINALITIES;
+	if(core.getDegree()>1) ++NCORECARDINALITIES;
 	long long mult = INF;
 	for(int v: core.vars){
 		assert(reformObj.getLit(v)!=0);
 		mult=std::min<long long>(mult,std::abs(reformObj.coefs[v]));
 	}
 	assert(mult<INF); assert(mult>0);
-	lower_bound+=degree*mult;
+	lower_bound+=core.getDegree()*mult;
 
-	if((opt_mode==2 || opt_mode==4) && core.vars.size()-degree>1){
+	if((opt_mode==2 || opt_mode==4) && core.vars.size()-core.getDegree()>1){
 		// add auxiliary variable
 		long long newN = n+1;
 		setNbVariables(newN);
@@ -1950,7 +1946,7 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 	}else{
 		// add auxiliary variables
 		long long oldN = n;
-		long long newN = oldN-degree+core.vars.size();
+		long long newN = oldN-core.getDegree()+core.vars.size();
 		setNbVariables(newN);
 		core.resize(newN+1);
 		coreAggregate.resize(newN+1);
