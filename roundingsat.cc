@@ -173,7 +173,7 @@ struct Constr { // TODO: heuristic info actually not needed in cache-sensitive C
 		slack -= data[i];
 		watchIdx=0;
 	}
-	inline int degree() const {
+	inline int degree() const { // TODO: make this a data field again
 		int result = slack;
 		unsigned int sz2 = 2*size();
 		for(unsigned int i=0; i<sz2; i+=2) {
@@ -202,7 +202,7 @@ struct Constr { // TODO: heuristic info actually not needed in cache-sensitive C
 				}
 			}
 			DETERMINISTICTIME+=watchIdx;
-			if(slack<ClargestCoef){ assert(i==Csize2); watchIdx=0; }
+			if(slack<ClargestCoef){ assert(watchIdx==Csize2); watchIdx=0; }
 		} // else we did not find enough watches last time, so we can skip looking for them now
 
 		if(slack>=ClargestCoef){
@@ -269,11 +269,14 @@ inline std::string proofMult(T mult){
 
 template<class SMALL, class LARGE> // LARGE should be able to fit sums of SMALL
 struct Constraint{
+private:
+	LARGE degree = 0;
+	LARGE rhs = 0;
+public:
 	std::vector<int> vars;
 	std::vector<SMALL> coefs;
-	LARGE rhs = 0;
-	static constexpr SMALL _unused_(){ return std::numeric_limits<SMALL>::max(); }
 	std::stringstream proofBuffer;
+	static constexpr SMALL _unused_(){ return std::numeric_limits<SMALL>::max(); }
 
 	Constraint(){
 		assert(std::numeric_limits<SMALL>::is_specialized); // otherwise, we can not use std::numeric_limits<SMALL>
@@ -292,18 +295,18 @@ struct Constraint{
 	void reset(){
 		for(int v: vars) coefs[v]=_unused_();
 		vars.clear();
-		rhs=0;
+		rhs=0; degree=0;
 		if(logProof()) resetBuffer(1); // NOTE: proofID 1 equals the constraint 0 >= 0
 	}
 
 	void init(Constr& C){
 		assert(isReset()); // don't use a Constraint used by other stuff
-		addRhs(C.degree());
+		addRhs(C.degree()); // resets degree
 		for(size_t i=0;i<C.size();++i){ assert(C.coef(i)!=0); addLhs(C.coef(i), C.lit(i)); }
 		if(logProof()) resetBuffer(C.id);
 	}
 
-	long long removeUnits(bool doSaturation=true){
+	long long removeUnits(bool doSaturation=true){ // TODO: merge with removeZeroes()
 		if(logProof()){
 			for(int v: vars){
 				int l = getLit(v); SMALL c = getCoef(l);
@@ -314,10 +317,11 @@ struct Constraint{
 		for(int i=0; i<(int)vars.size(); ++i){
 			int v=vars[i];
 			if(Level[v]==0){
-				addRhs(-coefs[v]);
+				addRhs(-coefs[v]); // resets degree
 				coefs[v]=_unused_();
 				swapErase(vars,i--);
 			}else if(Level[-v]==0){
+				degree=-1;
 				coefs[v]=_unused_();
 				swapErase(vars,i--);
 			}
@@ -339,6 +343,7 @@ struct Constraint{
 	// NOTE: erasing variables with coef 0 in addLhs would lead to invalidated iteration (e.g., for loops that weaken)
 	void addLhs(SMALL c, int l){ // treats negative literals as 1-v
 		assert(l!=0);
+		degree=-1;
 		int v = l;
 		if(l<0){ rhs -= c; c = -c; v = -l; }
 		assert(v<(int)coefs.size());
@@ -346,12 +351,13 @@ struct Constraint{
 		coefs[v]+=c;
 	}
 
-	inline void addRhs(LARGE r){ rhs+=r; }
+	inline void addRhs(LARGE r){ rhs+=r; degree=-1; }
 	inline LARGE getRhs() const { return rhs; }
-	inline LARGE getDegree() const {
-		LARGE result = rhs;
-		for (int v: vars) result -= std::min<SMALL>(0,coefs[v]); // considering negative coefficients
-		return result;
+	inline LARGE getDegree() {
+		if(degree>=0) return degree;
+		degree = rhs;
+		for (int v: vars) degree -= std::min<SMALL>(0,coefs[v]); // considering negative coefficients
+		return degree;
 	}
 	inline SMALL getCoef(int l) const {
 		assert(std::abs(l)<coefs.size());
@@ -381,16 +387,13 @@ struct Constraint{
 			if(m>0) proofBuffer << (l<0?"~x":"x") << std::abs(l) <<  " " << proofMult(m) << "+ ";
 			else proofBuffer << (l<0?"x":"~x") << std::abs(l) <<  " " << proofMult(-m) << "+ ";
 		}
-		addLhs(m,l); // TODO: optimize this method by not calling addLhs
+		addLhs(m,l); // resets degree // TODO: optimize this method by not calling addLhs
 		if(m<0) addRhs(m);
 	}
 
-	LARGE saturate(){ // returns degree // TODO: keep track of degree after computing
+	LARGE saturate(){ // returns degree
+		if(logProof() && !isSaturated()) proofBuffer << "s "; // log saturation only if it modifies the constraint
 		LARGE w = getDegree();
-		if(logProof()){
-			if(isSaturated()) return w;
-			proofBuffer << "s "; // log saturation only if it modifies the constraint
-		}
 		if(w<=0){
 			for(int v: vars) coefs[v]=_unused_();
 			vars.clear(); rhs=0;
@@ -405,7 +408,7 @@ struct Constraint{
 		return w;
 	}
 
-	bool isSaturated() const {
+	bool isSaturated() {
 		LARGE w = getDegree();
 		for(int v:vars) if(std::abs(coefs[v])>w) return false;
 		return true;
@@ -415,7 +418,7 @@ struct Constraint{
 	void copyTo(Constraint<S,L>& out, bool inverted=false) const {
 		assert(out.isReset());
 		int mult=(inverted?-1:1);
-		out.addRhs(mult*rhs);
+		out.addRhs(mult*rhs); // NOTE: resets out.degree
 		out.resize(coefs.size());
 		out.vars=vars;
 		for(int v: vars) out.coefs[v]=mult*coefs[v];
@@ -430,7 +433,7 @@ struct Constraint{
 		assert(c._unused_()<=_unused_()); // don't add large stuff into small stuff
 		if(logProof()) proofBuffer << c.proofBuffer.str() << proofMult(mult) << "+ ";
 		for(int v: c.vars) addLhs(mult*c.coefs[v],v);
-		addRhs((LARGE)mult*(LARGE)c.rhs);
+		addRhs((LARGE)mult*(LARGE)c.getRhs()); // resets degree
 		if(!saturateAndReduce) return;
 		removeZeroes();
 		LARGE deg = saturate();
@@ -462,7 +465,7 @@ struct Constraint{
 			coefs[v]/=d;
 		}
 		// NOTE: as all coefficients are divisible by d, we can ceildiv the rhs instead of the degree
-		rhs=ceildiv_safe<LARGE>(rhs,d);
+		rhs=ceildiv_safe<LARGE>(rhs,d); degree=-1;
 		saturate(); // NOTE: needed, as weakening can change degree significantly
 		if(logProof()) proofBuffer << d << " d s ";
 	}
@@ -472,22 +475,22 @@ struct Constraint{
 		return true;
 	}
 
-	bool simplifyToCardinality(bool equivalencePreserving){ // TODO: return degree?
+	bool simplifyToCardinality(bool equivalencePreserving){
 		assert(isSaturated());
 		if(isCardinality()) return false;
 		sort(vars.begin(),vars.end(),[&](int v1, int v2){return std::abs(coefs[v1])<std::abs(coefs[v2]);});
-		LARGE degree = getDegree();
-		assert(degree>0);
-		assert(coefs[vars[0]]!=0);
+		LARGE dg = getDegree();
+		assert(dg>0);
+		assert(coefs[vars[0]]!=0); // all zeroes are removed
 
 		int largeCoefsNeeded=0;
 		LARGE largeCoefSum=0;
-		while(largeCoefsNeeded<(int)vars.size() && largeCoefSum<degree){
+		while(largeCoefsNeeded<(int)vars.size() && largeCoefSum<dg){
 			++largeCoefsNeeded;
 			largeCoefSum+=std::abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
 		}
 		assert(largeCoefsNeeded>0);
-		if(largeCoefSum<degree){
+		if(largeCoefSum<dg){
 			for(int v: vars) weaken(-coefs[v],v);
 			return true; // trivial inconsistency
 		}
@@ -496,10 +499,10 @@ struct Constraint{
 		if(equivalencePreserving){
 			LARGE smallCoefSum=0;
 			for(int i=0; i<largeCoefsNeeded; ++i) smallCoefSum+=std::abs(coefs[vars[i]]);
-			if(smallCoefSum<degree) return false;
+			if(smallCoefSum<dg) return false;
 			// else, we have an equivalent cardinality constraint
 		}else{
-			LARGE wiggleroom=degree-largeCoefSum+std::abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
+			LARGE wiggleroom=dg-largeCoefSum+std::abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
 			assert(wiggleroom>0);
 			while(skippable<(int)vars.size() && wiggleroom>std::abs(coefs[vars[skippable]])){
 				wiggleroom-=std::abs(coefs[vars[skippable]]);
@@ -522,7 +525,7 @@ struct Constraint{
 			}
 			if(div_coef>1) proofBuffer << div_coef << " d ";
 		}
-		rhs=largeCoefsNeeded;
+		rhs=largeCoefsNeeded; degree=-1;
 		// TODO: sort vars from large to small to be able to simply pop skippable literals
 		for(int i=0; i<skippable; ++i) coefs[vars[i]]=0;
 		for(int i=skippable; i<(int)vars.size(); ++i){
@@ -552,32 +555,30 @@ struct Constraint{
 		assert(_gcd>1); assert(_gcd<(unsigned int)INF);
 		for (int v: vars) coefs[v] /= (int)_gcd;
 		// NOTE: as all coefficients are divisible, we can ceildiv the rhs instead of the degree
-		rhs=ceildiv_safe<LARGE>(rhs,_gcd);
+		rhs=ceildiv_safe<LARGE>(rhs,_gcd); degree=-1;
 
 		if(logProof()) proofBuffer << _gcd << " d ";
 		return true;
 	}
 
-	// NOTE: only equivalence preserving operations here!
+	// NOTE: only equivalence preserving operations!
 	void postProcess(){
 		removeZeroes();
-		LARGE degree = removeUnits(); // NOTE: also saturates
-		if(degree>1 && divideByGCD()) ++NGCD;
-		if(degree>1 && simplifyToCardinality(true)) ++NCARDDETECT;
+		removeUnits(); // NOTE: also saturates
+		if(divideByGCD()) ++NGCD;
+		if(simplifyToCardinality(true)) ++NCARDDETECT;
 	}
 
-	bool falsifiedCurrentLvlIsOne(){
-		bool foundOne=0;
+	bool falsifiedCurrentLvlIsOne() const {
+		bool result = false;
 		for(int i=0; i<(int)vars.size(); ++i){
 			int v = vars[i];
 			if((coefs[v]>0 && Level[-v]==decisionLevel()) || (coefs[v]<0 && Level[v]==decisionLevel())){
-				vars[i]=vars[foundOne];
-				vars[foundOne]=v;
-				if(foundOne) return false;
-				else foundOne=1;
+				if(result) return false;
+				else result=true;
 			}
 		}
-		return foundOne;
+		return result;
 	}
 
 	// @return: earliest decision level that propagates a variable
@@ -668,7 +669,7 @@ struct Constraint{
 		weakenNonImplying(smallestPropagated,slk);
 	}
 
-	void logAsInput() {
+	void logAsInput(){
 		toStreamAsOPB(formula_out);
 		proof_out << "l " << ++last_formID << "\n";
 		resetBuffer(++last_proofID); // ensure consistent proofBuffer
@@ -698,6 +699,7 @@ struct Constraint{
 	void logUnit(int v_unit){
 		assert(decisionLevel()==0);
 		removeUnits();
+		degree=-1; // TODO: split log and reduce
 		for(int v: vars) if(v!=v_unit) weaken(-coefs[v],v);
 		long long d = std::max((long long)std::abs(coefs[v_unit]),getDegree());
 		if(d>1) proofBuffer << d << " d ";
@@ -706,7 +708,7 @@ struct Constraint{
 		logAsProofLine("u");
 	}
 
-	void toStreamAsOPB(std::ofstream& o) const {
+	void toStreamAsOPB(std::ofstream& o) {
 		for(int v: vars){
 			int l = getLit(v);
 			if(l==0) continue;
@@ -725,7 +727,7 @@ longConstr confl_data;
 intConstr logConstraint;
 
 template<class S, class L>
-std::ostream & operator<<(std::ostream & o, const Constraint<S,L>& C) {
+std::ostream & operator<<(std::ostream & o, Constraint<S,L>& C) {
 	std::vector<int> vars = C.vars;
 	sort(vars.begin(),vars.end(), [](S v1, S v2) { return v1<v2; });
 	for(int v: vars){
@@ -815,7 +817,7 @@ struct {
 	}
 	int sz_constr(int length) { return (sizeof(Constr)+sizeof(int)*length+sizeof(int)*length)/sizeof(uint32_t); }
 
-	CRef alloc(const intConstr& constraint, long long proofID, bool learnt, bool locked){
+	CRef alloc(intConstr& constraint, long long proofID, bool learnt, bool locked){
 		long long degree = constraint.getDegree();
 		assert(degree>0);
 		assert(degree<=1e9);
@@ -1178,7 +1180,7 @@ void learnConstraint(longConstr& confl){
 	recomputeLBD(C);
 
 	LEARNEDLENGTHSUM+=C.size();
-	int degree = C.degree(); // TODO: can probably be more efficient than linear
+	int degree = C.degree();
 	LEARNEDDEGREESUM+=degree;
 	if(degree==1) ++NCLAUSESLEARNED;
 	else if(tmpConstraint.isCardinality()) ++NCARDINALITIESLEARNED;
@@ -1635,7 +1637,7 @@ std::string read_options(int argc, char**argv) {
 
 template<class SMALL, class LARGE>
 LARGE assumpSlack(const IntSet& assumptions, const Constraint<SMALL, LARGE>& core){
-	LARGE slack = -core.rhs;
+	LARGE slack = -core.getRhs();
 	for(int v: core.vars) if(assumptions.has(v) || (!assumptions.has(-v) && core.coefs[v]>0)) slack+=core.coefs[v];
 	return slack;
 }
@@ -1829,7 +1831,7 @@ struct LazyVar{
 	int idx;
 	int nvars;
 
-	LazyVar(const intConstr& core, int startvar, int m):
+	LazyVar(intConstr& core, int startvar, int m):
 	rhs(core.getDegree()),mult(m),currentvar(startvar),idx(0),nvars(core.vars.size()-rhs){
 		assert(core.isCardinality());
 		lhs.reserve(core.vars.size());
