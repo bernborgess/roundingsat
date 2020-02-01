@@ -363,7 +363,7 @@ public:
 		assert(std::abs(l)<coefs.size());
 		return coefs[std::abs(l)]==_unused_()?0:(l<0?-coefs[-l]:coefs[l]);
 	}
-	inline int getLit(int l) const { // NOTE: always check for answer "0"!
+	inline int getLit(int l) const { // NOTE: answer of 0 means coef 0 or not in vars
 		int v = std::abs(l);
 		if(v>=(int)coefs.size()) return 0;
 		SMALL c = coefs[v];
@@ -697,13 +697,16 @@ public:
 
 	void logUnit(int v_unit){
 		assert(decisionLevel()==0);
+		assert(Pos[v_unit]==-1);
+		assert(getLit(v_unit)!=0);
 		removeUnits();
-		degree=-1; // TODO: split log and reduce
+		// TODO: split log and reduce
+		LARGE d = std::max<LARGE>(std::abs(coefs[v_unit]),getDegree());
 		for(int v: vars) if(v!=v_unit) weaken(-coefs[v],v);
-		long long d = std::max((long long)std::abs(coefs[v_unit]),getDegree());
-		if(d>1) proofBuffer << d << " d ";
-		if(coefs[v_unit]>0){ coefs[v_unit]=1; rhs=1; }
+		if(coefs[v_unit]>0){ coefs[v_unit]=1; rhs=1;}
 		else{ coefs[v_unit]=-1; rhs=0; }
+		degree=-1;
+		if(d>1) proofBuffer << d << " d ";
 		logAsProofLine("u");
 	}
 
