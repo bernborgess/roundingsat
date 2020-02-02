@@ -53,6 +53,23 @@ std::ostream& operator<<(std::ostream& os, __int128 x){
 	return os << x1;
 }
 
+namespace std {
+	template<> class numeric_limits<__int128> {
+	public:
+		static __int128 max() {
+			__int128 x;
+			x = 170141183460469;
+			x*=1000000000000000;
+			x+= 231731687303715;
+			x*=1000000000;
+			x+= 884105727;
+			return x; // which is 2^127-1
+		};
+		static __int128 min() {return -max()+1; };
+		const  static bool is_specialized = true;
+	};
+}
+
 template<class T> inline void swapErase(T& indexable, size_t index){
 	indexable[index]=indexable.back();
 	indexable.pop_back();
@@ -261,17 +278,17 @@ inline std::string proofMult(T mult){
 
 template<class SMALL, class LARGE> // LARGE should be able to fit sums of SMALL
 struct Constraint{
-private:
 	LARGE degree = 0;
 	LARGE rhs = 0;
-public:
 	std::vector<int> vars;
 	std::vector<SMALL> coefs;
 	std::stringstream proofBuffer;
 	static constexpr SMALL _unused_(){ return std::numeric_limits<SMALL>::max(); }
+	static constexpr LARGE _invalid_(){ return std::numeric_limits<LARGE>::min(); }
 
 	Constraint(){
-		assert(std::numeric_limits<SMALL>::is_specialized); // otherwise, we can not use std::numeric_limits<SMALL>
+		assert(std::numeric_limits<SMALL>::is_specialized);
+		assert(std::numeric_limits<LARGE>::is_specialized);
 		reset();
 	}
 
@@ -287,14 +304,14 @@ public:
 	void reset(){
 		for(int v: vars) coefs[v]=_unused_();
 		vars.clear();
-		rhs=0; degree=0;
+		rhs=0; degree = 0;
 		if(logProof()) resetBuffer(1); // NOTE: proofID 1 equals the constraint 0 >= 0
 	}
 
 	void init(Constr& C){
 		assert(isReset()); // don't use a Constraint used by other stuff
-		addRhs(C.degree); // resets degree
-		for(size_t i=0;i<C.size();++i){ assert(C.coef(i)!=0); addLhs(C.coef(i), C.lit(i)); }
+		addRhs(C.degree);
+		for(size_t i=0;i<C.size();++i){ assert(C.coef(i)!=0); addLhs(C.coef(i), C.lit(i)); } // resets degree
 		if(logProof()) resetBuffer(C.id);
 	}
 
@@ -309,11 +326,12 @@ public:
 		for(int i=0; i<(int)vars.size(); ++i){
 			int v=vars[i];
 			if(Level[v]==0){
-				addRhs(-coefs[v]); // resets degree
+				addRhs(-coefs[v]);
+				degree=_invalid_();
 				coefs[v]=_unused_();
 				swapErase(vars,i--);
 			}else if(Level[-v]==0){
-				degree=-1;
+				degree=_invalid_();
 				coefs[v]=_unused_();
 				swapErase(vars,i--);
 			}
@@ -334,7 +352,7 @@ public:
 	// NOTE: erasing variables with coef 0 in addLhs would lead to invalidated iteration (e.g., for loops that weaken)
 	void addLhs(SMALL c, int l){ // treats negative literals as 1-v
 		assert(l!=0);
-		degree=-1;
+		degree=_invalid_();
 		int v = l;
 		if(l<0){ rhs -= c; c = -c; v = -l; }
 		assert(v<(int)coefs.size());
@@ -342,10 +360,10 @@ public:
 		coefs[v]+=c;
 	}
 
-	inline void addRhs(LARGE r){ rhs+=r; degree=-1; }
+	inline void addRhs(LARGE r){ rhs+=r; if(degree!=_invalid_()) degree+=r; }
 	inline LARGE getRhs() const { return rhs; }
 	inline LARGE getDegree() {
-		if(degree>=0) return degree;
+		if(degree!=_invalid_()) return degree;
 		degree = rhs;
 		for (int v: vars) degree -= std::min<SMALL>(0,coefs[v]); // considering negative coefficients
 		return degree;
@@ -407,10 +425,11 @@ public:
 	void copyTo(Constraint<S,L>& out, bool inverted=false) const {
 		assert(out.isReset());
 		int mult=(inverted?-1:1);
-		out.addRhs(mult*rhs); // NOTE: resets out.getDegree()
-		out.resize(coefs.size());
+		out.rhs=mult*rhs;
 		out.vars=vars;
+		out.resize(coefs.size());
 		for(int v: vars) out.coefs[v]=mult*coefs[v];
+		out.degree=out._invalid_();
 		if(logProof()){
 			out.proofBuffer.str(std::string());
 			out.proofBuffer << proofBuffer.str() << proofMult(mult);
@@ -422,7 +441,8 @@ public:
 		assert(c._unused_()<=_unused_()); // don't add large stuff into small stuff
 		if(logProof()) proofBuffer << c.proofBuffer.str() << proofMult(mult) << "+ ";
 		for(int v: c.vars) addLhs(mult*c.coefs[v],v);
-		addRhs((LARGE)mult*(LARGE)c.getRhs()); // resets degree
+		addRhs((LARGE)mult*(LARGE)c.getRhs());
+		degree=_invalid_();
 		if(!saturateAndReduce) return;
 		removeZeroes();
 		saturate();
@@ -454,7 +474,8 @@ public:
 			coefs[v]/=d;
 		}
 		// NOTE: as all coefficients are divisible by d, we can ceildiv the rhs instead of the degree
-		rhs=ceildiv_safe<LARGE>(rhs,d); degree=-1;
+		rhs=ceildiv_safe<LARGE>(rhs,d);
+		degree=_invalid_();
 		saturate(); // NOTE: needed, as weakening can change degree significantly
 		if(logProof()) proofBuffer << d << " d s ";
 	}
@@ -514,7 +535,8 @@ public:
 			}
 			if(div_coef>1) proofBuffer << div_coef << " d ";
 		}
-		rhs=largeCoefsNeeded; degree=-1;
+		rhs=largeCoefsNeeded;
+		degree=_invalid_();
 		// TODO: sort vars from large to small to be able to simply pop skippable literals
 		for(int i=0; i<skippable; ++i) coefs[vars[i]]=0;
 		for(int i=skippable; i<(int)vars.size(); ++i){
@@ -544,7 +566,8 @@ public:
 		assert(_gcd>1); assert(_gcd<(unsigned int)INF);
 		for (int v: vars) coefs[v] /= (int)_gcd;
 		// NOTE: as all coefficients are divisible, we can ceildiv the rhs instead of the degree
-		rhs=ceildiv_safe<LARGE>(rhs,_gcd); degree=-1;
+		rhs=ceildiv_safe<LARGE>(rhs,_gcd);
+		degree=_invalid_();
 
 		if(logProof()) proofBuffer << _gcd << " d ";
 		return true;
