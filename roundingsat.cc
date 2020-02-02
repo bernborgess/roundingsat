@@ -140,9 +140,11 @@ enum DeletionStatus { LOCKED, UNLOCKED, FORCEDELETE, MARKEDFORDELETE };
 enum WatchStatus { FOUNDNEW, FOUNDNONE, CONFLICTING };
 
 void uncheckedEnqueue(int p, CRef from);
-struct Constr { // TODO: heuristic info actually not needed in cache-sensitive Constr...
+struct Constr {
 	long long id;
 	float act;
+	int degree;
+	// NOTE: above attributes not strictly needed in cache-sensitive Constr, but it did not matter after testing
 	struct {
 		unsigned unused       : 1;
 		unsigned learnt       : 1;
@@ -172,16 +174,6 @@ struct Constr { // TODO: heuristic info actually not needed in cache-sensitive C
 		assert(isWatched(i));
 		slack -= data[i];
 		watchIdx=0;
-	}
-	inline int degree() const { // TODO: make this a data field again
-		int result = slack;
-		unsigned int sz2 = 2*size();
-		for(unsigned int i=0; i<sz2; i+=2) {
-			int c = data[i];
-			int l = data[i+1];
-			if(c<0 && (Level[-l]==-1 || Pos[std::abs(l)]>=qhead)) result+=c;
-		}
-		return -result;
 	}
 	inline WatchStatus propagateWatch(CRef cr, unsigned int idx){
 		assert(idx%2==0);
@@ -301,7 +293,7 @@ public:
 
 	void init(Constr& C){
 		assert(isReset()); // don't use a Constraint used by other stuff
-		addRhs(C.degree()); // resets degree
+		addRhs(C.degree); // resets degree
 		for(size_t i=0;i<C.size();++i){ assert(C.coef(i)!=0); addLhs(C.coef(i), C.lit(i)); }
 		if(logProof()) resetBuffer(C.id);
 	}
@@ -415,7 +407,7 @@ public:
 	void copyTo(Constraint<S,L>& out, bool inverted=false) const {
 		assert(out.isReset());
 		int mult=(inverted?-1:1);
-		out.addRhs(mult*rhs); // NOTE: resets out.degree
+		out.addRhs(mult*rhs); // NOTE: resets out.getDegree()
 		out.resize(coefs.size());
 		out.vars=vars;
 		for(int v: vars) out.coefs[v]=mult*coefs[v];
@@ -820,8 +812,8 @@ struct {
 	CRef alloc(intConstr& constraint, long long proofID, bool learnt, bool locked){
 		assert(constraint.getDegree()>0);
 		assert(constraint.getDegree()<=1e9);
-		// as the constraint should be saturated, the coefficients are between 1 and 1e9 as well.
-		int w = (int)constraint.getDegree();
+		assert(constraint.isSaturated());
+		// as the constraint is saturated, the coefficients are between 1 and 1e9 as well.
 		assert(!constraint.vars.empty());
 		unsigned int length = constraint.vars.size();
 
@@ -834,9 +826,10 @@ struct {
 		new (constr) Constr;
 		constr->id = proofID;
 		constr->act = 0;
+		constr->degree = constraint.getDegree();
 		constr->header = {0,learnt,length,(unsigned int)(locked?LOCKED:UNLOCKED),length};
 		constr->nbackjump = 0;
-		constr->slack = -w;
+		constr->slack = -constr->degree;
 		constr->watchIdx = 0;
 		for(unsigned int i=0; i<length; ++i){
 			int v = constraint.vars[i];
@@ -1179,9 +1172,8 @@ void learnConstraint(longConstr& confl){
 	recomputeLBD(C);
 
 	LEARNEDLENGTHSUM+=C.size();
-	int degree = C.degree();
-	LEARNEDDEGREESUM+=degree;
-	if(degree==1) ++NCLAUSESLEARNED;
+	LEARNEDDEGREESUM+=C.degree;
+	if(C.degree==1) ++NCLAUSESLEARNED;
 	else if(tmpConstraint.isCardinality()) ++NCARDINALITIESLEARNED;
 	else ++NGENERALSLEARNED;
 	tmpConstraint.reset();
@@ -1522,8 +1514,7 @@ long long lhs(Constr& C, const std::vector<bool>& sol){
 bool checksol() {
 	for(CRef cr: formula_constrs){
 		Constr& C = ca[cr];
-		int degree = C.degree();
-		if(lhs(C,last_sol)<degree) return false;
+		if(lhs(C,last_sol)<C.degree) return false;
 	}
 	puts("c SATISFIABLE (checked)");
 	return true;
@@ -1695,7 +1686,9 @@ void extractCore(CRef confl, intConstr& outCore, int l_assump=0){
 		assert(decisionLevel()==tmpSet.size());
 		undoOne();
 	}
-	assert(confl_data.getDegree()<INF); assert(confl_data.isSaturated());
+	assert(confl_data.getDegree()>0);
+	assert(confl_data.getDegree()<=1e9);
+	assert(confl_data.isSaturated());
 	confl_data.copyTo(outCore);
 	confl_data.reset();
 
