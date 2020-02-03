@@ -1671,12 +1671,10 @@ void extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, int 
 	std::vector<int> props; // holds the propagations
 	props.reserve(trail.size());
 	assert(trail_lim.size()>0);
-	for(int i=trail_lim[0]; i<(int)trail.size(); ++i){ // TODO: also set propagated assumptions as decisions?
+	for(int i=trail_lim[0]; i<(int)trail.size(); ++i){
 		int l = trail[i];
-		if(Reason[std::abs(l)]==CRef_Undef){
-			assert(assumptions.has(l));
-			decisions.push_back(l);
-		} else props.push_back(l);
+		if(assumptions.has(l)) decisions.push_back(l);
+		else props.push_back(l);
 	}
 	backjumpTo(0);
 
