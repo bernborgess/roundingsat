@@ -480,74 +480,6 @@ struct Constraint{
 		if(logProof()) proofBuffer << d << " d s ";
 	}
 
-	bool isCardinality() const {
-		for(int v: vars) if(std::abs(coefs[v])>1) return false;
-		return true;
-	}
-
-	bool simplifyToCardinality(bool equivalencePreserving){
-		assert(isSaturated());
-		if(isCardinality()) return false;
-		sort(vars.begin(),vars.end(),[&](int v1, int v2){return std::abs(coefs[v1])<std::abs(coefs[v2]);});
-		const LARGE w = getDegree();
-		assert(w>0);
-		assert(coefs[vars[0]]!=0); // all zeroes are removed
-
-		int largeCoefsNeeded=0;
-		LARGE largeCoefSum=0;
-		while(largeCoefsNeeded<(int)vars.size() && largeCoefSum<w){
-			++largeCoefsNeeded;
-			largeCoefSum+=std::abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
-		}
-		assert(largeCoefsNeeded>0);
-		if(largeCoefSum<w){
-			for(int v: vars) weaken(-coefs[v],v);
-			return true; // trivial inconsistency
-		}
-
-		int skippable=0;
-		if(equivalencePreserving){
-			LARGE smallCoefSum=0;
-			for(int i=0; i<largeCoefsNeeded; ++i) smallCoefSum+=std::abs(coefs[vars[i]]);
-			if(smallCoefSum<w) return false;
-			// else, we have an equivalent cardinality constraint
-		}else{
-			LARGE wiggleroom=w-largeCoefSum+std::abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
-			assert(wiggleroom>0);
-			while(skippable<(int)vars.size() && wiggleroom>std::abs(coefs[vars[skippable]])){
-				wiggleroom-=std::abs(coefs[vars[skippable]]);
-				++skippable;
-			}
-		}
-		assert(skippable<=(int)vars.size()-largeCoefsNeeded);
-
-		if(logProof()){
-			SMALL div_coef = std::abs(coefs[vars[vars.size()-largeCoefsNeeded]]);
-			for(int i=0; i<skippable; ++i){ // weaken small vars
-				int l = getLit(vars[i]);
-				SMALL d = getCoef(l);
-				proofBuffer << (l>0?"~x":"x") << std::abs(l) << " " << proofMult(d) << "+ ";
-			}
-			for(int i=vars.size()-largeCoefsNeeded; i<(int)vars.size(); ++i){ // partially weaken large vars
-				int l = getLit(vars[i]);
-				SMALL d = getCoef(l)-div_coef;
-				proofBuffer << (l>0?"~x":"x") << std::abs(l) << " " << proofMult(d) << "+ ";
-			}
-			if(div_coef>1) proofBuffer << div_coef << " d ";
-		}
-		rhs=largeCoefsNeeded;
-		degree=_invalid_();
-		// TODO: sort vars from large to small to be able to simply pop skippable literals
-		for(int i=0; i<skippable; ++i) coefs[vars[i]]=0;
-		for(int i=skippable; i<(int)vars.size(); ++i){
-			SMALL& c = coefs[vars[i]];
-			if(c<0){ c=-1; --rhs; }
-			else c=1;
-		}
-		removeZeroes();
-		return true;
-	}
-
 	bool divideByGCD(){
 		assert(isSaturated());
 		if(isCardinality()) return false;
@@ -681,13 +613,93 @@ struct Constraint{
 		weakenNonImplying(smallestPropagated,slk);
 	}
 
+
+	bool isCardinality() const {
+		for(int v: vars) if(std::abs(coefs[v])>1) return false;
+		return true;
+	}
+
+	bool simplifyToCardinality(bool equivalencePreserving){
+		assert(isSaturated());
+		if(isCardinality()) return false;
+		sort(vars.begin(),vars.end(),[&](int v1, int v2){return std::abs(coefs[v1])>std::abs(coefs[v2]);});
+		const LARGE w = getDegree();
+		assert(w>0);
+		assert(coefs[vars.back()]!=0); // all zeroes are removed
+
+		int largeCoefsNeeded=0;
+		LARGE largeCoefSum=0;
+		while(largeCoefsNeeded<(int)vars.size() && largeCoefSum<w){
+			largeCoefSum+=std::abs(coefs[vars[largeCoefsNeeded]]);
+			++largeCoefsNeeded;
+		}
+		assert(largeCoefsNeeded>0);
+		if(largeCoefSum<w){
+			for(int v: vars) weaken(-coefs[v],v);
+			return true; // trivial inconsistency
+		}
+
+		int skippable=vars.size(); // counting backwards
+		if(equivalencePreserving){
+			LARGE smallCoefSum=0;
+			for(int i=1; i<=largeCoefsNeeded; ++i) smallCoefSum+=std::abs(coefs[vars[vars.size()-i]]);
+			if(smallCoefSum<w) return false;
+			// else, we have an equivalent cardinality constraint
+		}else{
+			LARGE wiggleroom=w-largeCoefSum+std::abs(coefs[vars[largeCoefsNeeded-1]]);
+			assert(wiggleroom>0);
+			while(skippable>0 && wiggleroom>std::abs(coefs[vars[skippable-1]])){
+				--skippable;
+				wiggleroom-=std::abs(coefs[vars[skippable]]);
+			}
+		}
+		assert(skippable>=largeCoefsNeeded);
+
+		if(logProof()){
+			SMALL div_coef = std::abs(coefs[vars[largeCoefsNeeded-1]]);
+			for(int i=0; i<largeCoefsNeeded; ++i){ // partially weaken large vars
+				int l = getLit(vars[i]);
+				SMALL d = getCoef(l)-div_coef;
+				proofBuffer << (l>0?"~x":"x") << std::abs(l) << " " << proofMult(d) << "+ ";
+			}
+			for(int i=skippable; i<(int)vars.size(); ++i){ // weaken small vars
+				int l = getLit(vars[i]);
+				SMALL d = getCoef(l);
+				proofBuffer << (l>0?"~x":"x") << std::abs(l) << " " << proofMult(d) << "+ ";
+			}
+			if(div_coef>1) proofBuffer << div_coef << " d ";
+		}
+		rhs=largeCoefsNeeded;
+		degree=largeCoefsNeeded;
+		vars.resize(skippable);
+		for(int i=0; i<(int)vars.size(); ++i){
+			SMALL& c = coefs[vars[i]];
+			if(c<0){ c=-1; --rhs; }
+			else c=1;
+		}
+		return true;
+	}
+
+	// @pre: reducible to unit over v
+	void reduceToUnit(int v_unit){
+		removeUnits();
+		assert(getLit(v_unit)!=0);
+		for(int v: vars) if(v!=v_unit) weaken(-coefs[v],v);
+		assert(getDegree()>0);
+		LARGE d = std::max<LARGE>(std::abs(coefs[v_unit]),getDegree());
+		if(d>1) proofBuffer << d << " d ";
+		if(coefs[v_unit]>0){ coefs[v_unit]=1; rhs=1;}
+		else{ coefs[v_unit]=-1; rhs=0; }
+		degree=1;
+	}
+
 	void logAsInput(){
 		toStreamAsOPB(formula_out);
 		proof_out << "l " << ++last_formID << "\n";
 		resetBuffer(++last_proofID); // ensure consistent proofBuffer
 	}
 
-	void logAsProofLine(std::string info){
+	void logProofLine(std::string info){
 		_unused(info);
 		if(logStartTime<DETERMINISTICTIME){
 			proof_out << "p " << proofBuffer.str() << "0\n";
@@ -704,23 +716,8 @@ struct Constraint{
 
 	void logInconsistency(){
 		removeUnits();
-		logAsProofLine("i");
+		logProofLine("i");
 		proof_out << "c " << last_proofID << " 0" << std::endl;
-	}
-
-	void logUnit(int v_unit){
-		assert(decisionLevel()==0);
-		assert(Pos[v_unit]==-1);
-		assert(getLit(v_unit)!=0);
-		removeUnits();
-		// TODO: split log and reduce
-		LARGE d = std::max<LARGE>(std::abs(coefs[v_unit]),getDegree());
-		for(int v: vars) if(v!=v_unit) weaken(-coefs[v],v);
-		if(coefs[v_unit]>0){ coefs[v_unit]=1; rhs=1;}
-		else{ coefs[v_unit]=-1; rhs=0; }
-		degree=-1;
-		if(d>1) proofBuffer << d << " d ";
-		logAsProofLine("u");
 	}
 
 	void toStreamAsOPB(std::ofstream& o) {
@@ -950,7 +947,8 @@ void uncheckedEnqueue(int p, CRef from=CRef_Undef){
 		if(logProof()){
 			Constr& C = ca[from];
 			logConstraint.init(C);
-			logConstraint.logUnit(v);
+			logConstraint.reduceToUnit(v);
+			logConstraint.logProofLine("u");
 			logConstraint.reset();
 			assert(unitIDs.size()==trail.size());
 			unitIDs.push_back(last_proofID);
@@ -967,7 +965,7 @@ CRef attachConstraint(intConstr& constraint, bool learnt, bool locked=false){
 	std::sort(constraint.vars.begin(),constraint.vars.end(),[&](int v1,int v2){
 		return std::abs(constraint.coefs[v1])>std::abs(constraint.coefs[v2]); });
 
-	if(logProof()) constraint.logAsProofLine("a");
+	if(logProof()) constraint.logProofLine("a");
 	CRef cr = ca.alloc(constraint,last_proofID,learnt,locked);
 	if (learnt) learnts.push_back(cr);
 	else formula_constrs.push_back(cr);
