@@ -767,10 +767,11 @@ struct IntSet{
 private:
 	std::vector<bool> _values={false};
 	std::vector<bool>::iterator values=_values.begin();
-	std::vector<int> keys;
 	static constexpr bool _unused_(){ return false; }
 
 public:
+	std::vector<int> keys;
+
 	IntSet(){}
 	IntSet(int size, const std::vector<int>& ints) { resize(size); for(int i: ints) add(i); }
 
@@ -780,15 +781,15 @@ public:
 	}
 
 	inline void resize(int size){ resizeLitMap(_values,values,size,_unused_()); }
-	inline int size() const { return keys.size(); }
+	inline size_t size() const { return keys.size(); }
 
-	inline bool has(int key) const { return values[key]!=_unused_(); }
+	inline bool has(int key) const { return _values.size()>2*abs(key) && values[key]!=_unused_(); }
 	void add(int key){
-		if(has(key)) return;
+		if(_values.size()<=2*abs(key)) resize(abs(key));
+		if(values[key]!=_unused_()) return;
 		values[key]=true;
 		keys.push_back(key);
 	}
-	inline std::vector<int>& getKeys(){ return keys; }
 };
 
 IntSet tmpSet;
@@ -1093,7 +1094,7 @@ void analyze(CRef confl){
 		undoOne();
 	}
 	assert(confl_data.getSlack()<0);
-	for(int l: actSet.getKeys()) if(l!=0) vBumpActivity(std::abs(l));
+	for(int l: actSet.keys) if(l!=0) vBumpActivity(std::abs(l));
 	actSet.reset();
 }
 
@@ -1161,8 +1162,6 @@ void setNbVariables(long long nvars){
 	tmpConstraint.resize(nvars+1);
 	confl_data.resize(nvars+1);
 	logConstraint.resize(nvars+1);
-	tmpSet.resize(nvars);
-	actSet.resize(nvars);
 	order_heap.resize(nvars+1);
 	for(int i=n+1;i<=nvars;++i) phase[i] = -i, order_heap.insert(i);
 	n = nvars;
@@ -1652,10 +1651,11 @@ LARGE assumpSlack(const IntSet& assumptions, const Constraint<SMALL, LARGE>& cor
 	return slack;
 }
 
-void extractCore(CRef confl, intConstr& outCore, int l_assump=0){
+void extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, int l_assump=0){
 	assert(confl!=CRef_Undef);
 
 	if(l_assump!=0){ // l_assump is an assumption propagated to the opposite value
+		assert(assumptions.has(l_assump));
 		assert(~Level[-l_assump]);
 		int pos = Pos[std::abs(l_assump)];
 		while((int)trail.size()>pos) undoOne();
@@ -1666,18 +1666,21 @@ void extractCore(CRef confl, intConstr& outCore, int l_assump=0){
 	// Set all assumptions in front of the trail, all propagations later. This makes it easy to do decision learning.
 	// For this, we first copy the trail, then backjump to 0, then rebuild the trail.
 	// Otherwise, reordering the trail messes up the slacks of the watched constraints (see undoOne()).
-	assert(tmpSet.size()==0); // will hold the assumptions
+	std::vector<int> decisions; // holds the decisions
+	decisions.reserve(decisionLevel());
 	std::vector<int> props; // holds the propagations
 	props.reserve(trail.size());
 	assert(trail_lim.size()>0);
 	for(int i=trail_lim[0]; i<(int)trail.size(); ++i){ // TODO: also set propagated assumptions as decisions?
 		int l = trail[i];
-		if(Reason[std::abs(l)]==CRef_Undef) tmpSet.add(l); // decision, hence assumption
-		else props.push_back(l);
+		if(Reason[std::abs(l)]==CRef_Undef){
+			assert(assumptions.has(l));
+			decisions.push_back(l);
+		} else props.push_back(l);
 	}
 	backjumpTo(0);
 
-	for(int l: tmpSet.getKeys()) decide(l);
+	for(int l: decisions) decide(l);
 	for(int l: props) { assert(Reason[std::abs(l)]!=CRef_Undef); uncheckedEnqueue(l,Reason[std::abs(l)]); }
 
 	confl_data.init(ca[confl]);
@@ -1685,7 +1688,7 @@ void extractCore(CRef confl, intConstr& outCore, int l_assump=0){
 	assert(confl_data.getSlack()<0);
 
 	// analyze conflict
-	long long assumpslk = assumpSlack(tmpSet,confl_data);
+	long long assumpslk = assumpSlack(assumptions,confl_data);
 	while(assumpslk>=0){
 		int l = trail.back();
 		assert(std::abs(confl_data.getCoef(-l))<INF);
@@ -1702,9 +1705,9 @@ void extractCore(CRef confl, intConstr& outCore, int l_assump=0){
 			tmpConstraint.reset();
 			assert(confl_data.getCoef(-l)==0);
 			assert(confl_data.getSlack()<0);
-			assumpslk = assumpSlack(tmpSet,confl_data);
+			assumpslk = assumpSlack(assumptions,confl_data);
 		}
-		assert(decisionLevel()==tmpSet.size());
+		assert(decisionLevel()==(int)decisions.size());
 		undoOne();
 	}
 	assert(confl_data.getDegree()>0);
@@ -1714,16 +1717,15 @@ void extractCore(CRef confl, intConstr& outCore, int l_assump=0){
 	confl_data.reset();
 
 	// weaken non-falsifieds
-	for(int v: outCore.vars) if(!tmpSet.has(-outCore.getLit(v))) outCore.weaken(-outCore.coefs[v],v);
+	for(int v: outCore.vars) if(!assumptions.has(-outCore.getLit(v))) outCore.weaken(-outCore.coefs[v],v);
 	outCore.postProcess();
-	assert(assumpSlack(tmpSet,outCore)<0);
-	tmpSet.reset();
+	assert(assumpSlack(assumptions,outCore)<0);
 	backjumpTo(0);
 }
 
 enum SolveState { SAT, UNSAT, INPROCESSING };
 
-SolveState solve(const std::vector<int>& assumptions, intConstr& out) {
+SolveState solve(const IntSet& assumptions, intConstr& out) {
 	out.reset();
 	backjumpTo(0); // ensures assumptions are reset
 	std::vector<int> assumptions_lim={0};
@@ -1760,7 +1762,7 @@ SolveState solve(const std::vector<int>& assumptions, intConstr& out) {
 				learnConstraint(confl_data);
 				confl_data.reset();
 			}else{
-				extractCore(confl,out);
+				extractCore(assumptions,confl,out);
 				return SolveState::UNSAT;
 			}
 		} else {
@@ -1778,14 +1780,20 @@ SolveState solve(const std::vector<int>& assumptions, intConstr& out) {
 			}
 			int next = 0;
 			if((int)assumptions_lim.size()>decisionLevel()+1)assumptions_lim.resize(decisionLevel()+1);
+			if(assumptions_lim.back()<(int)assumptions.size()){
+				for(int i=(decisionLevel()==0?0:trail_lim.back()); i<(int)trail.size(); ++i){
+					int l = trail[i];
+					if(assumptions.has(-l)){ // found conflicting assumption
+						if(Level[l]==0) backjumpTo(0), out.reset(); // negated assumption is unit
+						else extractCore(assumptions,Reason[std::abs(l)],out,-l);
+						return SolveState::UNSAT;
+					}
+				}
+			}
 			while(assumptions_lim.back()<(int)assumptions.size()){
 				assert(decisionLevel()==(int)assumptions_lim.size()-1);
-				int l_assump = assumptions[assumptions_lim.back()];
-				if (~Level[-l_assump]){ // found conflicting assumption
-					if(Level[-l_assump]==0) backjumpTo(0), out.reset(); // negated assumption is unit
-					else extractCore(Reason[std::abs(l_assump)],out,l_assump);
-					return SolveState::UNSAT;
-				}
+				int l_assump = assumptions.keys[assumptions_lim.back()];
+				assert(Level[-l_assump]==-1); // otherwise above check should have caught this
 				if (~Level[l_assump]){ // assumption already propagated
 					++assumptions_lim.back();
 				}else{ // unassigned assumption
@@ -2011,19 +2019,18 @@ void optimize(intConstr& origObj, intConstr& core){
 	coreAggregate.resize(n+1);
 	long long lastObjectiveBoundID = 0;
 
-	std::vector<int> assumps;
+	IntSet assumps;
 	std::vector<LazyVar*> lazyVars;
-	assumps.reserve(reformObj.vars.size());
 	size_t upper_time=0, lower_time=0;
 	SolveState reply = SolveState::UNSAT;
 	while(true){
 		size_t current_time=DETERMINISTICTIME;
 		if(reply!=SolveState::INPROCESSING) printObjBounds(lower_bound,last_sol_obj_val);
-		assumps.clear();
+		assumps.reset();
 		if(opt_mode==1 || opt_mode==2 || (opt_mode>2 && lower_time<upper_time)){ // use core-guided step
 			reformObj.removeZeroes();
-			for(int v: reformObj.vars) { assert(reformObj.getLit(v)!=0); assumps.push_back(-reformObj.getLit(v)); }
-			std::sort(assumps.begin(),assumps.end(),[&](int l1,int l2){
+			for(int v: reformObj.vars) { assert(reformObj.getLit(v)!=0); assumps.add(-reformObj.getLit(v)); }
+			std::sort(assumps.keys.begin(),assumps.keys.end(),[&](int l1,int l2){
 				return reformObj.getCoef(-l1)>reformObj.getCoef(-l2) ||
 				       (reformObj.getCoef(-l1)==reformObj.getCoef(-l2) && std::abs(l1)<std::abs(l2));
 			});
