@@ -693,6 +693,11 @@ struct Constraint{
 		degree=1;
 	}
 
+	bool isSortedInIncreasingCoefOrder() const {
+		for(int i=1; i<(int)vars.size(); ++i) if(abs(coefs[vars[i-1]])<abs(coefs[vars[i]])) return false;
+		return true;
+	}
+
 	void logAsInput(){
 		toStreamAsOPB(formula_out);
 		proof_out << "l " << ++last_formID << "\n";
@@ -962,9 +967,8 @@ void uncheckedEnqueue(int p, CRef from=CRef_Undef){
 
 // @pre: removeUnits and removeZeroes executed on constraint
 CRef attachConstraint(intConstr& constraint, bool learnt, bool locked=false){
-	// sort from smallest to largest coefficient
-	std::sort(constraint.vars.begin(),constraint.vars.end(),[&](int v1,int v2){
-		return std::abs(constraint.coefs[v1])>std::abs(constraint.coefs[v2]); });
+	// should be sorted from smallest to largest coefficient after preprocess step
+	assert(constraint.isSortedInIncreasingCoefOrder());
 
 	if(logProof()) constraint.logProofLine("a");
 	CRef cr = ca.alloc(constraint,last_proofID,learnt,locked);
