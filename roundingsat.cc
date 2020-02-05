@@ -1891,9 +1891,40 @@ std::ostream & operator<<(std::ostream & o, LazyVar* lv) {
 	return o;
 }
 
+void checkLazyVariables(longConstr& reformObj, intConstr& core,
+		std::vector<LazyVar*>& lazyVars, longConstr& coreAggregate){ // introduce new lazy variables if needed
+	for(int i=0; i<(int)lazyVars.size(); ++i){
+		LazyVar* lv=lazyVars[i];
+		if(reformObj.getLit(lv->currentvar)==0){
+			lv->idx++;
+			if(lv->idx==lv->nvars){ swapErase(lazyVars,i--); delete lv; continue; }
+			// add auxiliary variable
+			long long newN = n+1;
+			setNbVariables(newN);
+			reformObj.resize(newN+1);
+			int oldvar = lv->currentvar;
+			lv->currentvar = newN;
+			// reformulate the objective
+			reformObj.addLhs(lv->mult,newN);
+			// add necessary lazy constraints
+			lv->getAtLeastConstraint(tmpConstraint);
+			addInputConstraint(tmpConstraint);
+			tmpConstraint.reset();
+			lv->getAtMostConstraint(tmpConstraint);
+			addInputConstraint(tmpConstraint);
+			tmpConstraint.reset();
+			assert(tmpConstraint.isReset());
+			lv->getSymBreakingConstraint(tmpConstraint,oldvar);
+			addInputConstraint(tmpConstraint);
+			tmpConstraint.reset();
+		}
+	}
+	core.resize(n+1);
+	coreAggregate.resize(n+1);
+}
+
 void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lower_bound,
-                         std::vector<LazyVar*>& lazyVars, longConstr& coreAggregate,
-                         intConstr& origObj){
+                         std::vector<LazyVar*>& lazyVars, longConstr& coreAggregate, intConstr& origObj){
 	reformObj.removeZeroes();
 	origObj.removeZeroes();
 	coreAggregate.removeZeroes();
@@ -1905,6 +1936,7 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 	lower_bound = -reformObj.getDegree();
 	if(core.getDegree()==0){
 		assert(lower_bound>prev_lower);
+		checkLazyVariables(reformObj,core,lazyVars,coreAggregate);
 		return; // apparently only unit assumptions were derived
 	}
 	// figure out an appropriate core
@@ -1940,35 +1972,6 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 		lv->getAtMostConstraint(tmpConstraint);
 		addInputConstraint(tmpConstraint);
 		tmpConstraint.reset();
-		// check for new lazy variables
-		for(int i=0; i<(int)lazyVars.size(); ++i){
-			LazyVar* lv=lazyVars[i];
-			if(reformObj.getCoef(lv->currentvar)<=0){
-				lv->idx++;
-				if(lv->idx==lv->nvars){ swapErase(lazyVars,i--); delete lv; continue; }
-				// add auxiliary variable
-				long long newN = n+1;
-				setNbVariables(newN);
-				core.resize(newN+1);
-				coreAggregate.resize(newN+1);
-				reformObj.resize(newN+1);
-				int oldvar = lv->currentvar;
-				lv->currentvar = newN;
-				// reformulate the objective
-				reformObj.addLhs(lv->mult,newN);
-				// add necessary lazy constraints
-				lv->getAtLeastConstraint(tmpConstraint);
-				addInputConstraint(tmpConstraint);
-				tmpConstraint.reset();
-				lv->getAtMostConstraint(tmpConstraint);
-				addInputConstraint(tmpConstraint);
-				tmpConstraint.reset();
-				assert(tmpConstraint.isReset());
-				lv->getSymBreakingConstraint(tmpConstraint,oldvar);
-				addInputConstraint(tmpConstraint);
-				tmpConstraint.reset();
-			}
-		}
 	}else{
 		// add auxiliary variables
 		long long oldN = n;
@@ -2002,6 +2005,7 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 			tmpConstraint.reset();
 		}
 	}
+	checkLazyVariables(reformObj,core,lazyVars,coreAggregate);
 }
 
 void optimize(intConstr& origObj, intConstr& core){
@@ -2045,6 +2049,7 @@ void optimize(intConstr& origObj, intConstr& core){
 		if(reply==SolveState::SAT){
 			++NSOLS;
 			handleNewSolution(origObj,lastObjectiveBoundID);
+			assert((opt_mode!=1 && opt_mode!=2) || lower_bound==last_sol_obj_val);
 		}	else if(reply==SolveState::UNSAT) {
 			++NCORES;
 			if(core.getSlack()<0){
