@@ -37,10 +37,17 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <cassert>
 #include <cstring>
 #include <csignal>
-#include <map>
+#include <unordered_map>
 
 #define _unused(x) ((void)(x)) // marks variables unused in release mode
 
+template<class T, class U>
+std::ostream& operator<<(std::ostream& os, const std::pair<T,U>& p){ os << p.first << "," << p.second; return os; }
+template<class T, class U>
+std::ostream& operator<<(std::ostream& os, const std::unordered_map<T,U>& m){
+	for(const auto& e: m) os<<e<<";";
+	return os;
+}
 std::ostream& operator<<(std::ostream& os, __int128 x){
 	if(x<0){ os << "-"; x = -x; }
 	uint64_t tenPow18 = 1000000000000000000;
@@ -75,7 +82,7 @@ template<class T> inline void swapErase(T& indexable, size_t index){
 	indexable.pop_back();
 }
 
-template<class T> inline bool contains(const std::vector<T>& v, const T& x){
+template<class T, class U> inline bool contains(const T& v, const U& x){
 	return std::find(v.cbegin(),v.cend(),x)!=v.cend();
 }
 
@@ -89,6 +96,10 @@ static inline double cpuTime() {
 	struct rusage ru;
 	getrusage(RUSAGE_SELF, &ru);
 	return (double)ru.ru_utime.tv_sec + (double)ru.ru_utime.tv_usec / 1000000; }
+
+// ---------------------------------------------------------------------
+// Typedefs
+using ID=uint64_t;
 
 // ---------------------------------------------------------------------
 // Global variables
@@ -116,8 +127,8 @@ bool print_sol = false;
 std::string proof_log_name;
 bool logProof(){ return !proof_log_name.empty(); }
 std::ofstream proof_out; std::ofstream formula_out;
-long long last_proofID = 0; long long last_formID = 0;
-std::vector<long long> unitIDs;
+ID last_proofID = 0; ID last_formID = 0;
+std::vector<ID> unitIDs;
 long long logStartTime=0;
 
 struct CRef {
@@ -130,10 +141,10 @@ const CRef CRef_Undef = { UINT32_MAX };
 std::ostream& operator<<(std::ostream& os, CRef cr) { return os << cr.ofs; }
 
 int verbosity = 1;
-// currently, the maximum number of variables is hardcoded (variable N), and most arrays are of fixed size.
 int n = 0;
 int orig_n = 0;
-std::vector<CRef> formula_constrs, learnts, external;
+std::vector<CRef> formula_constrs, learnts;
+std::unordered_map<ID,CRef> external;
 struct Watch {
 	CRef cref;
 	unsigned int idx;
@@ -158,7 +169,7 @@ enum WatchStatus { FOUNDNEW, FOUNDNONE, CONFLICTING };
 
 void uncheckedEnqueue(int p, CRef from);
 struct Constr {
-	long long id;
+	ID id;
 	float act;
 	int degree;
 	// NOTE: above attributes not strictly needed in cache-sensitive Constr, but it did not matter after testing
@@ -294,7 +305,7 @@ struct Constraint{
 
 	inline void resize(size_t s){ if(s>coefs.size()) coefs.resize(s,_unused_()); }
 
-	void resetBuffer(long long proofID){
+	void resetBuffer(ID proofID){
 		proofBuffer.clear();
 		proofBuffer.str(std::string());
 		proofBuffer << proofID << " ";
@@ -838,7 +849,8 @@ struct {
 	}
 	int sz_constr(int length) { return (sizeof(Constr)+sizeof(int)*length+sizeof(int)*length)/sizeof(uint32_t); }
 
-	CRef alloc(intConstr& constraint, long long proofID, bool learnt, bool locked){
+	CRef alloc(intConstr& constraint, ID proofID, bool learnt, bool locked){
+		assert(proofID!=0);
 		assert(constraint.getDegree()>0);
 		assert(constraint.getDegree()<=1e9);
 		assert(constraint.isSaturated());
@@ -975,6 +987,7 @@ CRef attachConstraint(intConstr& constraint, bool learnt, bool locked=false){
 	assert(constraint.hasNoUnits());
 
 	if(logProof()) constraint.logProofLine("a");
+	else ++last_proofID; // proofID's function as CRef ID's
 	CRef cr = ca.alloc(constraint,last_proofID,learnt,locked);
 	if (learnt) learnts.push_back(cr);
 	else formula_constrs.push_back(cr);
@@ -1423,7 +1436,7 @@ void garbage_collect(){
 	}
 	#define update_ptr(cr) if(cr.ofs>=ofs_learnts)cr=learnts[lower_bound(learnts_old.begin(), learnts_old.end(), cr)-learnts_old.begin()]
 	for(int l=-n;l<=n;l++) for(size_t i=0;i<adj[l].size();i++) update_ptr(adj[l][i].cref);
-	for(CRef& ext: external) update_ptr(ext);
+	for(auto& ext: external) update_ptr(ext.second);
 	#undef update_ptr
 }
 
@@ -1610,14 +1623,14 @@ void usage(char* name) {
 
 typedef bool (*func)(double);
 template <class T>
-void getOptionNum(const std::map<std::string, std::string>& opt_val, const std::string& option, func test, T& val){
+void getOptionNum(const std::unordered_map<std::string, std::string>& opt_val, const std::string& option, func test, T& val){
 	if (opt_val.count(option)) {
 		double v = atof(opt_val.at(option).c_str());
 		if (test(v)) val=v;
 		else exit_ERROR({"Invalid value for ",option,": ",opt_val.at(option),".\nCheck usage with --help option."});
 	}
 }
-void getOptionStr(const std::map<std::string, std::string>& opt_val, const std::string& option, std::string& val){
+void getOptionStr(const std::unordered_map<std::string, std::string>& opt_val, const std::string& option, std::string& val){
 	if(opt_val.count(option)) val=opt_val.at(option);
 }
 
@@ -1630,7 +1643,7 @@ std::string read_options(int argc, char**argv) {
 		}
 	}
 	std::vector<std::string> opts={"print-sol","verbosity", "var-decay", "rinc", "rfirst", "original-rto", "opt-mode", "proof-log"};
-	std::map<std::string, std::string> opt_val;
+	std::unordered_map<std::string, std::string> opt_val;
 	for(int i=1;i<argc;i++){
 		if (std::string(argv[i]).substr(0,2) != "--") filename = argv[i];
 		else {
@@ -1824,12 +1837,26 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 	}
 }
 
+ID replaceExternal(CRef cr, ID old=0){
+	assert(cr!=CRef_Undef);
+	if(old!=0){
+		auto old_cr=external.find(old);
+		assert(old_cr!=external.end());
+		ca[old_cr->second].setStatus(FORCEDELETE);
+		external.erase(old_cr);
+	}
+	ID result = ca[cr].id;
+	external[result]=cr;
+	assert(ca[cr].getStatus()==LOCKED);
+	return result;
+}
+
 inline void printObjBounds(long long lower, long long upper){
 	if(upper<INF) printf("c bounds %10lld >= %10lld\n",upper,lower);
 	else printf("c bounds          - >= %10lld\n",lower);
 }
 
-void handleNewSolution(const intConstr& origObj, long long& lastObjectiveBoundID){
+void handleNewSolution(const intConstr& origObj, ID& lastObjectiveBoundID){
 	int prev_val = last_sol_obj_val; _unused(prev_val);
 	last_sol_obj_val = -origObj.getRhs();
 	for(int v: origObj.vars) last_sol_obj_val+=origObj.coefs[v]*last_sol[v];
@@ -1837,29 +1864,21 @@ void handleNewSolution(const intConstr& origObj, long long& lastObjectiveBoundID
 
 	origObj.copyTo(tmpConstraint,true);
 	tmpConstraint.addRhs(-last_sol_obj_val+1);
-	lastObjectiveBoundID=last_proofID+1; // The next constraint added to the proof will be the unaltered upper bound
 	CRef cr = addInputConstraint(tmpConstraint);
 	tmpConstraint.reset();
-	assert(cr!=CRef_Undef);
-	if(external.size()>0){
-		assert(external.size()==1);
-		ca[external[0]].setStatus(FORCEDELETE);
-		external.pop_back();
-	}
-	external.push_back(cr);
-	assert(ca[cr].getStatus()==LOCKED);
+	lastObjectiveBoundID = replaceExternal(cr,lastObjectiveBoundID);
 }
 
 struct LazyVar{
-	// core
+	int mult; // TODO: add long long to int check?
+	int rhs;
 	std::vector<int> lhs;
 	std::vector<int> introducedVars;
-	int rhs;
-	// info
-	int mult; // TODO: add long long to int check?
+	ID atLeastID=0;
+	ID atMostID=0;
 
 	LazyVar(intConstr& core, int startvar, int m):
-		introducedVars{startvar},rhs(core.getDegree()),mult(m){
+		mult(m),rhs(core.getDegree()),introducedVars{startvar}{
 		assert(core.isCardinality());
 		lhs.reserve(core.vars.size());
 		for(int v: core.vars) lhs.push_back(core.getLit(v));
@@ -1868,30 +1887,38 @@ struct LazyVar{
 	int getCurrentVar() const { return introducedVars.back(); }
 	void addVar(int v) { introducedVars.push_back(v); }
 
-	void getAtLeastConstraint(intConstr& out) const {
+	void addAtLeastConstraint(intConstr& out) const {
 		// X >= k + y1 + ... + yi
 		assert(out.isReset());
 		out.addRhs(rhs);
 		for(int l: lhs) out.addLhs(1,l);
 		for(int v: introducedVars) out.addLhs(-1,v);
+		CRef cr = addInputConstraint(out);
+		out.reset();
+		replaceExternal(cr,atLeastID);
 	}
 
-	void getAtMostConstraint(intConstr& out) const {
+	void addAtMostConstraint(intConstr& out) const {
 		// X =< k + y1 + ... + yi-1 + (n-k-(i-1))yi
 		assert(out.isReset());
 		out.addRhs(-rhs);
 		for(int l: lhs) out.addLhs(-1,l);
 		for(int v: introducedVars) out.addLhs(1,v);
 		out.addLhs(lhs.size()-rhs-introducedVars.size(), getCurrentVar());
+		CRef cr = addInputConstraint(out);
+		out.reset();
+		replaceExternal(cr,atMostID);
 	}
 
-	void getSymBreakingConstraint(intConstr& out, int prevvar) const {
+	void addSymBreakingConstraint(intConstr& out, int prevvar) const {
 		// y-- + ~y >= 1 (equivalent to y-- >= y)
 		assert(introducedVars.size()>1);
 		assert(out.isReset());
 		out.addRhs(1);
 		out.addLhs(1,prevvar);
 		out.addLhs(1,-getCurrentVar());
+		addInputConstraint(out);
+		out.reset();
 	}
 };
 
@@ -1917,16 +1944,9 @@ void checkLazyVariables(longConstr& reformObj, intConstr& core,
 			// reformulate the objective
 			reformObj.addLhs(lv->mult,newN);
 			// add necessary lazy constraints
-			lv->getAtLeastConstraint(tmpConstraint);
-			addInputConstraint(tmpConstraint);
-			tmpConstraint.reset();
-			lv->getAtMostConstraint(tmpConstraint);
-			addInputConstraint(tmpConstraint);
-			tmpConstraint.reset();
-			assert(tmpConstraint.isReset());
-			lv->getSymBreakingConstraint(tmpConstraint,oldvar);
-			addInputConstraint(tmpConstraint);
-			tmpConstraint.reset();
+			lv->addAtLeastConstraint(tmpConstraint);
+			lv->addAtMostConstraint(tmpConstraint);
+			lv->addSymBreakingConstraint(tmpConstraint,oldvar);
 			if(lv->introducedVars.size()+lv->rhs==lv->lhs.size()){ swapErase(lazyVars,i--); delete lv; continue; } // TODO: clean up CRefs in lv
 		}
 	}
@@ -1974,12 +1994,8 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 		// add first lazy constraint
 		LazyVar* lv = new LazyVar(core,newN,mult);
 		lazyVars.push_back(lv);
-		lv->getAtLeastConstraint(tmpConstraint);
-		addInputConstraint(tmpConstraint);
-		tmpConstraint.reset();
-		lv->getAtMostConstraint(tmpConstraint);
-		addInputConstraint(tmpConstraint);
-		tmpConstraint.reset();
+		lv->addAtLeastConstraint(tmpConstraint);
+		lv->addAtMostConstraint(tmpConstraint);
 	}else{
 		// add auxiliary variables
 		long long oldN = n;
@@ -2030,7 +2046,7 @@ void optimize(intConstr& origObj, intConstr& core){
 	origObj.copyTo(reformObj);
 	longConstr coreAggregate;
 	coreAggregate.resize(n+1);
-	long long lastObjectiveBoundID = 0;
+	ID lastObjectiveBoundID = 0;
 
 	IntSet assumps;
 	std::vector<LazyVar*> lazyVars;
