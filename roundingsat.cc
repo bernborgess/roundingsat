@@ -1838,13 +1838,13 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 }
 
 ID replaceExternal(CRef cr, ID old=0){
-	assert(cr!=CRef_Undef);
 	if(old!=0){
 		auto old_cr=external.find(old);
 		assert(old_cr!=external.end());
 		ca[old_cr->second].setStatus(FORCEDELETE);
 		external.erase(old_cr);
 	}
+	if(cr==CRef_Undef) return 0;
 	ID result = ca[cr].id;
 	external[result]=cr;
 	assert(ca[cr].getStatus()==LOCKED);
@@ -1856,7 +1856,7 @@ inline void printObjBounds(long long lower, long long upper){
 	else printf("c bounds          - >= %10lld\n",lower);
 }
 
-void handleNewSolution(const intConstr& origObj, ID& lastObjectiveBoundID){
+ID handleNewSolution(const intConstr& origObj, ID& lastUpperBound){
 	int prev_val = last_sol_obj_val; _unused(prev_val);
 	last_sol_obj_val = -origObj.getRhs();
 	for(int v: origObj.vars) last_sol_obj_val+=origObj.coefs[v]*last_sol[v];
@@ -1864,9 +1864,11 @@ void handleNewSolution(const intConstr& origObj, ID& lastObjectiveBoundID){
 
 	origObj.copyTo(tmpConstraint,true);
 	tmpConstraint.addRhs(-last_sol_obj_val+1);
+	ID origUpperBound = last_proofID+1;
 	CRef cr = addInputConstraint(tmpConstraint);
 	tmpConstraint.reset();
-	lastObjectiveBoundID = replaceExternal(cr,lastObjectiveBoundID);
+	lastUpperBound = replaceExternal(cr,lastUpperBound);
+	return origUpperBound;
 }
 
 struct LazyVar{
@@ -1882,6 +1884,10 @@ struct LazyVar{
 		assert(core.isCardinality());
 		lhs.reserve(core.vars.size());
 		for(int v: core.vars) lhs.push_back(core.getLit(v));
+	}
+	~LazyVar(){
+		replaceExternal(CRef_Undef,atLeastID);
+		replaceExternal(CRef_Undef,atMostID);
 	}
 
 	int getCurrentVar() const { return introducedVars.back(); }
@@ -1953,18 +1959,29 @@ void checkLazyVariables(longConstr& reformObj, intConstr& core,
 	core.resize(n+1);
 	coreAggregate.resize(n+1);
 }
+void addLowerBound(longConstr& coreAggregate, ID& lastLowerBound){
+	assert(coreAggregate.isSaturated());
+	assert(coreAggregate.getDegree()>0);
+	assert(coreAggregate.getDegree()<=(long long)1e9);
+	coreAggregate.copyTo(tmpConstraint);
+	CRef cr = addInputConstraint(tmpConstraint);
+	tmpConstraint.reset();
+	lastLowerBound = replaceExternal(cr,lastLowerBound);
+}
 
 void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lower_bound,
-                         std::vector<LazyVar*>& lazyVars, longConstr& coreAggregate, intConstr& origObj){
+                         std::vector<LazyVar*>& lazyVars, longConstr& coreAggregate, intConstr& origObj,
+                         ID& lastLowerBound){
 	// take care of derived unit lits and remove zeroes
 	reformObj.removeUnitsAndZeroes(false);
 	origObj.removeUnitsAndZeroes(false);
-	coreAggregate.removeUnitsAndZeroes(false);
+	coreAggregate.removeUnitsAndZeroes(true);
 	long long prev_lower = lower_bound; _unused(prev_lower);
 	lower_bound = -reformObj.getDegree();
 	if(core.getDegree()==0){
 		assert(lower_bound>prev_lower);
 		checkLazyVariables(reformObj,core,lazyVars,coreAggregate);
+		addLowerBound(coreAggregate,lastLowerBound);
 		return; // apparently only unit assumptions were derived
 	}
 	// figure out an appropriate core
@@ -2030,6 +2047,7 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 		}
 	}
 	checkLazyVariables(reformObj,core,lazyVars,coreAggregate);
+	addLowerBound(coreAggregate,lastLowerBound);
 }
 
 void optimize(intConstr& origObj, intConstr& core){
@@ -2046,7 +2064,9 @@ void optimize(intConstr& origObj, intConstr& core){
 	origObj.copyTo(reformObj);
 	longConstr coreAggregate;
 	coreAggregate.resize(n+1);
-	ID lastObjectiveBoundID = 0;
+	ID origUpperBound = 0;
+	ID lastUpperBound = 0;
+	ID lastLowerBound = 0;
 
 	IntSet assumps;
 	std::vector<LazyVar*> lazyVars;
@@ -2071,7 +2091,7 @@ void optimize(intConstr& origObj, intConstr& core){
 		else lower_time+=DETERMINISTICTIME-current_time;
 		if(reply==SolveState::SAT){
 			++NSOLS;
-			handleNewSolution(origObj,lastObjectiveBoundID);
+			origUpperBound = handleNewSolution(origObj,lastUpperBound);
 			assert((opt_mode!=1 && opt_mode!=2) || lower_bound==last_sol_obj_val);
 		}	else if(reply==SolveState::UNSAT) {
 			++NCORES;
@@ -2080,18 +2100,22 @@ void optimize(intConstr& origObj, intConstr& core){
 				assert(decisionLevel()==0);
 				exit_UNSAT();
 			}
-			handleInconsistency(reformObj,core,lower_bound,lazyVars,coreAggregate,origObj);
+			handleInconsistency(reformObj,core,lower_bound,lazyVars,coreAggregate,origObj,lastLowerBound);
 		} // else reply==SolveState::INPROCESSING, keep looping
 		if(lower_bound>=last_sol_obj_val){
 			printObjBounds(lower_bound,last_sol_obj_val);
+			assert(lastUpperBound>0);
+			assert(lastLowerBound>0);
 			origObj.copyTo(tmpConstraint,true);
 			tmpConstraint.addRhs(-last_sol_obj_val+1);
-			tmpConstraint.resetBuffer(lastObjectiveBoundID); assert(lastObjectiveBoundID>0);
+			tmpConstraint.resetBuffer(origUpperBound);
+			tmpConstraint.removeUnitsAndZeroes(true);
+			coreAggregate.removeUnitsAndZeroes(true);
 			coreAggregate.add(tmpConstraint,1,false);
 			tmpConstraint.reset();
 			coreAggregate.postProcess(true);
 			if(logProof()) coreAggregate.logInconsistency();
-			//assert(coreAggregate.getSlack()<0); // TODO: comment for lazy optimization
+			assert(coreAggregate.getSlack()<0);
 			assert(decisionLevel()==0);
 			exit_UNSAT();
 		}
