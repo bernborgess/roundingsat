@@ -1853,46 +1853,51 @@ void handleNewSolution(const intConstr& origObj, long long& lastObjectiveBoundID
 struct LazyVar{
 	// core
 	std::vector<int> lhs;
+	std::vector<int> introducedVars;
 	int rhs;
 	// info
 	int mult; // TODO: add long long to int check?
-	int currentvar;
 	int idx;
 	int nvars;
 
 	LazyVar(intConstr& core, int startvar, int m):
-	rhs(core.getDegree()),mult(m),currentvar(startvar),idx(0),nvars(core.vars.size()-rhs){
+		introducedVars{startvar},rhs(core.getDegree()),mult(m),idx(0),nvars(core.vars.size()-rhs){
 		assert(core.isCardinality());
 		lhs.reserve(core.vars.size());
 		for(int v: core.vars) lhs.push_back(core.getLit(v));
 	}
 
-	void getAtLeastConstraint(intConstr& out){
-		// X >= (k+i+1)yi (equivalent to yi ==> X>k+i)
+	int getCurrentVar() const { return introducedVars.back(); }
+	void addVar(int v) { introducedVars.push_back(v); }
+
+	void getAtLeastConstraint(intConstr& out) const {
+		// X >= (k+i+1)yi (equivalent to yi ==> X>=k+i+1)
 		assert(out.isReset());
 		for(int l: lhs) out.addLhs(1,l);
-		out.addLhs(-(rhs+idx+1),currentvar);
+		out.addLhs(-(rhs+idx+1),getCurrentVar());
 	}
 
-	void getAtMostConstraint(intConstr& out){
+	void getAtMostConstraint(intConstr& out) const {
 		// ~X >= (n-k-i)~yi (equivalent to ~yi ==> X=<k+i)
 		assert(out.isReset());
 		for(int l: lhs) out.addLhs(1,-l);
-		out.addLhs(-(lhs.size()-rhs-idx),-currentvar);
+		out.addLhs(-(lhs.size()-rhs-idx),-getCurrentVar());
 	}
 
-	void getSymBreakingConstraint(intConstr& out, int prevvar){
+	void getSymBreakingConstraint(intConstr& out, int prevvar) const {
 		// y-- + ~y >= 1 (equivalent to y-- >= y)
 		assert(idx>0);
 		assert(out.isReset());
 		out.addRhs(1);
 		out.addLhs(1,prevvar);
-		out.addLhs(1,-currentvar);
+		out.addLhs(1,-getCurrentVar());
 	}
 };
 
-std::ostream & operator<<(std::ostream & o, LazyVar* lv) {
-	o << lv->currentvar << " " << lv->idx << " " << lv->nvars << " | ";
+std::ostream & operator<<(std::ostream & o, const LazyVar* lv) {
+	o << lv->idx << " " << lv->nvars << " | ";
+	for(int v: lv->introducedVars) o << v << " ";
+	o << "| ";
 	for(int l: lv->lhs) o << "+x" << l << " ";
 	o << ">= " << lv->rhs;
 	return o;
@@ -1902,15 +1907,15 @@ void checkLazyVariables(longConstr& reformObj, intConstr& core,
 		std::vector<LazyVar*>& lazyVars, longConstr& coreAggregate){ // introduce new lazy variables if needed
 	for(int i=0; i<(int)lazyVars.size(); ++i){
 		LazyVar* lv=lazyVars[i];
-		if(reformObj.getLit(lv->currentvar)==0){
+		if(reformObj.getLit(lv->getCurrentVar())==0){
 			lv->idx++;
-			if(lv->idx==lv->nvars){ swapErase(lazyVars,i--); delete lv; continue; }
+			if(lv->idx==lv->nvars){ swapErase(lazyVars,i--); delete lv; continue; } // TODO: clean up CRefs in lv
 			// add auxiliary variable
 			long long newN = n+1;
 			setNbVariables(newN);
 			reformObj.resize(newN+1);
-			int oldvar = lv->currentvar;
-			lv->currentvar = newN;
+			int oldvar = lv->getCurrentVar();
+			lv->addVar(newN);
 			// reformulate the objective
 			reformObj.addLhs(lv->mult,newN);
 			// add necessary lazy constraints
