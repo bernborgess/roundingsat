@@ -1857,11 +1857,9 @@ struct LazyVar{
 	int rhs;
 	// info
 	int mult; // TODO: add long long to int check?
-	int idx;
-	int nvars;
 
 	LazyVar(intConstr& core, int startvar, int m):
-		introducedVars{startvar},rhs(core.getDegree()),mult(m),idx(0),nvars(core.vars.size()-rhs){
+		introducedVars{startvar},rhs(core.getDegree()),mult(m){
 		assert(core.isCardinality());
 		lhs.reserve(core.vars.size());
 		for(int v: core.vars) lhs.push_back(core.getLit(v));
@@ -1871,22 +1869,25 @@ struct LazyVar{
 	void addVar(int v) { introducedVars.push_back(v); }
 
 	void getAtLeastConstraint(intConstr& out) const {
-		// X >= (k+i+1)yi (equivalent to yi ==> X>=k+i+1)
+		// X >= k + y1 + ... + yi
 		assert(out.isReset());
+		out.addRhs(rhs);
 		for(int l: lhs) out.addLhs(1,l);
-		out.addLhs(-(rhs+idx+1),getCurrentVar());
+		for(int v: introducedVars) out.addLhs(-1,v);
 	}
 
 	void getAtMostConstraint(intConstr& out) const {
-		// ~X >= (n-k-i)~yi (equivalent to ~yi ==> X=<k+i)
+		// X =< k + y1 + ... + yi-1 + (n-k-(i-1))yi
 		assert(out.isReset());
-		for(int l: lhs) out.addLhs(1,-l);
-		out.addLhs(-(lhs.size()-rhs-idx),-getCurrentVar());
+		out.addRhs(-rhs);
+		for(int l: lhs) out.addLhs(-1,l);
+		for(int v: introducedVars) out.addLhs(1,v);
+		out.addLhs(lhs.size()-rhs-introducedVars.size(), getCurrentVar());
 	}
 
 	void getSymBreakingConstraint(intConstr& out, int prevvar) const {
 		// y-- + ~y >= 1 (equivalent to y-- >= y)
-		assert(idx>0);
+		assert(introducedVars.size()>1);
 		assert(out.isReset());
 		out.addRhs(1);
 		out.addLhs(1,prevvar);
@@ -1895,7 +1896,6 @@ struct LazyVar{
 };
 
 std::ostream & operator<<(std::ostream & o, const LazyVar* lv) {
-	o << lv->idx << " " << lv->nvars << " | ";
 	for(int v: lv->introducedVars) o << v << " ";
 	o << "| ";
 	for(int l: lv->lhs) o << "+x" << l << " ";
@@ -1908,8 +1908,6 @@ void checkLazyVariables(longConstr& reformObj, intConstr& core,
 	for(int i=0; i<(int)lazyVars.size(); ++i){
 		LazyVar* lv=lazyVars[i];
 		if(reformObj.getLit(lv->getCurrentVar())==0){
-			lv->idx++;
-			if(lv->idx==lv->nvars){ swapErase(lazyVars,i--); delete lv; continue; } // TODO: clean up CRefs in lv
 			// add auxiliary variable
 			long long newN = n+1;
 			setNbVariables(newN);
@@ -1929,6 +1927,7 @@ void checkLazyVariables(longConstr& reformObj, intConstr& core,
 			lv->getSymBreakingConstraint(tmpConstraint,oldvar);
 			addInputConstraint(tmpConstraint);
 			tmpConstraint.reset();
+			if(lv->introducedVars.size()+lv->rhs==lv->lhs.size()){ swapErase(lazyVars,i--); delete lv; continue; } // TODO: clean up CRefs in lv
 		}
 	}
 	core.resize(n+1);
