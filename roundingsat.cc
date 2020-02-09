@@ -1936,8 +1936,7 @@ std::ostream & operator<<(std::ostream & o, const LazyVar* lv) {
 	return o;
 }
 
-void checkLazyVariables(longConstr& reformObj, intConstr& core,
-		std::vector<LazyVar*>& lazyVars, longConstr& coreAggregate){ // introduce new lazy variables if needed
+void checkLazyVariables(longConstr& reformObj, intConstr& core, std::vector<LazyVar*>& lazyVars){
 	for(int i=0; i<(int)lazyVars.size(); ++i){
 		LazyVar* lv=lazyVars[i];
 		if(reformObj.getLit(lv->getCurrentVar())==0){
@@ -1953,36 +1952,32 @@ void checkLazyVariables(longConstr& reformObj, intConstr& core,
 			lv->addAtLeastConstraint(tmpConstraint);
 			lv->addAtMostConstraint(tmpConstraint);
 			lv->addSymBreakingConstraint(tmpConstraint,oldvar);
-			if(lv->introducedVars.size()+lv->rhs==lv->lhs.size()){ swapErase(lazyVars,i--); delete lv; continue; } // TODO: clean up CRefs in lv
+			if(lv->introducedVars.size()+lv->rhs==lv->lhs.size()){ swapErase(lazyVars,i--); delete lv; continue; }
 		}
 	}
 	core.resize(n+1);
-	coreAggregate.resize(n+1);
 }
-void addLowerBound(longConstr& coreAggregate, ID& lastLowerBound){
-	assert(coreAggregate.isSaturated());
-	assert(coreAggregate.getDegree()>0);
-	assert(coreAggregate.getDegree()<=(long long)1e9);
-	coreAggregate.copyTo(tmpConstraint);
+ID addLowerBound(const intConstr& origObj, int lowerBound, ID& lastLowerBound){
+	origObj.copyTo(tmpConstraint);
+	tmpConstraint.addRhs(lowerBound);
+	ID origLowerBound = last_proofID+1;
 	CRef cr = addInputConstraint(tmpConstraint);
 	tmpConstraint.reset();
 	lastLowerBound = replaceExternal(cr,lastLowerBound);
+	return origLowerBound;
 }
-
-void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lower_bound,
-                         std::vector<LazyVar*>& lazyVars, longConstr& coreAggregate, intConstr& origObj,
+ID handleInconsistency(longConstr& reformObj, intConstr& core, long long& lower_bound,
+                         std::vector<LazyVar*>& lazyVars, intConstr& origObj,
                          ID& lastLowerBound){
 	// take care of derived unit lits and remove zeroes
 	reformObj.removeUnitsAndZeroes(false);
 	origObj.removeUnitsAndZeroes(false);
-	coreAggregate.removeUnitsAndZeroes(true);
 	long long prev_lower = lower_bound; _unused(prev_lower);
 	lower_bound = -reformObj.getDegree();
-	if(core.getDegree()==0){
+	if(core.getDegree()==0){ // apparently only unit assumptions were derived
 		assert(lower_bound>prev_lower);
-		checkLazyVariables(reformObj,core,lazyVars,coreAggregate);
-		addLowerBound(coreAggregate,lastLowerBound);
-		return; // apparently only unit assumptions were derived
+		checkLazyVariables(reformObj,core,lazyVars);
+		return addLowerBound(origObj,lower_bound,lastLowerBound);
 	}
 	// figure out an appropriate core
 	core.simplifyToCardinality(false);
@@ -2002,7 +1997,6 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 		long long newN = n+1;
 		setNbVariables(newN);
 		core.resize(newN+1);
-		coreAggregate.resize(newN+1);
 		reformObj.resize(newN+1);
 		// reformulate the objective
 		reformObj.add(core,-mult,false);
@@ -2019,7 +2013,6 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 		long long newN = oldN-core.getDegree()+core.vars.size();
 		setNbVariables(newN);
 		core.resize(newN+1);
-		coreAggregate.resize(newN+1);
 		reformObj.resize(newN+1);
 		// reformulate the objective
 		for(int v=oldN+1; v<=newN; ++v) core.addLhs(-1,v);
@@ -2032,10 +2025,6 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 		core.copyTo(tmpConstraint);
 		assert(tmpConstraint.isCardinality());
 		addInputConstraint(tmpConstraint);
-		// NOTE: addInputConstraint constructs the right proofID for tmpConstraint,
-		// but coreAggregate's construction is only correct if tmpConstraint is not mutated by addInputConstraint.
-		// Due to tmpConstraint being a simple cardinality, this is the case.
-		coreAggregate.add(tmpConstraint,mult,false);
 		tmpConstraint.reset();
 		for(int v=oldN+1; v<newN; ++v){ // add symmetry breaking constraints
 			assert(tmpConstraint.isReset());
@@ -2046,8 +2035,8 @@ void handleInconsistency(longConstr& reformObj, intConstr& core, long long& lowe
 			tmpConstraint.reset();
 		}
 	}
-	checkLazyVariables(reformObj,core,lazyVars,coreAggregate);
-	addLowerBound(coreAggregate,lastLowerBound);
+	checkLazyVariables(reformObj,core,lazyVars);
+	return addLowerBound(origObj,lower_bound,lastLowerBound);
 }
 
 void optimize(intConstr& origObj, intConstr& core){
@@ -2062,9 +2051,8 @@ void optimize(intConstr& origObj, intConstr& core){
 
 	longConstr reformObj;
 	origObj.copyTo(reformObj);
-	longConstr coreAggregate;
-	coreAggregate.resize(n+1);
 	ID origUpperBound = 0;
+	ID origLowerBound = 0;
 	ID lastUpperBound = 0;
 	ID lastLowerBound = 0;
 
@@ -2100,23 +2088,29 @@ void optimize(intConstr& origObj, intConstr& core){
 				assert(decisionLevel()==0);
 				exit_UNSAT();
 			}
-			handleInconsistency(reformObj,core,lower_bound,lazyVars,coreAggregate,origObj,lastLowerBound);
+			origLowerBound = handleInconsistency(reformObj,core,lower_bound,lazyVars,origObj,lastLowerBound);
 		} // else reply==SolveState::INPROCESSING, keep looping
 		if(lower_bound>=last_sol_obj_val){
 			printObjBounds(lower_bound,last_sol_obj_val);
 			assert(lastUpperBound>0);
 			assert(lastLowerBound>0);
-			origObj.copyTo(tmpConstraint,true);
-			tmpConstraint.addRhs(-last_sol_obj_val+1);
-			tmpConstraint.resetBuffer(origUpperBound);
-			tmpConstraint.removeUnitsAndZeroes(true);
-			coreAggregate.removeUnitsAndZeroes(true);
-			coreAggregate.add(tmpConstraint,1,false);
-			tmpConstraint.reset();
-			coreAggregate.postProcess(true);
-			if(logProof()) coreAggregate.logInconsistency();
-			assert(coreAggregate.getSlack()<0);
-			assert(decisionLevel()==0);
+			if(logProof()){ // TODO: origObj should not remove units, see stein27.opb
+				longConstr coreAggregate;
+				coreAggregate.resize(n+1);
+				origObj.copyTo(tmpConstraint,true);
+				tmpConstraint.addRhs(1-last_sol_obj_val);
+				tmpConstraint.resetBuffer(origUpperBound);
+				coreAggregate.add(tmpConstraint,1,false);
+				tmpConstraint.reset();
+				origObj.copyTo(tmpConstraint);
+				tmpConstraint.addRhs(lower_bound);
+				tmpConstraint.resetBuffer(origLowerBound);
+				coreAggregate.add(tmpConstraint,1,false);
+				tmpConstraint.reset();
+				coreAggregate.logInconsistency();
+				assert(coreAggregate.getSlack()<0);
+				assert(decisionLevel()==0);
+			}
 			exit_UNSAT();
 		}
 	}
