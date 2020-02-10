@@ -1949,7 +1949,7 @@ void checkLazyVariables(longConstr& reformObj, intConstr& core, std::vector<Lazy
 			// reformulate the objective
 			reformObj.addLhs(lv->mult,newN);
 			// add necessary lazy constraints
-			lv->addAtLeastConstraint(tmpConstraint);
+			//lv->addAtLeastConstraint(tmpConstraint);
 			lv->addAtMostConstraint(tmpConstraint);
 			lv->addSymBreakingConstraint(tmpConstraint,oldvar);
 			if(lv->introducedVars.size()+lv->rhs==lv->lhs.size()){ swapErase(lazyVars,i--); delete lv; continue; }
@@ -2003,7 +2003,7 @@ ID handleInconsistency(longConstr& reformObj, intConstr& core, long long& lower_
 		// add first lazy constraint
 		LazyVar* lv = new LazyVar(core,newN,mult);
 		lazyVars.push_back(lv);
-		lv->addAtLeastConstraint(tmpConstraint);
+		//lv->addAtLeastConstraint(tmpConstraint);
 		lv->addAtMostConstraint(tmpConstraint);
 	}else{
 		// add auxiliary variables
@@ -2020,10 +2020,10 @@ ID handleInconsistency(longConstr& reformObj, intConstr& core, long long& lower_
 		// add channeling constraints
 		addInputConstraint(tmpConstraint);
 		tmpConstraint.reset();
-		core.copyTo(tmpConstraint);
-		assert(tmpConstraint.isCardinality());
-		addInputConstraint(tmpConstraint);
-		tmpConstraint.reset();
+		//core.copyTo(tmpConstraint);
+		//assert(tmpConstraint.isCardinality());
+		//addInputConstraint(tmpConstraint);
+		//tmpConstraint.reset();
 		for(int v=oldN+1; v<newN; ++v){ // add symmetry breaking constraints
 			assert(tmpConstraint.isReset());
 			tmpConstraint.addRhs(1);
