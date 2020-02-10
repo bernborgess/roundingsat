@@ -1967,11 +1967,9 @@ ID addLowerBound(const intConstr& origObj, int lowerBound, ID& lastLowerBound){
 	return origLowerBound;
 }
 ID handleInconsistency(longConstr& reformObj, intConstr& core, long long& lower_bound,
-                         std::vector<LazyVar*>& lazyVars, intConstr& origObj,
-                         ID& lastLowerBound){
+                         std::vector<LazyVar*>& lazyVars, const intConstr& origObj, ID& lastLowerBound){
 	// take care of derived unit lits and remove zeroes
 	reformObj.removeUnitsAndZeroes(false);
-	origObj.removeUnitsAndZeroes(false);
 	long long prev_lower = lower_bound; _unused(prev_lower);
 	lower_bound = -reformObj.getDegree();
 	if(core.getDegree()==0){ // apparently only unit assumptions were derived
@@ -2094,7 +2092,7 @@ void optimize(intConstr& origObj, intConstr& core){
 			printObjBounds(lower_bound,last_sol_obj_val);
 			assert(lastUpperBound>0);
 			assert(lastLowerBound>0);
-			if(logProof()){ // TODO: origObj should not remove units, see stein27.opb
+			if(logProof()){
 				longConstr coreAggregate;
 				coreAggregate.resize(n+1);
 				origObj.copyTo(tmpConstraint,true);
