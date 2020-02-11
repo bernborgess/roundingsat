@@ -145,6 +145,8 @@ std::ofstream proof_out; std::ofstream formula_out;
 ID last_proofID = 0; ID last_formID = 0;
 std::vector<ID> unitIDs;
 long long logStartTime=0;
+int prop_mode=0;
+inline bool countingProp(){ return prop_mode%2==1; }
 
 struct CRef {
 	uint32_t ofs;
@@ -198,7 +200,7 @@ struct Constr {
 	long long nbackjump;
 	long long slack; // sum of non-falsified watches minus w.
 	// NOTE: will never be larger than 2 * non-falsified watch, so fits in 32 bit for the n-watched literal scheme
-	// TODO: is above really true?
+	// TODO: is above really true? Definitely not for counting propagation...
 	unsigned int watchIdx;
 	int data[];
 
@@ -215,14 +217,31 @@ struct Constr {
 	inline bool isWatched(unsigned int i) const { assert(i%2==0); return data[i]<0; }
 	inline void undoFalsified(unsigned int i) {
 		assert(i%2==0);
-		assert(isWatched(i));
-		slack -= data[i];
+		assert(countingProp() || isWatched(i));
+		slack += abs(data[i]); // TODO: slack -= data[i] when only watched propagation
 		watchIdx=0;
 	}
 	inline WatchStatus propagateWatch(CRef cr, unsigned int idx){
 		assert(idx%2==0);
 		const unsigned int Csize2 = 2*size(); const int ClargestCoef = largestCoef();
 		const int c = data[idx];
+
+		if(countingProp()){ // use counting propagation
+			slack-=c;
+			if(slack<0) return WatchStatus::CONFLICTING;
+			if(slack<ClargestCoef){
+				if(nbackjump<NBACKJUMP){ nbackjump=NBACKJUMP; watchIdx=0; }
+				DETERMINISTICTIME-=watchIdx;
+				for(; watchIdx<Csize2 && data[watchIdx]>slack; watchIdx+=2){
+					const int l = data[watchIdx+1];
+					if(Pos[std::abs(l)]==-1) uncheckedEnqueue(l,cr);
+				}
+				DETERMINISTICTIME+=watchIdx;
+			}
+			return WatchStatus::FOUNDNONE;
+		}
+
+		// use watched propagation
 		assert(c<0);
 		slack+=c;
 		if(slack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
@@ -1027,6 +1046,22 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 	constraints.push_back(cr);
 	Constr& C = ca[cr]; int* data = C.data;
 
+	if(countingProp()){ // use counting propagation
+		for(unsigned int i=0; i<2*C.size(); i+=2){
+			int l = data[i+1];
+			adj[l].push_back({cr,i});
+			if(Level[-l]==-1 || Pos[std::abs(l)]>=qhead) C.slack+=data[i];
+		}
+		assert(C.slack>=0);
+		if(C.slack<C.largestCoef()){ // propagate
+			for(unsigned int i=0; i<2*C.size() && data[i]>C.slack; i+=2) if(Pos[std::abs(data[i+1])]==-1) {
+				uncheckedEnqueue(data[i+1],cr);
+			}
+		}
+		return cr;
+	}
+
+	// watched propagation
 	for(unsigned int i=0; i<2*C.size() && C.slack<C.largestCoef(); i+=2){
 		int l = data[i+1];
 		if(Level[-l]==-1 || Pos[std::abs(l)]>=qhead){
@@ -1631,6 +1666,7 @@ void usage(char* name) {
 	printf("  --rfirst=arg     Set the interval of the Luby restart sequence (integer >=1; default %lld).\n",rfirst);
 	printf("  --original-rto=arg Set whether to use RoundingSat's original round-to-one conflict analysis (0 or 1; default %d).\n",originalRoundToOne);
 	printf("  --opt-mode=arg   Set optimization mode: 0 linear, 1(2) (lazy) core-guided, 3(4) (lazy) hybrid (default %d).\n",opt_mode);
+	printf("  --prop-mode=arg  Set propagation mode: 0 watched, 1 counting, 2 clausal+watched, 3 clausal+counting (default %d).\n",prop_mode);
 	printf("  --proof-log=arg  Set a filename for the proof logs (string).\n");
 }
 
@@ -1655,7 +1691,8 @@ std::string read_options(int argc, char**argv) {
 			exit(1);
 		}
 	}
-	std::vector<std::string> opts={"print-sol","verbosity", "var-decay", "rinc", "rfirst", "original-rto", "opt-mode", "proof-log"};
+	std::vector<std::string> opts={"print-sol","verbosity", "var-decay", "rinc", "rfirst", "original-rto", "opt-mode",
+																"prop-mode", "proof-log"};
 	std::unordered_map<std::string, std::string> opt_val;
 	for(int i=1;i<argc;i++){
 		if (std::string(argv[i]).substr(0,2) != "--") filename = argv[i];
@@ -1677,6 +1714,7 @@ std::string read_options(int argc, char**argv) {
 	getOptionNum(opt_val,"rfirst",[](double x)->bool{return x>=1;},rfirst);
 	getOptionNum(opt_val,"original-rto",[](double x)->bool{return x==0 || x==1;},originalRoundToOne);
 	getOptionNum(opt_val,"opt-mode",[](double x)->bool{return x==0 || x==1 || x==2 || x==3 || x==4;},opt_mode);
+	getOptionNum(opt_val,"prop-mode",[](double x)->bool{return x==0 || x==1 || x==2 || x==3;},prop_mode);
 	getOptionStr(opt_val,"proof-log",proof_log_name);
 	return filename;
 }
