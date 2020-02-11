@@ -86,7 +86,22 @@ template<class T, class U> inline bool contains(const T& v, const U& x){
 	return std::find(v.cbegin(),v.cend(),x)!=v.cend();
 }
 
+// ---------------------------------------------------------------------
+// Exit and interrupt
+
 void exit_SAT(),exit_UNSAT(),exit_INDETERMINATE(),exit_ERROR(const std::initializer_list<std::string>&);
+
+bool asynch_interrupt = false;
+static void SIGINT_interrupt(int signum){
+	_unused(signum);
+	asynch_interrupt = true;
+}
+
+static void SIGINT_exit(int signum){
+	_unused(signum);
+	printf("\n*** INTERRUPTED ***\n");
+	exit(1);
+}
 
 // Minisat cpuTime function
 #include <sys/time.h>
@@ -423,7 +438,7 @@ struct Constraint{
 	}
 
 	// @post: preserves order of vars
-	void saturate(){
+	void saturate(const std::vector<int>& vs){
 		if(logProof() && !isSaturated()) proofBuffer << "s "; // log saturation only if it modifies the constraint
 		LARGE w = getDegree();
 		if(w<=0){ // NOTE: does not call reset(0), as we do not want to reset the buffer
@@ -431,12 +446,13 @@ struct Constraint{
 			vars.clear(); rhs=0; degree=0;
 			return;
 		}
-		for (int v: vars){
+		for (int v: vs){
 			if(coefs[v]<-w) rhs-=coefs[v]+w, coefs[v]=-w;
 			else coefs[v]=std::min<LARGE>(coefs[v],w);
 		}
 		assert(isSaturated());
 	}
+	void saturate(){ saturate(vars); }
 	bool isSaturated() {
 		LARGE w = getDegree();
 		for(int v:vars) if(std::abs(coefs[v])>w) return false;
@@ -459,17 +475,33 @@ struct Constraint{
 	}
 
 	template<class S, class L>
-	void add(const Constraint<S,L>& c, SMALL mult=1, bool saturateAndReduce=true){
+	void add(Constraint<S,L>& c, SMALL mult=1, bool saturateAndReduce=true){
+		assert(!saturateAndReduce || isSaturated());
 		assert(c._unused_()<=_unused_()); // don't add large stuff into small stuff
+		assert(mult>=0);
 		if(logProof()) proofBuffer << c.proofBuffer.str() << proofMult(mult) << "+ ";
-		for(int v: c.vars) addLhs(mult*c.coefs[v],v);
-		addRhs((LARGE)mult*(LARGE)c.getRhs());
-		degree=_invalid_();
+		LARGE old_degree = getDegree();
+		degree+=(LARGE)mult*(LARGE)c.getDegree();
+		rhs+=(LARGE)mult*(LARGE)c.getRhs();
+		for(int v: c.vars){
+			assert(v<(int)coefs.size());
+			assert(v>0);
+			SMALL val = mult*c.coefs[v];
+			if(coefs[v]==_unused_()){
+				vars.push_back(v);
+				coefs[v]=val;
+			}else{
+				SMALL cf = coefs[v];
+				if((cf<0)!=(val<0)) degree -= std::min(std::abs(cf),std::abs(val));
+				coefs[v]=cf+val;
+			}
+		}
 		if(!saturateAndReduce) return;
-		removeZeroes();
-		saturate();
-		if(getDegree() > (LARGE)1e9) roundToOne(ceildiv<LARGE>(getDegree(),1e9),!originalRoundToOne);
+		if(old_degree>getDegree()){ DETERMINISTICTIME+=vars.size(); removeZeroes(); saturate(); }
+		else{ DETERMINISTICTIME+= c.vars.size(); saturate(c.vars); } // only saturate changed vars
+		if(getDegree() > (LARGE)1e9){ removeZeroes(); roundToOne(ceildiv<LARGE>(getDegree(), 1e9), !originalRoundToOne); }
 		assert(getDegree() <= (LARGE)1e9);
+		assert(isSaturated());
 	}
 
 	void roundToOne(const SMALL d, bool partial){
@@ -1076,6 +1108,7 @@ void analyze(CRef confl){
 	assert(actSet.size()==0); // will hold the literals that need their activity bumped
 	for(int v: confl_data.vars) actSet.add(confl_data.getLit(v));
 	while(true){
+		if(asynch_interrupt)exit_INDETERMINATE();
 		if (decisionLevel() == 0) {
 			if(logProof()) confl_data.logInconsistency();
 			assert(confl_data.getSlack()<0);
@@ -1507,18 +1540,6 @@ double luby(double y, int x){
 
 // ---------------------------------------------------------------------
 // Main
-
-bool asynch_interrupt = false;
-static void SIGINT_interrupt(int signum){
-	_unused(signum);
-	asynch_interrupt = true;
-}
-
-static void SIGINT_exit(int signum){
-	_unused(signum);
-	printf("\n*** INTERRUPTED ***\n");
-	exit(1);
-}
 
 void print_stats() {
 	double timespent = cpuTime()-initial_time;
@@ -1997,7 +2018,9 @@ ID handleInconsistency(longConstr& reformObj, intConstr& core, long long& lower_
 		core.resize(newN+1);
 		reformObj.resize(newN+1);
 		// reformulate the objective
-		reformObj.add(core,-mult,false);
+		core.copyTo(tmpConstraint,true);
+		reformObj.add(tmpConstraint,mult,false);
+		tmpConstraint.reset();
 		reformObj.addLhs(mult,newN); // add only one variable for now
 		assert(lower_bound==-reformObj.getDegree());
 		// add first lazy constraint
