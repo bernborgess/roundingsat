@@ -337,7 +337,8 @@ struct Constraint{
 	void init(Constr& C){
 		assert(isReset()); // don't use a Constraint used by other stuff
 		addRhs(C.degree);
-		for(size_t i=0;i<C.size();++i){ assert(C.coef(i)!=0); addLhs(C.coef(i), C.lit(i)); } // resets degree
+		for(size_t i=0;i<C.size();++i){ assert(C.coef(i)!=0); addLhs(C.coef(i), C.lit(i)); }
+		degree=C.degree;
 		if(logProof()) resetBuffer(C.id);
 	}
 
@@ -404,14 +405,15 @@ struct Constraint{
 		int j=0;
 		for(int i=0; i<(int)vars.size(); ++i){
 			int v=vars[i];
-			if(coefs[v]==0) coefs[v]=_unused_();
+			SMALL c=coefs[v];
+			if(c==0) coefs[v]=_unused_();
 			else if(Level[v]==0){
-				rhs-=coefs[v];
-				degree=_invalid_();
+				rhs-=c;
+				if(degree!=_invalid_() && c>0) degree-=c;
 				coefs[v]=_unused_();
 			}else if(Level[-v]==0){
-				degree = _invalid_();
-				coefs[v] = _unused_();
+				if(degree!=_invalid_() && c<0) degree+=c;
+				coefs[v]=_unused_();
 			}else vars[j++]=v;
 		}
 		vars.resize(j);
@@ -467,7 +469,8 @@ struct Constraint{
 		out.vars=vars;
 		out.resize(coefs.size());
 		for(int v: vars) out.coefs[v]=mult*coefs[v];
-		out.degree=out._invalid_();
+		if(inverted || degree==_invalid_()) out.degree=out._invalid_();
+		else out.degree=degree;
 		if(logProof()){
 			out.proofBuffer.str(std::string());
 			out.proofBuffer << proofBuffer.str() << proofMult(mult);
@@ -549,8 +552,7 @@ struct Constraint{
 		for (int v: vars) coefs[v] /= (int)_gcd;
 		// NOTE: as all coefficients are divisible, we can ceildiv the rhs instead of the degree
 		rhs=ceildiv_safe<LARGE>(rhs,_gcd);
-		degree=_invalid_();
-
+		if(degree!=_invalid_()) degree=ceildiv_safe<LARGE>(degree,_gcd);
 		if(logProof()) proofBuffer << _gcd << " d ";
 		return true;
 	}
@@ -2044,7 +2046,6 @@ ID handleInconsistency(longConstr& reformObj, intConstr& core, long long& lower_
 		addInputConstraint(tmpConstraint);
 		tmpConstraint.reset();
 		//core.copyTo(tmpConstraint);
-		//assert(tmpConstraint.isCardinality());
 		//addInputConstraint(tmpConstraint);
 		//tmpConstraint.reset();
 		for(int v=oldN+1; v<newN; ++v){ // add symmetry breaking constraints
