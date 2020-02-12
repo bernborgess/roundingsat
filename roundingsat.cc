@@ -124,7 +124,7 @@ const int INF=1e9+1;
 
 double initial_time;
 long long NBACKJUMP=0, DETERMINISTICTIME=1;
-long long NCONFL=0, NDECIDE=0, NPROP=0;
+long long NCONFL=0, NDECIDE=0, NPROP=0, NPROPCLAUSE=0;
 __int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
 long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
 long long NGCD=0, NCARDDETECT=0, NCORECARDINALITIES=0, NCORES=0, NSOLS=0;
@@ -135,7 +135,7 @@ long long nbconstrsbeforereduce=2000;
 long long incReduceDB=300;
 long long cnt_reduceDB=0;
 bool originalRoundToOne=false;
-int opt_mode=0;
+int opt_mode=4;
 long long curr_restarts=0;
 long long nconfl_to_restart=0;
 bool print_sol = false;
@@ -266,6 +266,7 @@ struct Constr {
 			assert(~Level[-watch]);
 			if(Level[-otherwatch]==-1){
 				for(int i=2; i<Csize; ++i) assert(~Level[-data[i]]);
+				++NPROPCLAUSE;
 				uncheckedEnqueue(otherwatch,cr);
 				return WatchStatus::FOUNDNONE;
 			}else{
@@ -287,7 +288,7 @@ struct Constr {
 				DETERMINISTICTIME-=watchIdx;
 				for(; watchIdx<Csize2 && data[watchIdx]>slack; watchIdx+=2){
 					const int l = data[watchIdx+1];
-					if(Pos[std::abs(l)]==-1) uncheckedEnqueue(l,cr);
+					if(Pos[std::abs(l)]==-1) { NPROPCLAUSE+=(degree==1); uncheckedEnqueue(l,cr); }
 				}
 				DETERMINISTICTIME+=watchIdx;
 			}
@@ -320,7 +321,7 @@ struct Constr {
 			DETERMINISTICTIME-=watchIdx;
 			for(; watchIdx<Csize2 && std::abs(data[watchIdx])>slack; watchIdx+=2){ // NOTE: second innermost loop of RoundingSat
 				const int l = data[watchIdx+1];
-				if(Pos[std::abs(l)]==-1) uncheckedEnqueue(l,cr);
+				if(Pos[std::abs(l)]==-1){ NPROPCLAUSE+=(degree==1); uncheckedEnqueue(l,cr); }
 			}
 			DETERMINISTICTIME+=watchIdx;
 			return WatchStatus::FOUNDNONE;
@@ -1685,6 +1686,7 @@ void print_stats() {
 		printf("c cores constructed %lld\n", NCORES);
 		printf("c core cardinality constraints returned %lld\n", NCORECARDINALITIES);
 	}
+	printf("c clausal propagations %lld\n", NPROPCLAUSE);
 }
 
 long long lhs(Constr& C, const std::vector<bool>& sol){
