@@ -252,16 +252,21 @@ struct Constr {
 				if(Level[-l]==-1){
 					data[i]=watch;
 					data[widx]=l;
-					watch=l;
 					adj[l].emplace_back(cr,std::numeric_limits<long long>::max());
+					assert(Level[-data[0]]==-1 || Pos[abs(data[0])]>=qhead);
+					assert(Level[-data[1]]==-1 || Pos[abs(data[1])]>=qhead);
 					return WatchStatus::FOUNDNEW;
 				}
 			}
 			assert(~Level[-watch]);
 			if(Level[-otherwatch]==-1){
+				for(int i=2; i<(int)size(); ++i) assert(~Level[-data[i]]);
 				uncheckedEnqueue(otherwatch,cr);
 				return WatchStatus::FOUNDNONE;
-			}else return WatchStatus::CONFLICTING;
+			}else{
+				for(int i=0; i<(int)size(); ++i) assert(~Level[-data[i]]);
+				return WatchStatus::CONFLICTING;
+			}
 		}
 
 		assert(idx%2==0);
