@@ -228,6 +228,7 @@ struct Constr {
 		assert(!isClause());
 		assert(i%2==0);
 		assert(countingProp() || isWatched(i));
+		assert(~Level[-data[i+1]]);
 		slack += abs(data[i]); // TODO: slack -= data[i] when only watched propagation
 		watchIdx=0;
 	}
@@ -289,10 +290,10 @@ struct Constr {
 		}
 
 		// use watched propagation
+		if(nbackjump<NBACKJUMP){ nbackjump=NBACKJUMP; watchIdx=0; }
 		assert(c<0);
 		slack+=c;
 		if(slack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
-			if(nbackjump<NBACKJUMP){ nbackjump=NBACKJUMP; watchIdx=0; }
 			DETERMINISTICTIME-=watchIdx;
 			for(; watchIdx<Csize2 && slack<ClargestCoef; watchIdx+=2){ // NOTE: first innermost loop of RoundingSat
 				const int cf = data[watchIdx];
@@ -872,7 +873,7 @@ std::ostream & operator<<(std::ostream & o, Constraint<S,L>& C) {
 }
 std::ostream & operator<<(std::ostream & o, const Constr& C) {
 	logConstraint.init(C);
-	o << C.id << " " << logConstraint;
+	o << C.id << ": " << logConstraint << " sl: " << logConstraint.getSlack();
 	logConstraint.reset();
 	return o;
 }
@@ -1059,6 +1060,8 @@ void cBumpActivity (Constr& c) {
 // Search
 
 void uncheckedEnqueue(int p, CRef from=CRef_Undef){
+	assert(Level[p]==-1);
+	assert(Level[-p]==-1);
 	assert(Pos[std::abs(p)]==-1);
 	int v = std::abs(p);
 	Reason[v] = from;
@@ -1176,10 +1179,10 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 void undoOne(){
 	assert(!trail.empty());
 	int l = trail.back();
+	++NBACKJUMP;
 	if(qhead==(int)trail.size()){
 		for(const Watch& w: adj[-l]) if(w.idx!=std::numeric_limits<unsigned int>::max()) ca[w.cref].undoFalsified(w.idx);
 		--qhead;
-		++NBACKJUMP;
 	}
 	int v = std::abs(l);
 	trail.pop_back();
