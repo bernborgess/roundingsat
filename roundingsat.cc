@@ -1503,22 +1503,32 @@ void removeConstraint(CRef cr){
 
 void reduceDB(){
 	if (verbosity > 0) puts("c INPROCESSING");
-
 	assert(decisionLevel()==0);
-	size_t i, j;
+
+	for(int i=0; i<(int)learnts.size(); ++i){
+		Constr& C = ca[learnts[i]];
+		if(C.getStatus()==FORCEDELETE){
+			removeConstraint(learnts[i]);
+			swapErase(learnts,i--);
+		}else if(C.getStatus()==UNLOCKED){
+			long long eval = -C.degree;
+			for(int j=0; j<(int)C.size() && eval<0; ++j) if(Level[C.lit(j)]==0) eval+=C.coef(j);
+			if(eval>=0){
+				removeConstraint(learnts[i]);
+				swapErase(learnts,i--);
+			}
+		}
+	}
 
 	sort(learnts.begin(), learnts.end(), reduceDB_lt());
 	if(ca[learnts[learnts.size() / 2]].lbd()<=3) nbconstrsbeforereduce += 1000;
 	// Don't delete binary or locked constraints. From the rest, delete constraints from the first half
 	// and constraints with activity smaller than 'extra_lim':
+	size_t i, j;
 	for (i = j = 0; i < learnts.size(); i++){
-		Constr& c = ca[learnts[i]];
-		if (c.getStatus()==FORCEDELETE){
-			removeConstraint(learnts[i]);
-		}else if (c.lbd()>2 && c.size() > 2 && c.getStatus()==UNLOCKED && i < learnts.size() / 2)
-			removeConstraint(learnts[i]);
-		else
-			learnts[j++] = learnts[i];
+		Constr& C = ca[learnts[i]];
+		if (C.lbd()>2 && C.getStatus()==UNLOCKED && i<learnts.size()/2) removeConstraint(learnts[i]);
+		else learnts[j++]=learnts[i];
 	}
 	learnts.erase(learnts.begin()+j,learnts.end());
 	if ((double) ca.wasted / (double) ca.at > 0.2) garbage_collect();
