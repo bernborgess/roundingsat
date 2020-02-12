@@ -208,10 +208,7 @@ struct Constr {
 	unsigned int watchIdx;
 	int data[];
 
-	inline bool isClause() const {
-		assert((degree==1 && clauseProp())==(slack==std::numeric_limits<long long>::max()));
-		return slack==std::numeric_limits<long long>::max();
-	}
+	inline bool isClause() const { return (int)watchIdx==-1; }
 	inline int getMemSize() const { return sz_constr(size()+(isClause()?0:size())); }
 	inline unsigned int size() const { return header.size; }
 	inline void setStatus(DeletionStatus ds){ header.status=(unsigned int) ds; }
@@ -254,10 +251,13 @@ struct Constr {
 				idx=otherwatch-INF; // set new blocked literal
 				return WatchStatus::FOUNDNONE; // constraint is satisfied
 			}
-			for(unsigned int i=2; i<size(); ++i){
+			const int Csize=size();
+			for(int i=2; i<Csize; ++i){
 				int l = data[i];
 				if(Level[-l]==-1){
-					data[i]=watch;
+					int mid = i/2+1;
+					data[i]=data[mid];
+					data[mid]=watch;
 					data[widx]=l;
 					adj[l].emplace_back(cr,otherwatch-INF);
 					return WatchStatus::FOUNDNEW;
@@ -265,11 +265,11 @@ struct Constr {
 			}
 			assert(~Level[-watch]);
 			if(Level[-otherwatch]==-1){
-				for(int i=2; i<(int)size(); ++i) assert(~Level[-data[i]]);
+				for(int i=2; i<Csize; ++i) assert(~Level[-data[i]]);
 				uncheckedEnqueue(otherwatch,cr);
 				return WatchStatus::FOUNDNONE;
 			}else{
-				for(int i=0; i<(int)size(); ++i) assert(~Level[-data[i]]);
+				for(int i=0; i<Csize; ++i) assert(~Level[-data[i]]);
 				return WatchStatus::CONFLICTING;
 			}
 		}
@@ -975,8 +975,9 @@ struct {
 		constr->degree = constraint.getDegree();
 		constr->header = {formula,learnt,length,(unsigned int)(locked?LOCKED:UNLOCKED),length};
 		constr->nbackjump = 0;
-		constr->slack = (asClause?std::numeric_limits<long long>::max():-constr->degree);
-		constr->watchIdx = 0;
+		constr->slack = -constr->degree;
+		constr->watchIdx = -asClause;
+		assert((constr->degree==1 && clauseProp())==((int)constr->watchIdx==-1));
 		for(unsigned int i=0; i<length; ++i){
 			int v = constraint.vars[i];
 			assert(constraint.getLit(v)!=0);
