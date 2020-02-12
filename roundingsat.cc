@@ -145,8 +145,9 @@ std::ofstream proof_out; std::ofstream formula_out;
 ID last_proofID = 0; ID last_formID = 0;
 std::vector<ID> unitIDs;
 long long logStartTime=0;
-int prop_mode=0;
+int prop_mode=3;
 inline bool countingProp(){ return prop_mode%2==1; }
+inline bool clauseProp(){ return prop_mode/2==1; }
 
 struct CRef {
 	uint32_t ofs;
@@ -185,6 +186,9 @@ enum DeletionStatus { LOCKED, UNLOCKED, FORCEDELETE, MARKEDFORDELETE };
 enum WatchStatus { FOUNDNEW, FOUNDNONE, CONFLICTING };
 
 void uncheckedEnqueue(int p, CRef from);
+struct Constr;
+std::ostream & operator<<(std::ostream & o, const Constr& C);
+int sz_constr(int length);
 struct Constr {
 	ID id;
 	float act;
@@ -204,6 +208,11 @@ struct Constr {
 	unsigned int watchIdx;
 	int data[];
 
+	inline bool isClause() const {
+		assert((degree==1 && clauseProp())==(slack==std::numeric_limits<long long>::max()));
+		return slack==std::numeric_limits<long long>::max();
+	}
+	inline int getMemSize() const { return sz_constr(size()+(isClause()?0:size())); }
 	inline unsigned int size() const { return header.size; }
 	inline void setStatus(DeletionStatus ds){ header.status=(unsigned int) ds; }
 	inline DeletionStatus getStatus() const { return (DeletionStatus) header.status; }
@@ -212,16 +221,49 @@ struct Constr {
 	inline bool original() const { return header.original; }
 	inline bool learnt() const { return header.learnt; }
 	inline int largestCoef() const { return std::abs(data[0]); }
-	inline int coef(unsigned int i) const { return std::abs(data[i<<1]); }
-	inline int lit(unsigned int i) const { return data[(i<<1)+1]; }
+	inline int coef(unsigned int i) const { return isClause()?1:std::abs(data[i<<1]); }
+	inline int lit(unsigned int i) const { return isClause()?data[i]:data[(i<<1)+1]; }
 	inline bool isWatched(unsigned int i) const { assert(i%2==0); return data[i]<0; }
 	inline void undoFalsified(unsigned int i) {
+		assert(!isClause());
 		assert(i%2==0);
 		assert(countingProp() || isWatched(i));
 		slack += abs(data[i]); // TODO: slack -= data[i] when only watched propagation
 		watchIdx=0;
 	}
-	inline WatchStatus propagateWatch(CRef cr, unsigned int idx){
+	inline WatchStatus propagateWatch(CRef cr, unsigned int idx, int p){
+		assert(~Level[-p]);
+
+		if(isClause()){
+			assert(p==data[0] || p==data[1]);
+			assert(size()>1);
+			int widx=0;
+			int watch=data[0];
+			int otherwatch=data[1];
+			if(p==data[1]){
+				widx=1;
+				watch=data[1];
+				otherwatch=data[0];
+			}
+			assert(p==watch);
+			if(~Level[otherwatch]) return WatchStatus::FOUNDNONE; // constraint is satisfied
+			for(unsigned int i=2; i<size(); ++i){
+				int l = data[i];
+				if(Level[-l]==-1){
+					data[i]=watch;
+					data[widx]=l;
+					watch=l;
+					adj[l].emplace_back(cr,std::numeric_limits<long long>::max());
+					return WatchStatus::FOUNDNEW;
+				}
+			}
+			assert(~Level[-watch]);
+			if(Level[-otherwatch]==-1){
+				uncheckedEnqueue(otherwatch,cr);
+				return WatchStatus::FOUNDNONE;
+			}else return WatchStatus::CONFLICTING;
+		}
+
 		assert(idx%2==0);
 		const unsigned int Csize2 = 2*size(); const int ClargestCoef = largestCoef();
 		const int c = data[idx];
@@ -354,7 +396,7 @@ struct Constraint{
 		if(logProof()) resetBuffer(1); // NOTE: proofID 1 equals the constraint 0 >= 0
 	}
 
-	void init(Constr& C){
+	void init(const Constr& C){
 		assert(isReset()); // don't use a Constraint used by other stuff
 		addRhs(C.degree);
 		for(size_t i=0;i<C.size();++i){ assert(C.coef(i)!=0); addLhs(C.coef(i), C.lit(i)); }
@@ -823,9 +865,9 @@ std::ostream & operator<<(std::ostream & o, Constraint<S,L>& C) {
 	o << ">= " << C.getDegree();
 	return o;
 }
-std::ostream & operator<<(std::ostream & o, Constr& C) {
+std::ostream & operator<<(std::ostream & o, const Constr& C) {
 	logConstraint.init(C);
-	o << logConstraint;
+	o << C.id << " " << logConstraint;
 	logConstraint.reset();
 	return o;
 }
@@ -872,14 +914,12 @@ IntSet actSet;
 // Memory. Maximum supported size of learnt constraint database is 16GB
 
 class OutOfMemoryException{};
-static inline void* xrealloc(void *ptr, size_t size)
-{
+static inline void* xrealloc(void *ptr, size_t size){
 	void* mem = realloc(ptr, size);
-	if (mem == NULL && errno == ENOMEM){
-		throw OutOfMemoryException();
-	}else
-		return mem;
+	if(mem == NULL && errno == ENOMEM) throw OutOfMemoryException();
+	else return mem;
 }
+int sz_constr(int length) { return (sizeof(Constr)+sizeof(int)*length)/sizeof(uint32_t); }
 struct {
 	uint32_t* memory; // TODO: why not uint64_t?
 	uint32_t at=0, cap=0;
@@ -901,7 +941,6 @@ struct {
 		assert(cap > 0);
 		memory = (uint32_t*) xrealloc(memory, sizeof(uint32_t) * cap);
 	}
-	int sz_constr(int length) { return (sizeof(Constr)+sizeof(int)*length+sizeof(int)*length)/sizeof(uint32_t); }
 
 	CRef alloc(intConstr& constraint, ID proofID, bool formula, bool learnt, bool locked){
 		assert(proofID!=0);
@@ -911,11 +950,12 @@ struct {
 		// as the constraint is saturated, the coefficients are between 1 and 1e9 as well.
 		assert(!constraint.vars.empty());
 		unsigned int length = constraint.vars.size();
+		bool asClause = clauseProp() && (constraint.getDegree()==1);
 
 		// note: coefficients can be arbitrarily ordered (we don't sort them in descending order for example)
 		// during maintenance of watches the order will be shuffled.
 		uint32_t old_at = at;
-		at += sz_constr(length);
+		at += sz_constr(length+(asClause?0:length));
 		capacity(at);
 		Constr* constr = (Constr*)(memory+old_at);
 		new (constr) Constr;
@@ -924,13 +964,16 @@ struct {
 		constr->degree = constraint.getDegree();
 		constr->header = {formula,learnt,length,(unsigned int)(locked?LOCKED:UNLOCKED),length};
 		constr->nbackjump = 0;
-		constr->slack = -constr->degree;
+		constr->slack = (asClause?std::numeric_limits<long long>::max():-constr->degree);
 		constr->watchIdx = 0;
 		for(unsigned int i=0; i<length; ++i){
 			int v = constraint.vars[i];
 			assert(constraint.getLit(v)!=0);
-			constr->data[(i<<1)]=std::abs(constraint.coefs[v]);
-			constr->data[(i<<1)+1]=constraint.getLit(v);
+			if(asClause) constr->data[i]=constraint.getLit(v);
+			else{
+				constr->data[(i<<1)]=std::abs(constraint.coefs[v]);
+				constr->data[(i<<1)+1]=constraint.getLit(v);
+			}
 		}
 		return CRef{old_at};
 	}
@@ -1039,6 +1082,8 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 	assert(constraint.isSaturated());
 	assert(constraint.hasNoZeroes());
 	assert(constraint.hasNoUnits());
+	assert(constraint.getDegree()>0);
+	assert(constraint.vars.size()>0);
 
 	if(logProof()) constraint.logProofLine("a");
 	else ++last_proofID; // proofID's function as CRef ID's
@@ -1046,10 +1091,38 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 	constraints.push_back(cr);
 	Constr& C = ca[cr]; int* data = C.data;
 
+	if(C.size()==1){
+		assert(decisionLevel()==0);
+		assert(Pos[std::abs(data[1-clauseProp()])]==-1);
+		uncheckedEnqueue(data[1-clauseProp()],cr);
+		return cr;
+	}
+
+	if(C.isClause()){
+		for(unsigned int i=1; i<C.size(); ++i){
+			int l = data[i];
+			if(Level[-l]==-1){
+				if(~Level[-data[0]]){ data[i]=data[0]; data[0]=l; }
+				else{ data[i]=data[1]; data[1]=l; break; }
+			}
+		}
+		assert(Level[-data[0]]==-1);
+		if(~Level[-data[1]]){
+			if(Level[data[0]]==-1) uncheckedEnqueue(data[0],cr);
+			for(unsigned int i=2; i<C.size(); ++i){ // ensure second watch is last falsified literal
+				int l = data[i];
+				assert(~Level[-l]);
+				if(Level[-l]>Level[-data[1]]){ data[i]=data[1]; data[1]=l; }
+			}
+		}
+		for(int i=0; i<2; ++i) adj[data[i]].emplace_back(cr,std::numeric_limits<unsigned int>::max()); // TODO: blocking lit
+		return cr;
+	}
+
 	if(countingProp()){ // use counting propagation
 		for(unsigned int i=0; i<2*C.size(); i+=2){
 			int l = data[i+1];
-			adj[l].push_back({cr,i});
+			adj[l].emplace_back(cr,i);
 			if(Level[-l]==-1 || Pos[std::abs(l)]>=qhead) C.slack+=data[i];
 		}
 		assert(C.slack>=0);
@@ -1068,7 +1141,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 			assert(!C.isWatched(i));
 			C.slack+=data[i];
 			data[i]=-data[i];
-			adj[l].push_back({cr,i});
+			adj[l].emplace_back(cr,i);
 		}
 	}
 	assert(C.slack>=0);
@@ -1084,7 +1157,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 			assert(!C.isWatched(i));
 			diff-=data[i];
 			data[i]=-data[i];
-			adj[data[i+1]].push_back({cr,i});
+			adj[data[i+1]].emplace_back(cr,i);
 			if(diff<=0) break;
 		}
 		// perform initial propagation
@@ -1099,7 +1172,7 @@ void undoOne(){
 	assert(!trail.empty());
 	int l = trail.back();
 	if(qhead==(int)trail.size()){
-		for(const Watch& w: adj[-l]) ca[w.cref].undoFalsified(w.idx);
+		for(const Watch& w: adj[-l]) if(w.idx!=std::numeric_limits<unsigned int>::max()) ca[w.cref].undoFalsified(w.idx);
 		--qhead;
 		++NBACKJUMP;
 	}
@@ -1204,10 +1277,13 @@ CRef propagate() {
 			CRef cr = ws[it_ws].cref;
 			Constr& C = ca[cr];
 			if(C.getStatus()>=FORCEDELETE){ swapErase(ws,it_ws--); continue; }
-			WatchStatus wstat = C.propagateWatch(cr,ws[it_ws].idx);
+			WatchStatus wstat = C.propagateWatch(cr,ws[it_ws].idx,-p);
 			if(wstat==WatchStatus::FOUNDNEW) swapErase(ws,it_ws--);
 			else if(wstat==WatchStatus::CONFLICTING){ // clean up current level and stop propagation
-				for(int i=0; i<=it_ws; ++i){ const Watch& w=ws[i]; ca[w.cref].undoFalsified(w.idx); }
+				for(int i=0; i<=it_ws; ++i){
+					const Watch& w=ws[i];
+					if(w.idx!=std::numeric_limits<unsigned int>::max()) ca[w.cref].undoFalsified(w.idx);
+				}
 				--qhead;
 				return cr;
 			}
@@ -1493,10 +1569,10 @@ void garbage_collect(){
 	for(int i=1; i<(int)constraints.size(); ++i) assert(constraints[i-1].ofs<constraints[i].ofs);
 	for(CRef& cr: constraints){
 		uint32_t offset = cr.ofs;
-		size_t length = ca[cr].size();
-		memmove(ca.memory+ca.at, ca.memory+cr.ofs, sizeof(uint32_t)*ca.sz_constr(length));
+		int memSize = ca[cr].getMemSize();
+		memmove(ca.memory+ca.at, ca.memory+cr.ofs, sizeof(uint32_t)*memSize);
 		cr.ofs = ca.at;
-		ca.at += ca.sz_constr(length);
+		ca.at += memSize;
 		crefmap[offset]=cr;
 	}
 	#define update_ptr(cr) cr=crefmap[cr.ofs];
@@ -1510,7 +1586,7 @@ void removeConstraint(Constr& C){
 	assert(C.getStatus()!=MARKEDFORDELETE);
 	assert(C.getStatus()!=LOCKED);
 	C.setStatus(MARKEDFORDELETE);
-	ca.wasted += ca.sz_constr(C.size());
+	ca.wasted += C.getMemSize();
 }
 
 void reduceDB(){
