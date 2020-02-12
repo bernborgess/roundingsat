@@ -1455,6 +1455,7 @@ void garbage_collect(){
 	ca.wasted=0;
 	ca.at=0;
 	std::unordered_map<uint32_t,CRef> crefmap;
+	for(int i=1; i<(int)constraints.size(); ++i) assert(constraints[i-1].ofs<constraints[i].ofs);
 	for(CRef& cr: constraints){
 		uint32_t offset = cr.ofs;
 		size_t length = ca[cr].size();
