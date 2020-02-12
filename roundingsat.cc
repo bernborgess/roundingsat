@@ -145,7 +145,7 @@ std::ofstream proof_out; std::ofstream formula_out;
 ID last_proofID = 0; ID last_formID = 0;
 std::vector<ID> unitIDs;
 long long logStartTime=0;
-int prop_mode=3;
+int prop_mode=2;
 inline bool countingProp(){ return prop_mode%2==1; }
 inline bool clauseProp(){ return prop_mode/2==1; }
 
@@ -165,7 +165,7 @@ std::vector<CRef> constraints;
 std::unordered_map<ID,CRef> external;
 struct Watch {
 	CRef cref;
-	unsigned int idx;
+	int idx; // >=0: index of watched literal (counting/watched propagation). <0: blocked literal (clausal propagation).
 	Watch(CRef cr, unsigned int i):cref(cr),idx(i){};
 	bool operator==(const Watch& other)const{return other.cref==cref && other.idx==idx;}
 };
@@ -224,18 +224,20 @@ struct Constr {
 	inline int coef(unsigned int i) const { return isClause()?1:std::abs(data[i<<1]); }
 	inline int lit(unsigned int i) const { return isClause()?data[i]:data[(i<<1)+1]; }
 	inline bool isWatched(unsigned int i) const { assert(i%2==0); return data[i]<0; }
-	inline void undoFalsified(unsigned int i) {
+	inline void undoFalsified(int i) {
 		assert(!isClause());
+		assert(i>=0);
 		assert(i%2==0);
 		assert(countingProp() || isWatched(i));
 		assert(~Level[-data[i+1]]);
 		slack += abs(data[i]); // TODO: slack -= data[i] when only watched propagation
 		watchIdx=0;
 	}
-	inline WatchStatus propagateWatch(CRef cr, unsigned int idx, int p){
+	inline WatchStatus propagateWatch(CRef cr, int& idx, int p){
 		assert(~Level[-p]);
 
 		if(isClause()){
+			assert(idx<0);
 			assert(p==data[0] || p==data[1]);
 			assert(size()>1);
 			int widx=0;
@@ -247,15 +249,17 @@ struct Constr {
 				otherwatch=data[0];
 			}
 			assert(p==watch);
-			if(~Level[otherwatch]) return WatchStatus::FOUNDNONE; // constraint is satisfied
+			assert(p!=otherwatch);
+			if(~Level[otherwatch]){
+				idx=otherwatch-INF; // set new blocked literal
+				return WatchStatus::FOUNDNONE; // constraint is satisfied
+			}
 			for(unsigned int i=2; i<size(); ++i){
 				int l = data[i];
 				if(Level[-l]==-1){
 					data[i]=watch;
 					data[widx]=l;
-					adj[l].emplace_back(cr,std::numeric_limits<long long>::max());
-					assert(Level[-data[0]]==-1 || Pos[abs(data[0])]>=qhead);
-					assert(Level[-data[1]]==-1 || Pos[abs(data[1])]>=qhead);
+					adj[l].emplace_back(cr,otherwatch-INF);
 					return WatchStatus::FOUNDNEW;
 				}
 			}
@@ -270,6 +274,7 @@ struct Constr {
 			}
 		}
 
+		assert(idx>=0);
 		assert(idx%2==0);
 		const unsigned int Csize2 = 2*size(); const int ClargestCoef = largestCoef();
 		const int c = data[idx];
@@ -1123,7 +1128,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 				if(Level[-l]>Level[-data[1]]){ data[i]=data[1]; data[1]=l; }
 			}
 		}
-		for(int i=0; i<2; ++i) adj[data[i]].emplace_back(cr,std::numeric_limits<unsigned int>::max()); // TODO: blocking lit
+		for(int i=0; i<2; ++i) adj[data[i]].emplace_back(cr,data[1-i]-INF);
 		return cr;
 	}
 
@@ -1178,10 +1183,10 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 
 void undoOne(){
 	assert(!trail.empty());
-	int l = trail.back();
 	++NBACKJUMP;
+	int l = trail.back();
 	if(qhead==(int)trail.size()){
-		for(const Watch& w: adj[-l]) if(w.idx!=std::numeric_limits<unsigned int>::max()) ca[w.cref].undoFalsified(w.idx);
+		for(const Watch& w: adj[-l]) if(w.idx>=0) ca[w.cref].undoFalsified(w.idx);
 		--qhead;
 	}
 	int v = std::abs(l);
@@ -1282,6 +1287,8 @@ CRef propagate() {
 		std::vector<Watch> & ws = adj[-p];
 		for(int it_ws=0; it_ws<(int)ws.size(); ++it_ws){
 			++DETERMINISTICTIME;
+			int idx = ws[it_ws].idx;
+			if(idx<0 && ~Level[idx+INF]){ assert(ca[ws[it_ws].cref].isClause()); continue; } // blocked literal check
 			CRef cr = ws[it_ws].cref;
 			Constr& C = ca[cr];
 			if(C.getStatus()>=FORCEDELETE){ swapErase(ws,it_ws--); continue; }
@@ -1290,7 +1297,7 @@ CRef propagate() {
 			else if(wstat==WatchStatus::CONFLICTING){ // clean up current level and stop propagation
 				for(int i=0; i<=it_ws; ++i){
 					const Watch& w=ws[i];
-					if(w.idx!=std::numeric_limits<unsigned int>::max()) ca[w.cref].undoFalsified(w.idx);
+					if(w.idx>=0) ca[w.cref].undoFalsified(w.idx);
 				}
 				--qhead;
 				return cr;
