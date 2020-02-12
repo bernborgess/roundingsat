@@ -795,7 +795,7 @@ intConstr logConstraint;
 template<class S, class L>
 std::ostream & operator<<(std::ostream & o, Constraint<S,L>& C) {
 	std::vector<int> vars = C.vars;
-	sort(vars.begin(),vars.end(), [](S v1, S v2) { return v1<v2; });
+	std::sort(vars.begin(),vars.end(), [](int v1, int v2) { return v1<v2; });
 	for(int v: vars){
 		int l = C.getLit(v);
 		if(l==0) continue;
@@ -1469,23 +1469,6 @@ void garbage_collect(){
 	#undef update_ptr
 }
 
-struct reduceDB_lt {
-	bool operator () (CRef x, CRef y) {
-		// Main criteria... Like in MiniSat we keep all binary clauses
-		if(ca[x].size()> 2 && ca[y].size()==2) return 1;
-
-		if(ca[y].size()>2 && ca[x].size()==2) return 0;
-		if(ca[x].size()==2 && ca[y].size()==2) return 0;
-
-		// Second one  based on literal block distance
-		if(ca[x].lbd() > ca[y].lbd()) return 1;
-		if(ca[x].lbd() < ca[y].lbd()) return 0;
-
-		// Finally we can use old activity or size, we choose the last one
-		return ca[x].act < ca[y].act;
-	}
-};
-
 void removeConstraint(Constr& C){
 	assert(decisionLevel()==0);
 	assert(C.getStatus()!=MARKEDFORDELETE);
@@ -1499,26 +1482,30 @@ void reduceDB(){
 	assert(decisionLevel()==0);
 
 	std::vector<CRef> learnts;
-	learnts.reserve(constraints.size());
+	learnts.reserve(constraints.size()/2);
 
+	size_t totalLearnts=0;
+	size_t promisingLearnts=0;
 	for(CRef& cr: constraints){
 		Constr& C = ca[cr];
 		if(C.getStatus()==FORCEDELETE) removeConstraint(C);
 		else if(C.getStatus()==UNLOCKED){
 			long long eval = -C.degree;
 			for(int j=0; j<(int)C.size() && eval<0; ++j) if(Level[C.lit(j)]==0) eval+=C.coef(j);
-			if(eval>=0) removeConstraint(C);
+			if(eval>=0) removeConstraint(C); // remove constraints satisfied at level 0
 		}
-		if(C.learnt() && C.getStatus()==UNLOCKED) learnts.push_back(cr);
+		if(C.learnt() && C.getStatus()==UNLOCKED){
+			if(C.size()>2 && C.lbd()>2) learnts.push_back(cr); // Keep all binary clauses and short LBDs
+			if(C.size()<=2 || C.lbd()<=3) ++promisingLearnts;
+			++totalLearnts;
+		}
 	}
 
-	sort(learnts.begin(), learnts.end(), reduceDB_lt());
-	if(learnts.size()>0 && ca[learnts[learnts.size()/2]].lbd()<=3) nbconstrsbeforereduce += 1000;
-	// Don't delete binary or locked constraints. From the rest, delete constraints from the first half
-	for (int i=0; i<(int)learnts.size()/2; ++i){
-		Constr& C = ca[learnts[i]];
-		if(C.lbd()>2) removeConstraint(C);
-	}
+	if(promisingLearnts>totalLearnts/2) nbconstrsbeforereduce += 1000;
+	std::sort(learnts.begin(), learnts.end(), [&](CRef x, CRef y){
+		return ca[x].lbd() > ca[y].lbd() || (ca[x].lbd() == ca[y].lbd() && ca[x].act < ca[y].act);
+	});
+	for (size_t i=0; i<std::min(totalLearnts/2,learnts.size()); ++i) removeConstraint(ca[learnts[i]]);
 
 	size_t i=0; size_t j=0;
 	for(; i<constraints.size(); ++i) if(ca[constraints[i]].getStatus()!=MARKEDFORDELETE) constraints[j++]=constraints[i];
