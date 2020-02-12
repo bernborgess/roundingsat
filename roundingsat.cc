@@ -1630,6 +1630,7 @@ void reduceDB(){
 	}
 
 	if(promisingLearnts>totalLearnts/2) nbconstrsbeforereduce += 1000;
+	else nbconstrsbeforereduce += 100;
 	std::sort(learnts.begin(), learnts.end(), [&](CRef x, CRef y){
 		return ca[x].lbd() > ca[y].lbd() || (ca[x].lbd() == ca[y].lbd() && ca[x].act < ca[y].act);
 	});
