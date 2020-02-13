@@ -123,8 +123,9 @@ const int resize_factor=2;
 const int INF=1e9+1;
 
 double initial_time;
-long long NBACKJUMP=0, DETERMINISTICTIME=1;
+long long NTRAILPOPS=0, NWATCHLOOKUPS=0, NWATCHCHECKS=0, NADDEDLITERALS=0;
 long long NCONFL=0, NDECIDE=0, NPROP=0, NPROPCLAUSE=0;
+inline long long getDetTime(){ return 1+NADDEDLITERALS+NWATCHLOOKUPS+NWATCHCHECKS+NPROP+NTRAILPOPS+NDECIDE; }
 __int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
 long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
 long long NGCD=0, NCARDDETECT=0, NCORECARDINALITIES=0, NCORES=0, NSOLS=0;
@@ -185,7 +186,7 @@ inline int decisionLevel() { return trail_lim.size(); }
 enum DeletionStatus { LOCKED, UNLOCKED, FORCEDELETE, MARKEDFORDELETE };
 enum WatchStatus { FOUNDNEW, FOUNDNONE, CONFLICTING };
 
-void uncheckedEnqueue(int p, CRef from);
+void propagate(int p, CRef from);
 struct Constr;
 std::ostream & operator<<(std::ostream & o, const Constr& C);
 int sz_constr(int length);
@@ -201,7 +202,7 @@ struct Constr {
 		unsigned status       : 2;
 		unsigned size         : 30;
 	} header;
-	long long nbackjump;
+	long long ntrailpops;
 	long long slack; // sum of non-falsified watches minus w.
 	// NOTE: will never be larger than 2 * non-falsified watch, so fits in 32 bit for the n-watched literal scheme
 	// TODO: is above really true? Definitely not for counting propagation...
@@ -227,11 +228,13 @@ struct Constr {
 		assert(i%2==0);
 		assert(countingProp() || isWatched(i));
 		assert(~Level[-data[i+1]]);
+		++NWATCHLOOKUPS;
 		slack += abs(data[i]); // TODO: slack -= data[i] when only watched propagation
 		watchIdx=0;
 	}
 	inline WatchStatus propagateWatch(CRef cr, int& idx, int p){
 		assert(~Level[-p]);
+		++NWATCHLOOKUPS;
 
 		if(isClause()){
 			assert(idx<0);
@@ -252,6 +255,7 @@ struct Constr {
 				return WatchStatus::FOUNDNONE; // constraint is satisfied
 			}
 			const int Csize=size();
+			int i=2;
 			for(int i=2; i<Csize; ++i){
 				int l = data[i];
 				if(Level[-l]==-1){
@@ -260,14 +264,16 @@ struct Constr {
 					data[mid]=watch;
 					data[widx]=l;
 					adj[l].emplace_back(cr,otherwatch-INF);
+					NWATCHCHECKS+=i-2;
 					return WatchStatus::FOUNDNEW;
 				}
 			}
+			NWATCHCHECKS+=i-2;
 			assert(~Level[-watch]);
 			if(Level[-otherwatch]==-1){
 				for(int i=2; i<Csize; ++i) assert(~Level[-data[i]]);
 				++NPROPCLAUSE;
-				uncheckedEnqueue(otherwatch,cr);
+				propagate(otherwatch,cr);
 				return WatchStatus::FOUNDNONE;
 			}else{
 				for(int i=0; i<Csize; ++i) assert(~Level[-data[i]]);
@@ -284,23 +290,23 @@ struct Constr {
 			slack-=c;
 			if(slack<0) return WatchStatus::CONFLICTING;
 			if(slack<ClargestCoef){
-				if(nbackjump<NBACKJUMP){ nbackjump=NBACKJUMP; watchIdx=0; }
-				DETERMINISTICTIME-=watchIdx;
+				if(ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=0; }
+				NWATCHCHECKS-=watchIdx;
 				for(; watchIdx<Csize2 && data[watchIdx]>slack; watchIdx+=2){
 					const int l = data[watchIdx+1];
-					if(Pos[std::abs(l)]==-1) { NPROPCLAUSE+=(degree==1); uncheckedEnqueue(l,cr); }
+					if(Pos[std::abs(l)]==-1) { NPROPCLAUSE+=(degree==1); propagate(l,cr); }
 				}
-				DETERMINISTICTIME+=watchIdx;
+				NWATCHCHECKS+=watchIdx;
 			}
 			return WatchStatus::FOUNDNONE;
 		}
 
 		// use watched propagation
-		if(nbackjump<NBACKJUMP){ nbackjump=NBACKJUMP; watchIdx=0; }
+		if(ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=0; }
 		assert(c<0);
 		slack+=c;
 		if(slack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
-			DETERMINISTICTIME-=watchIdx;
+			NWATCHCHECKS-=watchIdx;
 			for(; watchIdx<Csize2 && slack<ClargestCoef; watchIdx+=2){ // NOTE: first innermost loop of RoundingSat
 				const int cf = data[watchIdx];
 				const int l = data[watchIdx+1];
@@ -310,7 +316,7 @@ struct Constr {
 					adj[l].emplace_back(cr,watchIdx);
 				}
 			}
-			DETERMINISTICTIME+=watchIdx;
+			NWATCHCHECKS+=watchIdx;
 			if(slack<ClargestCoef){ assert(watchIdx==Csize2); watchIdx=0; }
 		} // else we did not find enough watches last time, so we can skip looking for them now
 
@@ -318,12 +324,10 @@ struct Constr {
 			data[idx]=-c;
 			return WatchStatus::FOUNDNEW;
 		}else if(slack>=0){ // keep the watch, check for propagation
-			DETERMINISTICTIME-=watchIdx;
 			for(; watchIdx<Csize2 && std::abs(data[watchIdx])>slack; watchIdx+=2){ // NOTE: second innermost loop of RoundingSat
 				const int l = data[watchIdx+1];
-				if(Pos[std::abs(l)]==-1){ NPROPCLAUSE+=(degree==1); uncheckedEnqueue(l,cr); }
+				if(Pos[std::abs(l)]==-1){ NPROPCLAUSE+=(degree==1); propagate(l,cr); }
 			}
-			DETERMINISTICTIME+=watchIdx;
 			return WatchStatus::FOUNDNONE;
 		}else return WatchStatus::CONFLICTING;
 	}
@@ -574,8 +578,8 @@ struct Constraint{
 			}
 		}
 		if(!saturateAndReduce) return;
-		if(old_degree>getDegree()){ DETERMINISTICTIME+=vars.size(); removeZeroes(); saturate(); }
-		else{ DETERMINISTICTIME+= c.vars.size(); saturate(c.vars); } // only saturate changed vars
+		if(old_degree>getDegree()){ NADDEDLITERALS+=vars.size(); removeZeroes(); saturate(); }
+		else{ NADDEDLITERALS+= c.vars.size(); saturate(c.vars); } // only saturate changed vars
 		if(getDegree() > (LARGE)1e9){ removeZeroes(); roundToOne(ceildiv<LARGE>(getDegree(), 1e9), !originalRoundToOne); }
 		assert(getDegree() <= (LARGE)1e9);
 		assert(isSaturated());
@@ -828,11 +832,11 @@ struct Constraint{
 
 	void logProofLine(std::string info){
 		_unused(info);
-		if(logStartTime<DETERMINISTICTIME){
+		if(logStartTime<getDetTime()){
 			proof_out << "p " << proofBuffer.str() << "0\n";
 			resetBuffer(++last_proofID); // ensure consistent proofBuffer
 			#if !NDEBUG
-			proof_out << "* " << DETERMINISTICTIME << " " << info << "\n";
+			proof_out << "* " << getDetTime() << " " << info << "\n";
 			proof_out << "e " << last_proofID << " ";
 			toStreamAsOPB(proof_out);
 			#endif
@@ -975,7 +979,7 @@ struct {
 		constr->act = 0;
 		constr->degree = constraint.getDegree();
 		constr->header = {formula,learnt,length,(unsigned int)(locked?LOCKED:UNLOCKED),length};
-		constr->nbackjump = 0;
+		constr->ntrailpops = 0;
 		constr->slack = -constr->degree;
 		constr->watchIdx = -asClause;
 		assert((constr->degree==1 && clauseProp())==((int)constr->watchIdx==-1));
@@ -1066,17 +1070,14 @@ void cBumpActivity (Constr& c) {
 // ---------------------------------------------------------------------
 // Search
 
-void uncheckedEnqueue(int p, CRef from=CRef_Undef){
+void uncheckedEnqueue(int p, CRef from){
 	assert(Level[p]==-1);
 	assert(Level[-p]==-1);
 	assert(Pos[std::abs(p)]==-1);
 	int v = std::abs(p);
 	Reason[v] = from;
-	++NPROP;
 	if(decisionLevel()==0){
 		Reason[v] = CRef_Undef; // no need to keep track of reasons for unit literals
-		assert(from!=CRef_Undef);
-		++DETERMINISTICTIME; // NOTE: helps for proof log debugging
 		if(logProof()){
 			Constr& C = ca[from];
 			logConstraint.init(C);
@@ -1109,7 +1110,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 	if(C.size()==1){
 		assert(decisionLevel()==0);
 		assert(Pos[std::abs(data[1-clauseProp()])]==-1);
-		uncheckedEnqueue(data[1-clauseProp()],cr);
+		propagate(data[1-clauseProp()],cr);
 		return cr;
 	}
 
@@ -1123,7 +1124,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 		}
 		assert(Level[-data[0]]==-1);
 		if(~Level[-data[1]]){
-			if(Level[data[0]]==-1) uncheckedEnqueue(data[0],cr);
+			if(Level[data[0]]==-1) propagate(data[0],cr);
 			for(unsigned int i=2; i<C.size(); ++i){ // ensure second watch is last falsified literal
 				int l = data[i];
 				assert(~Level[-l]);
@@ -1143,7 +1144,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 		assert(C.slack>=0);
 		if(C.slack<C.largestCoef()){ // propagate
 			for(unsigned int i=0; i<2*C.size() && data[i]>C.slack; i+=2) if(Pos[std::abs(data[i+1])]==-1) {
-				uncheckedEnqueue(data[i+1],cr);
+				propagate(data[i+1],cr);
 			}
 		}
 		return cr;
@@ -1177,7 +1178,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 		}
 		// perform initial propagation
 		for(unsigned int i=0; i<2*C.size() && std::abs(data[i])>C.slack; i+=2) if(Pos[std::abs(data[i+1])]==-1) {
-			uncheckedEnqueue(data[i+1],cr);
+			propagate(data[i+1],cr);
 		}
 	}
 	return cr;
@@ -1185,7 +1186,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 
 void undoOne(){
 	assert(!trail.empty());
-	++NBACKJUMP;
+	++NTRAILPOPS;
 	int l = trail.back();
 	if(qhead==(int)trail.size()){
 		for(const Watch& w: adj[-l]) if(w.idx>=0) ca[w.cref].undoFalsified(w.idx);
@@ -1200,14 +1201,21 @@ void undoOne(){
 	order_heap.insert(v);
 }
 
-void backjumpTo(int level){
+inline void backjumpTo(int level){
 	assert(level>=0);
 	while(decisionLevel()>level) undoOne();
 }
 
-void decide(int l){
+inline void decide(int l){
+	++NDECIDE;
 	newDecisionLevel();
-	uncheckedEnqueue(l);
+	uncheckedEnqueue(l,CRef_Undef);
+}
+
+inline void propagate(int l, CRef reason){
+	assert(reason!=CRef_Undef);
+	++NPROP;
+	uncheckedEnqueue(l,reason);
 }
 
 // ---------------------------------------------------------------------
@@ -1282,13 +1290,11 @@ void analyze(CRef confl){
  *
  * post condition: all watches up to trail[qhead] have been propagated
  */
-CRef propagate() {
-	++DETERMINISTICTIME; // NOTE: helps for proof log debugging
+CRef runPropagation() {
 	while(qhead<(int)trail.size()){
 		int p=trail[qhead++];
 		std::vector<Watch> & ws = adj[-p];
 		for(int it_ws=0; it_ws<(int)ws.size(); ++it_ws){
-			++DETERMINISTICTIME;
 			int idx = ws[it_ws].idx;
 			if(idx<0 && ~Level[idx+INF]){ assert(ca[ws[it_ws].cref].isClause()); continue; } // blocked literal check
 			CRef cr = ws[it_ws].cref;
@@ -1401,7 +1407,7 @@ CRef addInputConstraint(intConstr& c, bool original, bool locked){
 	}
 
 	CRef cr = attachConstraint(c,original,false,locked);
-	CRef confl = propagate();
+	CRef confl = runPropagation();
 	if (confl != CRef_Undef){
 		puts("c Input conflict");
 		if(logProof()){
@@ -1665,7 +1671,7 @@ double luby(double y, int x){
 void print_stats() {
 	double timespent = cpuTime()-initial_time;
 	printf("c CPU time			  : %g s\n", timespent);
-	printf("c deterministic time %lld %.2e\n", DETERMINISTICTIME,(double)DETERMINISTICTIME);
+	printf("c deterministic time %lld %.2e\n", getDetTime(),(double)getDetTime());
 	printf("c propagations %lld\n", NPROP);
 	printf("c decisions %lld\n", NDECIDE);
 	printf("c conflicts %lld\n", NCONFL);
@@ -1687,6 +1693,10 @@ void print_stats() {
 		printf("c core cardinality constraints returned %lld\n", NCORECARDINALITIES);
 	}
 	printf("c clausal propagations %lld\n", NPROPCLAUSE);
+	printf("c watch lookups %lld\n", NWATCHLOOKUPS);
+	printf("c watch checks %lld\n", NWATCHCHECKS);
+	printf("c constraint additions %lld\n", NADDEDLITERALS);
+	printf("c trail pops %lld\n", NTRAILPOPS);
 }
 
 long long lhs(Constr& C, const std::vector<bool>& sol){
@@ -1849,7 +1859,7 @@ void extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, int 
 	backjumpTo(0);
 
 	for(int l: decisions) decide(l);
-	for(int l: props) { assert(Reason[std::abs(l)]!=CRef_Undef); uncheckedEnqueue(l,Reason[std::abs(l)]); }
+	for(int l: props) propagate(l,Reason[std::abs(l)]);
 
 	confl_data.init(ca[confl]);
 	confl_data.removeUnitsAndZeroes();
@@ -1899,7 +1909,7 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 	std::vector<int> assumptions_lim={0};
 	assumptions_lim.reserve((int)assumptions.size()+1);
 	while (true) {
-		CRef confl = propagate();
+		CRef confl = runPropagation();
 		if (confl != CRef_Undef) {
 			if(decisionLevel() == 0){
 				if(logProof()){
@@ -1978,7 +1988,6 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 				return SolveState::SAT;
 			}
 			decide(next);
-			++NDECIDE;
 		}
 	}
 }
@@ -2206,7 +2215,7 @@ void optimize(intConstr& origObj, intConstr& core){
 	size_t upper_time=0, lower_time=0;
 	SolveState reply = SolveState::UNSAT;
 	while(true){
-		size_t current_time=DETERMINISTICTIME;
+		size_t current_time=getDetTime();
 		if(reply!=SolveState::INPROCESSING) printObjBounds(lower_bound,last_sol_obj_val);
 		assumps.reset();
 		if(opt_mode==1 || opt_mode==2 || (opt_mode>2 && lower_time<upper_time)){ // use core-guided step
@@ -2220,8 +2229,8 @@ void optimize(intConstr& origObj, intConstr& core){
 		assert(last_sol_obj_val>lower_bound);
 		reply = solve(assumps,core);
 		assert(decisionLevel()==0);
-		if(assumps.size()==0) upper_time+=DETERMINISTICTIME-current_time;
-		else lower_time+=DETERMINISTICTIME-current_time;
+		if(assumps.size()==0) upper_time+=getDetTime()-current_time;
+		else lower_time+=getDetTime()-current_time;
 		if(reply==SolveState::SAT){
 			++NSOLS;
 			origUpperBound = handleNewSolution(origObj,lastUpperBound);
