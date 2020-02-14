@@ -140,7 +140,7 @@ long long nbconstrsbeforereduce=2000;
 long long incReduceDB=300;
 long long cnt_reduceDB=0;
 bool originalRoundToOne=false;
-int opt_mode=4;
+int opt_mode=0;
 long long curr_restarts=0;
 long long nconfl_to_restart=0;
 bool print_sol = false;
@@ -150,10 +150,10 @@ std::ofstream proof_out; std::ofstream formula_out;
 ID last_proofID = 0; ID last_formID = 0;
 std::vector<ID> unitIDs;
 long long logStartTime=0;
-unsigned int prop_mode=2;
-inline bool countingProp(){ return prop_mode & 1; }
-inline bool clauseProp(){ return prop_mode & 2; }
-inline bool puebloProp(){ return prop_mode & 4; }
+bool countingProp=false;
+bool clauseProp=true;
+bool cardProp=true;
+bool puebloProp=false;
 
 struct CRef {
 	uint32_t ofs;
@@ -234,7 +234,7 @@ struct Constr {
 		assert(!isClause());
 		assert(i>=0);
 		assert(i%2==0);
-		assert(countingProp() || isWatched(i));
+		assert(countingProp || isWatched(i));
 		assert(isFalse(data[i+1]));
 		++NWATCHLOOKUPS;
 		slack += abs(data[i]); // TODO: slack -= data[i] when only watched propagation
@@ -293,11 +293,11 @@ struct Constr {
 		const unsigned int Csize2 = 2*size(); const Coef ClargestCoef = largestCoef();
 		const Coef c = data[idx];
 
-		if(countingProp()){ // use counting propagation
+		if(countingProp){ // use counting propagation
 			slack-=c;
 			if(slack<0) return WatchStatus::CONFLICTING;
 			if(slack<ClargestCoef){
-				if(puebloProp() || ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=0; }
+				if(puebloProp || ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=0; }
 				NWATCHCHECKS-=watchIdx;
 				for(; watchIdx<Csize2 && data[watchIdx]>slack; watchIdx+=2){
 					const Lit l = data[watchIdx+1];
@@ -309,10 +309,10 @@ struct Constr {
 		}
 
 		// use watched propagation
-		if(puebloProp() || ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=0; }
+		if(puebloProp || ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=0; }
 		assert(c<0);
 		slack+=c;
-		if(puebloProp() || slack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
+		if(puebloProp || slack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
 			NWATCHCHECKS-=watchIdx;
 			for(; watchIdx<Csize2 && slack<ClargestCoef; watchIdx+=2){ // NOTE: first innermost loop of RoundingSat
 				const Coef cf = data[watchIdx];
@@ -974,7 +974,7 @@ struct {
 		// as the constraint is saturated, the coefficients are between 1 and 1e9 as well.
 		assert(!constraint.vars.empty());
 		unsigned int length = constraint.vars.size();
-		bool asClause = clauseProp() && (constraint.getDegree()==1);
+		bool asClause = clauseProp && (constraint.getDegree()==1);
 
 		// note: coefficients can be arbitrarily ordered (we don't sort them in descending order for example)
 		// during maintenance of watches the order will be shuffled.
@@ -990,7 +990,7 @@ struct {
 		constr->ntrailpops = 0;
 		constr->slack = -constr->degree;
 		constr->watchIdx = -asClause;
-		assert((constr->degree==1 && clauseProp())==((int)constr->watchIdx==-1));
+		assert((constr->degree==1 && clauseProp)==((int)constr->watchIdx==-1));
 		for(unsigned int i=0; i<length; ++i){
 			Var v = constraint.vars[i];
 			assert(constraint.getLit(v)!=0);
@@ -1115,10 +1115,16 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 	constraints.push_back(cr);
 	Constr& C = ca[cr]; int* data = C.data;
 
+	LEARNEDLENGTHSUM+=C.size();
+	LEARNEDDEGREESUM+=C.degree;
+	if(C.degree==1) ++NCLAUSESLEARNED;
+	else if(C.largestCoef()==1) ++NCARDINALITIESLEARNED;
+	else ++NGENERALSLEARNED;
+
 	if(C.size()==1){
 		assert(decisionLevel()==0);
-		assert(isUnknown(data[1-clauseProp()]));
-		propagate(data[1-clauseProp()],cr);
+		assert(isUnknown(data[1-clauseProp]));
+		propagate(data[1-clauseProp],cr);
 		return cr;
 	}
 
@@ -1143,7 +1149,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 		return cr;
 	}
 
-	if(countingProp()){ // use counting propagation
+	if(countingProp){ // use counting propagation
 		for(unsigned int i=0; i<2*C.size(); i+=2){
 			Lit l = data[i+1];
 			adj[l].emplace_back(cr,i);
@@ -1393,12 +1399,6 @@ void learnConstraint(longConstr& confl){
 	tmpConstraint.reset();
 	Constr& C = ca[cr];
 	recomputeLBD(C);
-
-	LEARNEDLENGTHSUM+=C.size();
-	LEARNEDDEGREESUM+=C.degree;
-	if(C.degree==1) ++NCLAUSESLEARNED;
-	else if(C.largestCoef()==1) ++NCARDINALITIESLEARNED;
-	else ++NGENERALSLEARNED;
 }
 
 CRef addInputConstraint(intConstr& c, bool original, bool locked){
@@ -1686,11 +1686,11 @@ void print_stats() {
 	printf("c conflicts %lld\n", NCONFL);
 	printf("c restarts %lld\n", curr_restarts);
 	printf("c inprocessing phases %lld\n", cnt_reduceDB);
-	printf("c clauses learned %lld\n", NCLAUSESLEARNED);
-	printf("c cardinalities learned %lld\n", NCARDINALITIESLEARNED);
-	printf("c general constraints learned %lld\n", NGENERALSLEARNED);
-	printf("c average learned constraint length %.2f\n", NCONFL==0?0:(double)LEARNEDLENGTHSUM/NCONFL);
-	printf("c average learned constraint degree %.2f\n", NCONFL==0?0:(double)LEARNEDDEGREESUM/NCONFL);
+	printf("c clauses %lld\n", NCLAUSESLEARNED);
+	printf("c cardinalities %lld\n", NCARDINALITIESLEARNED);
+	printf("c general constraints %lld\n", NGENERALSLEARNED);
+	printf("c average constraint length %.2f\n", NCONFL==0?0:(double)LEARNEDLENGTHSUM/NCONFL);
+	printf("c average constraint degree %.2f\n", NCONFL==0?0:(double)LEARNEDDEGREESUM/NCONFL);
 	printf("c gcd simplifications %lld\n", NGCD);
 	printf("c detected cardinalities %lld\n", NCARDDETECT);
 	printf("c weakened non-implied lits %lld\n", NWEAKENEDNONIMPLIED);
@@ -1782,7 +1782,10 @@ void usage(char* name) {
 	printf("  --rfirst=arg     Set the interval of the Luby restart sequence (integer >=1; default %lld).\n",rfirst);
 	printf("  --original-rto=arg Set whether to use RoundingSat's original round-to-one conflict analysis (0 or 1; default %d).\n",originalRoundToOne);
 	printf("  --opt-mode=arg   Set optimization mode: 0 linear, 1(2) (lazy) core-guided, 3(4) (lazy) hybrid (default %d).\n",opt_mode);
-	printf("  --prop-mode=arg  Set propagation mode: 0-7: bit 1 toggles watched/counting, bit 2 toggles clausal, bit 3 toggles Pueblo (default %d).\n",prop_mode);
+	printf("  --prop-counting=arg Counting propagation instead of watched propagation (0 or 1; default %d).\n",countingProp);
+	printf("  --prop-clause=arg Optimized two-watched propagation for clauses (0 or 1; default %d).\n",clauseProp);
+	printf("  --prop-card=arg  Optimized watched propagation for cardinalities (0 or 1; default %d).\n",cardProp);
+	printf("  --prop-pueblo=arg Pueblo-like propagation instead of RoundingSat optimizations (0 or 1; default %d).\n",puebloProp);
 	printf("  --proof-log=arg  Set a filename for the proof logs (string).\n");
 }
 
@@ -1808,7 +1811,7 @@ std::string read_options(int argc, char**argv) {
 		}
 	}
 	std::vector<std::string> opts={"print-sol","verbosity", "var-decay", "rinc", "rfirst", "original-rto", "opt-mode",
-																"prop-mode", "proof-log"};
+																"prop-counting", "prop-clause", "prop-card", "prop-pueblo", "proof-log"};
 	std::unordered_map<std::string, std::string> opt_val;
 	for(int i=1;i<argc;i++){
 		if (std::string(argv[i]).substr(0,2) != "--") filename = argv[i];
@@ -1830,7 +1833,10 @@ std::string read_options(int argc, char**argv) {
 	getOptionNum(opt_val,"rfirst",[](double x)->bool{return x>=1;},rfirst);
 	getOptionNum(opt_val,"original-rto",[](double x)->bool{return x==0 || x==1;},originalRoundToOne);
 	getOptionNum(opt_val,"opt-mode",[](double x)->bool{return x==0 || x==1 || x==2 || x==3 || x==4;},opt_mode);
-	getOptionNum(opt_val,"prop-mode",[](double x)->bool{return 0<=x && x<=7 && round(x)==x;},prop_mode);
+	getOptionNum(opt_val,"prop-counting",[](double x)->bool{return x==0 || x==1;},countingProp);
+	getOptionNum(opt_val,"prop-clause",[](double x)->bool{return x==0 || x==1;},clauseProp);
+	getOptionNum(opt_val,"prop-card",[](double x)->bool{return x==0 || x==1;},cardProp);
+	getOptionNum(opt_val,"prop-pueblo",[](double x)->bool{return x==0 || x==1;},puebloProp);
 	getOptionStr(opt_val,"proof-log",proof_log_name);
 	return filename;
 }
