@@ -146,9 +146,10 @@ std::ofstream proof_out; std::ofstream formula_out;
 ID last_proofID = 0; ID last_formID = 0;
 std::vector<ID> unitIDs;
 long long logStartTime=0;
-int prop_mode=2;
-inline bool countingProp(){ return prop_mode%2==1; }
-inline bool clauseProp(){ return prop_mode/2==1; }
+unsigned int prop_mode=2;
+inline bool countingProp(){ return prop_mode & 1; }
+inline bool clauseProp(){ return prop_mode & 2; }
+inline bool puebloProp(){ return prop_mode & 4; }
 
 struct CRef {
 	uint32_t ofs;
@@ -230,7 +231,6 @@ struct Constr {
 		assert(~Level[-data[i+1]]);
 		++NWATCHLOOKUPS;
 		slack += abs(data[i]); // TODO: slack -= data[i] when only watched propagation
-		watchIdx=0;
 	}
 	inline WatchStatus propagateWatch(CRef cr, int& idx, int p){
 		assert(~Level[-p]);
@@ -290,7 +290,7 @@ struct Constr {
 			slack-=c;
 			if(slack<0) return WatchStatus::CONFLICTING;
 			if(slack<ClargestCoef){
-				if(ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=0; }
+				if(puebloProp() || ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=0; }
 				NWATCHCHECKS-=watchIdx;
 				for(; watchIdx<Csize2 && data[watchIdx]>slack; watchIdx+=2){
 					const int l = data[watchIdx+1];
@@ -302,10 +302,10 @@ struct Constr {
 		}
 
 		// use watched propagation
-		if(ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=0; }
+		if(puebloProp() || ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=0; }
 		assert(c<0);
 		slack+=c;
-		if(slack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
+		if(puebloProp() || slack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
 			NWATCHCHECKS-=watchIdx;
 			for(; watchIdx<Csize2 && slack<ClargestCoef; watchIdx+=2){ // NOTE: first innermost loop of RoundingSat
 				const int cf = data[watchIdx];
@@ -1303,6 +1303,7 @@ CRef runPropagation() {
 			WatchStatus wstat = C.propagateWatch(cr,ws[it_ws].idx,-p);
 			if(wstat==WatchStatus::FOUNDNEW) swapErase(ws,it_ws--);
 			else if(wstat==WatchStatus::CONFLICTING){ // clean up current level and stop propagation
+				++NTRAILPOPS;
 				for(int i=0; i<=it_ws; ++i){
 					const Watch& w=ws[i];
 					if(w.idx>=0) ca[w.cref].undoFalsified(w.idx);
@@ -1771,7 +1772,7 @@ void usage(char* name) {
 	printf("  --rfirst=arg     Set the interval of the Luby restart sequence (integer >=1; default %lld).\n",rfirst);
 	printf("  --original-rto=arg Set whether to use RoundingSat's original round-to-one conflict analysis (0 or 1; default %d).\n",originalRoundToOne);
 	printf("  --opt-mode=arg   Set optimization mode: 0 linear, 1(2) (lazy) core-guided, 3(4) (lazy) hybrid (default %d).\n",opt_mode);
-	printf("  --prop-mode=arg  Set propagation mode: 0 watched, 1 counting, 2 clausal+watched, 3 clausal+counting (default %d).\n",prop_mode);
+	printf("  --prop-mode=arg  Set propagation mode: 0-7: bit 1 toggles watched/counting, bit 2 toggles clausal, bit 3 toggles Pueblo (default %d).\n",prop_mode);
 	printf("  --proof-log=arg  Set a filename for the proof logs (string).\n");
 }
 
@@ -1819,7 +1820,7 @@ std::string read_options(int argc, char**argv) {
 	getOptionNum(opt_val,"rfirst",[](double x)->bool{return x>=1;},rfirst);
 	getOptionNum(opt_val,"original-rto",[](double x)->bool{return x==0 || x==1;},originalRoundToOne);
 	getOptionNum(opt_val,"opt-mode",[](double x)->bool{return x==0 || x==1 || x==2 || x==3 || x==4;},opt_mode);
-	getOptionNum(opt_val,"prop-mode",[](double x)->bool{return x==0 || x==1 || x==2 || x==3;},prop_mode);
+	getOptionNum(opt_val,"prop-mode",[](double x)->bool{return 0<=x && x<=7 && round(x)==x;},prop_mode);
 	getOptionStr(opt_val,"proof-log",proof_log_name);
 	return filename;
 }
