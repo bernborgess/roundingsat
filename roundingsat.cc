@@ -174,7 +174,11 @@ struct Watch {
 
 std::vector<std::vector<Watch>> _adj={{}}; std::vector<std::vector<Watch>>::iterator adj;
 std::vector<int> _Level={-1}; std::vector<int>::iterator Level;
+inline bool isTrue(int l){ return ~Level[l]; }
+inline bool isFalse(int l){ return ~Level[-l]; }
+inline bool isUnit(int l){ return Level[l]==0; }
 std::vector<int> trail, trail_lim, Pos;
+inline bool isUnknown(int l){ return Pos[std::abs(l)]==-1; }
 std::vector<CRef> Reason;
 int qhead; // for unit propagation
 int last_sol_obj_val = INF;
@@ -228,12 +232,12 @@ struct Constr {
 		assert(i>=0);
 		assert(i%2==0);
 		assert(countingProp() || isWatched(i));
-		assert(~Level[-data[i+1]]);
+		assert(isFalse(data[i+1]));
 		++NWATCHLOOKUPS;
 		slack += abs(data[i]); // TODO: slack -= data[i] when only watched propagation
 	}
 	inline WatchStatus propagateWatch(CRef cr, int& idx, int p){
-		assert(~Level[-p]);
+		assert(isFalse(p));
 		++NWATCHLOOKUPS;
 
 		if(isClause()){
@@ -250,7 +254,7 @@ struct Constr {
 			}
 			assert(p==watch);
 			assert(p!=otherwatch);
-			if(~Level[otherwatch]){
+			if(isTrue(otherwatch)){
 				idx=otherwatch-INF; // set new blocked literal
 				return WatchStatus::FOUNDNONE; // constraint is satisfied
 			}
@@ -258,7 +262,7 @@ struct Constr {
 			int i=2;
 			for(int i=2; i<Csize; ++i){
 				int l = data[i];
-				if(Level[-l]==-1){
+				if(!isFalse(l)){
 					int mid = i/2+1;
 					data[i]=data[mid];
 					data[mid]=watch;
@@ -269,14 +273,14 @@ struct Constr {
 				}
 			}
 			NWATCHCHECKS+=i-2;
-			assert(~Level[-watch]);
-			if(Level[-otherwatch]==-1){
-				for(int i=2; i<Csize; ++i) assert(~Level[-data[i]]);
+			assert(isFalse(watch));
+			if(!isFalse(otherwatch)){
+				for(int i=2; i<Csize; ++i) assert(isFalse(data[i]));
 				++NPROPCLAUSE;
 				propagate(otherwatch,cr);
 				return WatchStatus::FOUNDNONE;
 			}else{
-				for(int i=0; i<Csize; ++i) assert(~Level[-data[i]]);
+				for(int i=0; i<Csize; ++i) assert(isFalse(data[i]));
 				return WatchStatus::CONFLICTING;
 			}
 		}
@@ -294,7 +298,7 @@ struct Constr {
 				NWATCHCHECKS-=watchIdx;
 				for(; watchIdx<Csize2 && data[watchIdx]>slack; watchIdx+=2){
 					const int l = data[watchIdx+1];
-					if(Pos[std::abs(l)]==-1) { NPROPCLAUSE+=(degree==1); propagate(l,cr); }
+					if(isUnknown(l)) { NPROPCLAUSE+=(degree==1); propagate(l,cr); }
 				}
 				NWATCHCHECKS+=watchIdx;
 			}
@@ -310,7 +314,7 @@ struct Constr {
 			for(; watchIdx<Csize2 && slack<ClargestCoef; watchIdx+=2){ // NOTE: first innermost loop of RoundingSat
 				const int cf = data[watchIdx];
 				const int l = data[watchIdx+1];
-				if(cf>0 && Level[-l]==-1){
+				if(cf>0 && !isFalse(l)){
 					slack+=cf;
 					data[watchIdx]=-cf;
 					adj[l].emplace_back(cr,watchIdx);
@@ -326,7 +330,7 @@ struct Constr {
 		}else if(slack>=0){ // keep the watch, check for propagation
 			for(; watchIdx<Csize2 && std::abs(data[watchIdx])>slack; watchIdx+=2){ // NOTE: second innermost loop of RoundingSat
 				const int l = data[watchIdx+1];
-				if(Pos[std::abs(l)]==-1){ NPROPCLAUSE+=(degree==1); propagate(l,cr); }
+				if(isUnknown(l)){ NPROPCLAUSE+=(degree==1); propagate(l,cr); }
 			}
 			return WatchStatus::FOUNDNONE;
 		}else return WatchStatus::CONFLICTING;
@@ -442,12 +446,12 @@ struct Constraint{
 	}
 	inline bool falsified(int v) const {
 		assert(v>0);
-		assert((getLit(v)!=0 && Level[-getLit(v)]==-1)==(coefs[v]>0 && Level[-v]==-1) || (coefs[v]<0 && Level[v]==-1));
-		return !((coefs[v]>0 && Level[-v]==-1) || (coefs[v]<0 && Level[v]==-1)); // TODO: simplify
+		assert((getLit(v)!=0 && !isFalse(getLit(v)))==(coefs[v]>0 && !isFalse(v)) || (coefs[v]<0 && !isTrue(v)));
+		return ((coefs[v]>0 && isFalse(v)) || (coefs[v]<0 && isTrue(v)));
 	}
 	LARGE getSlack() const {
 		LARGE slack = -rhs;
-		for(int v: vars) if(Level[v]!=-1 || (Level[-v]==-1 && coefs[v]>0)) slack+=coefs[v];
+		for(int v: vars) if(isTrue(v) || (!isFalse(v) && coefs[v]>0)) slack+=coefs[v];
 		return slack;
 	}
 
@@ -476,8 +480,8 @@ struct Constraint{
 		if(logProof()){
 			for(int v: vars){
 				int l = getLit(v); SMALL c = getCoef(l);
-				if(Level[l]==0) proofBuffer << (l<0?"x":"~x") << v << " " << proofMult(c) << "+ ";
-				else if (Level[-l]==0) proofBuffer << unitIDs[Pos[v]] << " " << proofMult(c) << "+ ";
+				if(isUnit(l)) proofBuffer << (l<0?"x":"~x") << v << " " << proofMult(c) << "+ ";
+				else if (isUnit(-l)) proofBuffer << unitIDs[Pos[v]] << " " << proofMult(c) << "+ ";
 			}
 		}
 		int j=0;
@@ -485,11 +489,11 @@ struct Constraint{
 			int v=vars[i];
 			SMALL c=coefs[v];
 			if(c==0) coefs[v]=_unused_();
-			else if(Level[v]==0){
+			else if(isUnit(v)){
 				rhs-=c;
 				if(degree!=_invalid_() && c>0) degree-=c;
 				coefs[v]=_unused_();
-			}else if(Level[-v]==0){
+			}else if(isUnit(-v)){
 				if(degree!=_invalid_() && c<0) degree+=c;
 				coefs[v]=_unused_();
 			}else vars[j++]=v;
@@ -498,7 +502,7 @@ struct Constraint{
 		if(doSaturation) saturate();
 	}
 	bool hasNoUnits() const {
-		for(int v: vars) if(Level[v]==0 || Level[-v]==0) return false;
+		for(int v: vars) if(isUnit(v) || isUnit(-v)) return false;
 		return true;
 	}
 
@@ -590,14 +594,14 @@ struct Constraint{
 		assert(d>0);
 		if(d==1) return;
 		for(int v:vars){
-			assert(Level[-v]!=0);
-			assert(Level[ v]!=0);
+			assert(!isUnit(-v));
+			assert(!isUnit( v));
 			if(coefs[v]%d!=0){
 				if(!falsified(v)){
 					if(partial) weaken(-coefs[v]%d,v); // partial weakening
 					else weaken(-coefs[v],v);
 				}else{
-					assert((Level[v]==-1)==(coefs[v]>0));
+					assert((!isTrue(v))==(coefs[v]>0));
 					if(coefs[v]<0){
 						SMALL weakening = d+(coefs[v]%d);
 						coefs[v]-=weakening;
@@ -673,7 +677,7 @@ struct Constraint{
 		litsByPos.reserve(vars.size());
 		for(int v: vars){
 			int l = getLit(v); assert(l!=0);
-			if(~Level[-l]) litsByPos.push_back(-l);
+			if(isFalse(l)) litsByPos.push_back(-l);
 		}
 		std::sort(litsByPos.begin(),litsByPos.end(),[&](int l1,int l2){ return Pos[std::abs(l1)]<Pos[std::abs(l2)]; });
 
@@ -729,7 +733,7 @@ struct Constraint{
 		int v_prop = -1;
 		for(int i=vars.size()-1; i>=0; --i){
 			int v = vars[i];
-			if(std::abs(coefs[v])>slk && Pos[v]==-1){ v_prop=v; break; }
+			if(std::abs(coefs[v])>slk && isUnknown(v)){ v_prop=v; break; }
 		}
 		if(v_prop==-1) return; // no propagation, no idea what to weaken
 		if(weakenNonImplying(std::abs(coefs[v_prop]),slk)) slk = getSlack(); // slack changed
@@ -876,7 +880,7 @@ std::ostream & operator<<(std::ostream & o, Constraint<S,L>& C) {
 	for(int v: vars){
 		int l = C.getLit(v);
 		if(l==0) continue;
-		o << C.getCoef(l) << "x" << l << ":" << ((~Level[l])?"t":((~Level[-l])?"f":"u")) << "@" << std::max(Level[l],Level[-l]) << "," << Pos[std::abs(l)] << " ";
+		o << C.getCoef(l) << "x" << l << ":" << (isTrue(l)?"t":(isFalse(l)?"f":"u")) << "@" << std::max(Level[l],Level[-l]) << "," << Pos[std::abs(l)] << " ";
 	}
 	o << ">= " << C.getDegree();
 	return o;
@@ -1071,9 +1075,9 @@ void cBumpActivity (Constr& c) {
 // Search
 
 void uncheckedEnqueue(int p, CRef from){
-	assert(Level[p]==-1);
-	assert(Level[-p]==-1);
-	assert(Pos[std::abs(p)]==-1);
+	assert(!isTrue(p));
+	assert(!isFalse(p));
+	assert(isUnknown(p));
 	int v = std::abs(p);
 	Reason[v] = from;
 	if(decisionLevel()==0){
@@ -1109,7 +1113,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 
 	if(C.size()==1){
 		assert(decisionLevel()==0);
-		assert(Pos[std::abs(data[1-clauseProp()])]==-1);
+		assert(isUnknown(data[1-clauseProp()]));
 		propagate(data[1-clauseProp()],cr);
 		return cr;
 	}
@@ -1117,17 +1121,17 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 	if(C.isClause()){
 		for(unsigned int i=1; i<C.size(); ++i){
 			int l = data[i];
-			if(Level[-l]==-1){
-				if(~Level[-data[0]]){ data[i]=data[0]; data[0]=l; }
+			if(!isFalse(l)){
+				if(isFalse(data[0])){ data[i]=data[0]; data[0]=l; }
 				else{ data[i]=data[1]; data[1]=l; break; }
 			}
 		}
-		assert(Level[-data[0]]==-1);
-		if(~Level[-data[1]]){
-			if(Level[data[0]]==-1) propagate(data[0],cr);
+		assert(!isFalse(data[0]));
+		if(isFalse(data[1])){
+			if(!isTrue(data[0])) propagate(data[0],cr);
 			for(unsigned int i=2; i<C.size(); ++i){ // ensure second watch is last falsified literal
 				int l = data[i];
-				assert(~Level[-l]);
+				assert(isFalse(l));
 				if(Level[-l]>Level[-data[1]]){ data[i]=data[1]; data[1]=l; }
 			}
 		}
@@ -1139,11 +1143,11 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 		for(unsigned int i=0; i<2*C.size(); i+=2){
 			int l = data[i+1];
 			adj[l].emplace_back(cr,i);
-			if(Level[-l]==-1 || Pos[std::abs(l)]>=qhead) C.slack+=data[i];
+			if(!isFalse(l) || Pos[std::abs(l)]>=qhead) C.slack+=data[i];
 		}
 		assert(C.slack>=0);
 		if(C.slack<C.largestCoef()){ // propagate
-			for(unsigned int i=0; i<2*C.size() && data[i]>C.slack; i+=2) if(Pos[std::abs(data[i+1])]==-1) {
+			for(unsigned int i=0; i<2*C.size() && data[i]>C.slack; i+=2) if(isUnknown(data[i+1])) {
 				propagate(data[i+1],cr);
 			}
 		}
@@ -1153,7 +1157,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 	// watched propagation
 	for(unsigned int i=0; i<2*C.size() && C.slack<C.largestCoef(); i+=2){
 		int l = data[i+1];
-		if(Level[-l]==-1 || Pos[std::abs(l)]>=qhead){
+		if(!isFalse(l) || Pos[std::abs(l)]>=qhead){
 			assert(!C.isWatched(i));
 			C.slack+=data[i];
 			data[i]=-data[i];
@@ -1165,7 +1169,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 		// set sufficient falsified watches
 		std::vector<int> falsifieds;
 		falsifieds.reserve(C.size());
-		for(unsigned int i=0; i<2*C.size(); i+=2) if(~Level[-data[i+1]] && Pos[std::abs(data[i+1])]<qhead) falsifieds.push_back(i);
+		for(unsigned int i=0; i<2*C.size(); i+=2) if(isFalse(data[i+1]) && Pos[std::abs(data[i+1])]<qhead) falsifieds.push_back(i);
 		std::sort(falsifieds.begin(),falsifieds.end(),[&](unsigned i1,unsigned i2){
 			return Pos[std::abs(data[i1+1])]>Pos[std::abs(data[i2+1])]; });
 		long long diff = C.largestCoef()-C.slack;
@@ -1177,7 +1181,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 			if(diff<=0) break;
 		}
 		// perform initial propagation
-		for(unsigned int i=0; i<2*C.size() && std::abs(data[i])>C.slack; i+=2) if(Pos[std::abs(data[i+1])]==-1) {
+		for(unsigned int i=0; i<2*C.size() && std::abs(data[i])>C.slack; i+=2) if(isUnknown(data[i+1])) {
 			propagate(data[i+1],cr);
 		}
 	}
@@ -1224,7 +1228,7 @@ inline void propagate(int l, CRef reason){
 void recomputeLBD(Constr& C) {
 	if(C.lbd()<=2) return;
 	assert(tmpSet.size()==0);
-	for (int i=0; i<(int)C.size(); i++) if (~Level[-C.lit(i)]) tmpSet.add(Level[-C.lit(i)]);
+	for (int i=0; i<(int)C.size(); i++) if (isFalse(C.lit(i))) tmpSet.add(Level[-C.lit(i)]);
 	C.setLBD(tmpSet.size());
 	tmpSet.reset();
 }
@@ -1296,7 +1300,7 @@ CRef runPropagation() {
 		std::vector<Watch> & ws = adj[-p];
 		for(int it_ws=0; it_ws<(int)ws.size(); ++it_ws){
 			int idx = ws[it_ws].idx;
-			if(idx<0 && ~Level[idx+INF]){ assert(ca[ws[it_ws].cref].isClause()); continue; } // blocked literal check
+			if(idx<0 && isTrue(idx+INF)){ assert(ca[ws[it_ws].cref].isClause()); continue; } // blocked literal check
 			CRef cr = ws[it_ws].cref;
 			Constr& C = ca[cr];
 			if(C.getStatus()>=FORCEDELETE){ swapErase(ws,it_ws--); continue; }
@@ -1319,7 +1323,7 @@ CRef runPropagation() {
 int pickBranchLit(){
 	int next = 0;
 	// Activity based decision:
-	while (next == 0 || Pos[next]!=-1){
+	while (next == 0 || !isUnknown(next)){
 		if (order_heap.empty()) return 0;
 		else next = order_heap.removeMax();
 	}
@@ -1627,7 +1631,7 @@ void reduceDB(){
 		if(C.getStatus()==FORCEDELETE) removeConstraint(C);
 		else if(C.getStatus()==UNLOCKED){
 			long long eval = -C.degree;
-			for(int j=0; j<(int)C.size() && eval<0; ++j) if(Level[C.lit(j)]==0) eval+=C.coef(j);
+			for(int j=0; j<(int)C.size() && eval<0; ++j) if(isUnit(C.lit(j))) eval+=C.coef(j);
 			if(eval>=0) removeConstraint(C); // remove constraints satisfied at level 0
 		}
 		if(C.learnt() && C.getStatus()==UNLOCKED){
@@ -1837,10 +1841,10 @@ void extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, int 
 
 	if(l_assump!=0){ // l_assump is an assumption propagated to the opposite value
 		assert(assumptions.has(l_assump));
-		assert(~Level[-l_assump]);
+		assert(isFalse(l_assump));
 		int pos = Pos[std::abs(l_assump)];
 		while((int)trail.size()>pos) undoOne();
-		assert(Pos[std::abs(l_assump)]==-1);
+		assert(isUnknown(l_assump));
 		decide(l_assump);
 	}
 
@@ -1963,7 +1967,7 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 				for(int i=(decisionLevel()==0?0:trail_lim.back()); i<(int)trail.size(); ++i){
 					int l = trail[i];
 					if(assumptions.has(-l)){ // found conflicting assumption
-						if(Level[l]==0) backjumpTo(0), out.reset(); // negated assumption is unit
+						if(isUnit(l)) backjumpTo(0), out.reset(); // negated assumption is unit
 						else extractCore(assumptions,Reason[std::abs(l)],out,-l);
 						return SolveState::UNSAT;
 					}
@@ -1972,8 +1976,8 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 			while(assumptions_lim.back()<(int)assumptions.size()){
 				assert(decisionLevel()==(int)assumptions_lim.size()-1);
 				int l_assump = assumptions.keys[assumptions_lim.back()];
-				assert(Level[-l_assump]==-1); // otherwise above check should have caught this
-				if (~Level[l_assump]){ // assumption already propagated
+				assert(!isFalse(l_assump)); // otherwise above check should have caught this
+				if (isTrue(l_assump)){ // assumption already propagated
 					++assumptions_lim.back();
 				}else{ // unassigned assumption
 					next = l_assump;
@@ -1984,7 +1988,7 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 			if(next==0) next = pickBranchLit();
 			if(next==0) {
 				assert(order_heap.empty());
-				for (int i = 1; i <= n; ++i)last_sol[i] = ~Level[i];
+				for (int i = 1; i <= n; ++i)last_sol[i] = isTrue(i);
 				backjumpTo(0);
 				return SolveState::SAT;
 			}
