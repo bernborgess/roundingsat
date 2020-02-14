@@ -118,6 +118,7 @@ using ID=uint64_t;
 using Var=int;
 using Lit=int;
 using Coef=int;
+using Val=long long;
 
 // ---------------------------------------------------------------------
 // Global variables
@@ -185,8 +186,8 @@ std::vector<int> trail_lim, Pos;
 inline bool isUnknown(Lit l){ return Pos[std::abs(l)]==-1; }
 std::vector<CRef> Reason;
 int qhead; // for unit propagation
-int last_sol_obj_val = INF;
-inline bool foundSolution(){return last_sol_obj_val<INF;}
+Val last_sol_obj_val = std::numeric_limits<Val>::max();
+inline bool foundSolution(){ return last_sol_obj_val<std::numeric_limits<Val>::max(); }
 std::vector<bool> last_sol;
 std::vector<Lit> phase;
 inline void newDecisionLevel() { trail_lim.push_back(trail.size()); }
@@ -202,7 +203,7 @@ int sz_constr(int length);
 struct Constr {
 	ID id;
 	float act;
-	Coef degree;
+	Val degree;
 	// NOTE: above attributes not strictly needed in cache-sensitive Constr, but it did not matter after testing
 	struct {
 		unsigned original     : 1;
@@ -212,9 +213,7 @@ struct Constr {
 		unsigned size         : 30;
 	} header;
 	long long ntrailpops;
-	long long slack; // sum of non-falsified watches minus w.
-	// NOTE: will never be larger than 2 * non-falsified watch, so fits in 32 bit for the n-watched literal scheme
-	// TODO: is above really true? Definitely not for counting propagation...
+	Val slack; // sum of non-falsified watches minus w
 	unsigned int watchIdx;
 	int data[];
 
@@ -588,8 +587,8 @@ struct Constraint{
 		if(!saturateAndReduce) return;
 		if(old_degree>getDegree()){ NADDEDLITERALS+=vars.size(); removeZeroes(); saturate(); }
 		else{ NADDEDLITERALS+= c.vars.size(); saturate(c.vars); } // only saturate changed vars
-		if(getDegree() > (LARGE)1e9){ removeZeroes(); roundToOne(ceildiv<LARGE>(getDegree(), 1e9), !originalRoundToOne); }
-		assert(getDegree() <= (LARGE)1e9);
+		if(getDegree() >= (LARGE) INF){ removeZeroes(); roundToOne(ceildiv<LARGE>(getDegree(), 1e9), !originalRoundToOne); }
+		assert(getDegree() < (LARGE) INF);
 		assert(isSaturated());
 	}
 
@@ -628,7 +627,7 @@ struct Constraint{
 		assert(isSortedInDecreasingCoefOrder());
 		assert(hasNoZeroes());
 		if(vars.size()==0) return false;
-		if(std::abs(coefs[vars[0]])>1e9) return false; // TODO: large coefs currently unsupported
+		if(std::abs(coefs[vars[0]])>=INF) return false; // TODO: large coefs currently unsupported
 		unsigned int _gcd = std::abs(coefs[vars.back()]);
 		for(Var v: vars){
 			_gcd = gcd(_gcd,(unsigned int) std::abs(coefs[v]));
@@ -895,9 +894,9 @@ std::ostream & operator<<(std::ostream & o, const Constr& C) {
 	logConstraint.reset();
 	return o;
 }
-long long getSlack(Constr& C){
+Val getSlack(Constr& C){
 	logConstraint.init(C);
-	long long slack = logConstraint.getSlack();
+	Val slack = logConstraint.getSlack();
 	logConstraint.reset();
 	return slack;
 }
@@ -966,10 +965,11 @@ struct {
 		memory = (uint32_t*) xrealloc(memory, sizeof(uint32_t) * cap);
 	}
 
+	// TODO: allow constraints with 10^18 bit degree
 	CRef alloc(intConstr& constraint, ID proofID, bool formula, bool learnt, bool locked){
 		assert(proofID!=0);
 		assert(constraint.getDegree()>0);
-		assert(constraint.getDegree()<=1e9);
+		assert(constraint.getDegree()<INF);
 		assert(constraint.isSaturated());
 		// as the constraint is saturated, the coefficients are between 1 and 1e9 as well.
 		assert(!constraint.vars.empty());
@@ -1176,7 +1176,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 		for(unsigned int i=0; i<2*C.size(); i+=2) if(isFalse(data[i+1]) && Pos[std::abs(data[i+1])]<qhead) falsifiedIdcs.push_back(i);
 		std::sort(falsifiedIdcs.begin(),falsifiedIdcs.end(),[&](unsigned i1,unsigned i2){
 			return Pos[std::abs(data[i1+1])]>Pos[std::abs(data[i2+1])]; });
-		long long diff = C.largestCoef()-C.slack;
+		Val diff = C.largestCoef()-C.slack;
 		for(unsigned int i: falsifiedIdcs){
 			assert(!C.isWatched(i));
 			diff-=data[i];
@@ -1349,7 +1349,7 @@ void init(){
 
 void setNbVariables(long long nvars){
 	if (nvars < 0) exit_ERROR({"Number of variables must be positive."});
-	if (nvars > 1e9) exit_ERROR({"Number of variables cannot exceed 1e9."});
+	if (nvars >= INF) exit_ERROR({"Number of variables cannot exceed 10^9."});
 	if (nvars <= n) return;
 	resizeLitMap(_adj,adj,nvars,{});
 	resizeLitMap(_Level,Level,nvars,-1);
@@ -1371,7 +1371,7 @@ void setNbVariables(long long nvars){
 
 void learnConstraint(longConstr& confl){
 	assert(confl.getDegree()>0);
-	assert(confl.getDegree()<=1e9);
+	assert(confl.getDegree()<INF);
 	assert(confl.isSaturated());
 	confl.copyTo(tmpConstraint);
 	assert(tmpConstraint.hasNoUnits());
@@ -1379,7 +1379,7 @@ void learnConstraint(longConstr& confl){
 	tmpConstraint.sortInDecreasingCoefOrder();
 	backjumpTo(tmpConstraint.getAssertionLevel());
 	assert(qhead==(int)trail.size()); // jumped back sufficiently far to catch up with qhead
-	long long slk = tmpConstraint.getSlack();
+	Val slk = tmpConstraint.getSlack();
 	if(slk<0){
 		if(logProof()) tmpConstraint.logInconsistency();
 		assert(decisionLevel()==0);
@@ -1405,7 +1405,7 @@ CRef addInputConstraint(intConstr& c, bool original, bool locked){
 	assert(decisionLevel()==0);
 	if(logProof()) c.logAsInput();
 	c.postProcess(true);
-	if(c.getDegree()>(long long) 1e9) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
+	if(c.getDegree()>=(Val) INF) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
 	if(c.getDegree()<=0) return CRef_Undef; // already satisfied.
 
 	if(c.getSlack()<0){
@@ -1437,11 +1437,11 @@ CRef addInputConstraint(intConstr& c, bool original, bool locked){
 /*
  * The OPB parser does not support nonlinear constraints like "+1 x1 x2 +1 x3 x4 >= 1;"
  */
-int read_number(const std::string & s) {
+int read_number(const std::string & s) { // TODO: should also read larger numbers than int (e.g., capture large degree)
 	long long answer = 0;
 	for (char c : s) if ('0' <= c && c <= '9') {
 		answer *= 10, answer += c - '0';
-		if (answer > (int) 1e9) exit_ERROR({"Input formula contains absolute value larger than 10^9: ",s});
+		if (answer >= INF) exit_ERROR({"Input formula contains absolute value larger than 10^9: ",s});
 	}
 	for (char c : s) if (c == '-') answer = -answer;
 	return answer;
@@ -1524,7 +1524,7 @@ void wcnf_read(std::istream & in, long long top, intConstr& objective) {
 			Lit l;
 			while (is >> l, l) tmpConstraint.addLhs(1,l);
 			if(weight<top){ // soft clause
-				if(weight>1e9) exit_ERROR({"Clause weight exceeds 10^9: ",std::to_string(weight)});
+				if(weight>=INF) exit_ERROR({"Clause weight exceeds 10^9: ",std::to_string(weight)});
 				if(weight<0) exit_ERROR({"Negative clause weight: ",std::to_string(weight)});
 				setNbVariables(n+1); // increases n to n+1
 				objective.resize(n+1);
@@ -1634,7 +1634,7 @@ void reduceDB(){
 		Constr& C = ca[cr];
 		if(C.getStatus()==FORCEDELETE) removeConstraint(C);
 		else if(C.getStatus()==UNLOCKED){
-			long long eval = -C.degree;
+			Val eval = -C.degree;
 			for(int j=0; j<(int)C.size() && eval<0; ++j) if(isUnit(C.lit(j))) eval+=C.coef(j);
 			if(eval>=0) removeConstraint(C); // remove constraints satisfied at level 0
 		}
@@ -1708,8 +1708,8 @@ void print_stats() {
 	printf("c trail pops %lld\n", NTRAILPOPS);
 }
 
-long long lhs(Constr& C, const std::vector<bool>& sol){
-	long long result = 0;
+Val lhs(Constr& C, const std::vector<bool>& sol){
+	Val result = 0;
 	for(size_t j=0; j<C.size(); ++j){
 		Lit l = C.lit(j);
 		result+=((l>0)==sol[std::abs(l)])*C.coef(j);
@@ -1877,7 +1877,7 @@ void extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit 
 	assert(confl_data.getSlack()<0);
 
 	// analyze conflict
-	long long assumpslk = assumpSlack(assumptions,confl_data);
+	Val assumpslk = assumpSlack(assumptions,confl_data);
 	while(assumpslk>=0){
 		Lit l = trail.back();
 		assert(std::abs(confl_data.getCoef(-l))<INF);
@@ -1900,7 +1900,7 @@ void extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit 
 		undoOne();
 	}
 	assert(confl_data.getDegree()>0);
-	assert(confl_data.getDegree()<=1e9);
+	assert(confl_data.getDegree()<INF);
 	assert(confl_data.isSaturated());
 	confl_data.copyTo(outCore);
 	confl_data.reset();
@@ -2017,13 +2017,13 @@ ID replaceExternal(CRef cr, ID old=0){
 	return result;
 }
 
-inline void printObjBounds(long long lower, long long upper){
-	if(upper<INF) printf("c bounds %10lld >= %10lld\n",upper,lower);
+inline void printObjBounds(Val lower, Val upper){
+	if(foundSolution()) printf("c bounds %10lld >= %10lld\n",upper,lower);
 	else printf("c bounds          - >= %10lld\n",lower);
 }
 
 ID handleNewSolution(const intConstr& origObj, ID& lastUpperBound){
-	Coef prev_val = last_sol_obj_val; _unused(prev_val); // TODO: degree of constraint should be long long
+	Val prev_val = last_sol_obj_val; _unused(prev_val);
 	last_sol_obj_val = -origObj.getRhs();
 	for(Var v: origObj.vars) last_sol_obj_val+=origObj.coefs[v]*last_sol[v];
 	assert(last_sol_obj_val<prev_val);
@@ -2039,7 +2039,7 @@ ID handleNewSolution(const intConstr& origObj, ID& lastUpperBound){
 
 struct LazyVar{
 	int mult; // TODO: add long long to int check?
-	Coef rhs;
+	Val rhs;
 	std::vector<Lit> lhs;
 	std::vector<Var> introducedVars;
 	ID atLeastID=0;
@@ -2123,7 +2123,7 @@ void checkLazyVariables(longConstr& reformObj, intConstr& core, std::vector<Lazy
 	}
 	core.resize(n+1);
 }
-ID addLowerBound(const intConstr& origObj, Coef lowerBound, ID& lastLowerBound){
+ID addLowerBound(const intConstr& origObj, Val lowerBound, ID& lastLowerBound){
 	origObj.copyTo(tmpConstraint);
 	tmpConstraint.addRhs(lowerBound);
 	ID origLowerBound = last_proofID+1;
@@ -2132,11 +2132,11 @@ ID addLowerBound(const intConstr& origObj, Coef lowerBound, ID& lastLowerBound){
 	lastLowerBound = replaceExternal(cr,lastLowerBound);
 	return origLowerBound;
 }
-ID handleInconsistency(longConstr& reformObj, intConstr& core, long long& lower_bound,
+ID handleInconsistency(longConstr& reformObj, intConstr& core, Val& lower_bound,
                          std::vector<LazyVar*>& lazyVars, const intConstr& origObj, ID& lastLowerBound){
 	// take care of derived unit lits and remove zeroes
 	reformObj.removeUnitsAndZeroes(false);
-	long long prev_lower = lower_bound; _unused(prev_lower);
+	Val prev_lower = lower_bound; _unused(prev_lower);
 	lower_bound = -reformObj.getDegree();
 	if(core.getDegree()==0){ // apparently only unit assumptions were derived
 		assert(lower_bound>prev_lower);
@@ -2208,11 +2208,11 @@ void optimize(intConstr& origObj, intConstr& core){
 	assert(origObj.vars.size() > 0);
 	// NOTE: -origObj.getDegree() keeps track of the offset of the reformulated objective (or after removing unit lits)
 	origObj.removeUnitsAndZeroes(false);
-	long long lower_bound = -origObj.getDegree();
+	Val lower_bound = -origObj.getDegree();
 
-	long long opt_coef_sum = 0;
+	Val opt_coef_sum = 0;
 	for (Var v: origObj.vars) opt_coef_sum+=std::abs(origObj.coefs[v]);
-	if (opt_coef_sum > (long long)1e9) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});
+	if (opt_coef_sum >= (Val)INF) exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."}); // TODO: remove restriction
 
 	longConstr reformObj;
 	origObj.copyTo(reformObj);
