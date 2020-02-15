@@ -165,7 +165,7 @@ long long nbconstrsbeforereduce=2000;
 long long incReduceDB=300;
 long long cnt_reduceDB=0;
 bool originalRoundToOne=false;
-int opt_mode=0;
+int opt_mode=4;
 long long curr_restarts=0;
 long long nconfl_to_restart=0;
 bool print_sol = false;
@@ -178,7 +178,8 @@ long long logStartTime=0;
 bool countingProp=false;
 bool clauseProp=true;
 bool cardProp=true;
-bool puebloProp=false;
+bool idxProp=true;
+bool supProp=true;
 
 struct CRef {
 	uint32_t ofs;
@@ -315,7 +316,7 @@ struct Constr {
 			widx = widx>>1;
 			assert(data[widx]==p);
 			const unsigned int Csize=size();
-			if(puebloProp || ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=degree+1; }
+			if(!idxProp || ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=degree+1; }
 			assert(watchIdx>degree);
 			NWATCHCHECKS-=watchIdx;
 			for(; watchIdx<Csize; ++watchIdx){
@@ -351,7 +352,7 @@ struct Constr {
 			slack-=c;
 			if(slack<0) return WatchStatus::CONFLICTING;
 			if(slack<ClargestCoef){
-				if(puebloProp || ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=0; }
+				if(!idxProp || ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=0; }
 				NPROPCHECKS-=watchIdx>>1;
 				for(; watchIdx<Csize2 && data[watchIdx]>slack; watchIdx+=2){
 					const Lit l = data[watchIdx+1];
@@ -363,10 +364,10 @@ struct Constr {
 		}
 
 		// use watched propagation
-		if(puebloProp || ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=0; }
+		if(!idxProp || ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=0; }
 		assert(c<0);
 		slack+=c;
-		if(puebloProp || slack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
+		if(!supProp || slack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
 			NWATCHCHECKS-=watchIdx>>1;
 			for(; watchIdx<Csize2 && slack<ClargestCoef; watchIdx+=2){ // NOTE: first innermost loop of RoundingSat
 				const Coef cf = data[watchIdx];
@@ -1823,7 +1824,8 @@ void usage(char* name) {
 	printf("  --prop-counting=arg Counting propagation instead of watched propagation (0 or 1; default %d).\n",countingProp);
 	printf("  --prop-clause=arg Optimized two-watched propagation for clauses (0 or 1; default %d).\n",clauseProp);
 	printf("  --prop-card=arg  Optimized watched propagation for cardinalities (0 or 1; default %d).\n",cardProp);
-	printf("  --prop-pueblo=arg Pueblo-like propagation instead of RoundingSat optimizations (0 or 1; default %d).\n",puebloProp);
+	printf("  --prop-idx=arg   Optimize index of watches during propagation (0 or 1; default %d).\n",idxProp);
+	printf("  --prop-sup=arg   Avoid superfluous watch checks (0 or 1; default %d).\n",supProp);
 	printf("  --proof-log=arg  Set a filename for the proof logs (string).\n");
 }
 
@@ -1849,7 +1851,7 @@ std::string read_options(int argc, char**argv) {
 		}
 	}
 	std::vector<std::string> opts={"print-sol","verbosity", "var-decay", "rinc", "rfirst", "original-rto", "opt-mode",
-																"prop-counting", "prop-clause", "prop-card", "prop-pueblo", "proof-log"};
+																"prop-counting", "prop-clause", "prop-card", "prop-idx", "prop-sup", "proof-log"};
 	std::unordered_map<std::string, std::string> opt_val;
 	for(int i=1;i<argc;i++){
 		if (std::string(argv[i]).substr(0,2) != "--") filename = argv[i];
@@ -1874,7 +1876,8 @@ std::string read_options(int argc, char**argv) {
 	getOptionNum(opt_val,"prop-counting",[](double x)->bool{return x==0 || x==1;},countingProp);
 	getOptionNum(opt_val,"prop-clause",[](double x)->bool{return x==0 || x==1;},clauseProp);
 	getOptionNum(opt_val,"prop-card",[](double x)->bool{return x==0 || x==1;},cardProp);
-	getOptionNum(opt_val,"prop-pueblo",[](double x)->bool{return x==0 || x==1;},puebloProp);
+	getOptionNum(opt_val,"prop-idx",[](double x)->bool{return x==0 || x==1;},idxProp);
+	getOptionNum(opt_val,"prop-sup",[](double x)->bool{return x==0 || x==1;},supProp);
 	getOptionStr(opt_val,"proof-log",proof_log_name);
 	return filename;
 }
