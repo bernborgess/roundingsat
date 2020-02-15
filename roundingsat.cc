@@ -60,6 +60,7 @@ std::ostream& operator<<(std::ostream& os, __int128 x){
 	return os << x1;
 }
 
+#ifndef __GLIBCXX_TYPE_INT_N_0
 namespace std {
 	template<> class numeric_limits<__int128> {
 	public:
@@ -76,6 +77,7 @@ namespace std {
 		const  static bool is_specialized = true;
 	};
 }
+#endif
 
 template<class T> inline void swapErase(T& indexable, size_t index){
 	indexable[index]=indexable.back();
