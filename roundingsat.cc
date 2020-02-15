@@ -242,9 +242,9 @@ struct Constr {
 	Val slack; // sum of non-falsified watches minus w
 	int data[];
 
-	inline bool isClause() const { return (int)watchIdx==-1; }
-	inline bool isCard() const { return (int)watchIdx==-2; }
-	inline bool isSimple() const { return (int)watchIdx<0; }
+	inline bool isClause() const { return slack==std::numeric_limits<Val>::min(); }
+	inline bool isCard() const { return slack==std::numeric_limits<Val>::min()+1; }
+	inline bool isSimple() const { return slack<std::numeric_limits<Val>::min()+2; }
 	inline int getMemSize() const { return sz_constr(size()+(isSimple()?0:size())); }
 	inline unsigned int size() const { return header.size; }
 	inline void setStatus(DeletionStatus ds){ header.status=(unsigned int) ds; }
@@ -286,8 +286,8 @@ struct Constr {
 				idx=otherwatch-INF; // set new blocked literal
 				return WatchStatus::FOUNDNONE; // constraint is satisfied
 			}
-			const int Csize=size();
-			for(int i=2; i<Csize; ++i){
+			const unsigned int Csize=size();
+			for(unsigned int i=2; i<Csize; ++i){
 				Lit l = data[i];
 				if(!isFalse(l)){
 					int mid = i/2+1;
@@ -301,7 +301,7 @@ struct Constr {
 			}
 			NWATCHCHECKS+=Csize;
 			assert(isFalse(watch));
-			for(int i=2; i<Csize; ++i) assert(isFalse(data[i]));
+			for(unsigned int i=2; i<Csize; ++i) assert(isFalse(data[i]));
 			if(isFalse(otherwatch)) return WatchStatus::CONFLICTING;
 			else{ assert(!isTrue(otherwatch)); ++NPROPCLAUSE; propagate(otherwatch,cr); }
 			return WatchStatus::FOUNDNONE;
@@ -314,15 +314,17 @@ struct Constr {
 			widx = widx>>1;
 			assert(data[widx]==p);
 			const unsigned int Csize=size();
-			for(unsigned int i=degree+1; i<Csize; ++i){
-				Lit l = data[i];
+			if(puebloProp || ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=degree+1; }
+			assert(watchIdx>degree);
+			for(; watchIdx<Csize; ++watchIdx){
+				Lit l = data[watchIdx];
 				if(!isFalse(l)){
-					unsigned int mid = (i+degree+1)/2; assert(mid<Csize); assert(mid>degree);
-					data[i]=data[mid];
+					unsigned int mid = (watchIdx+degree+1)/2; assert(mid<=watchIdx); assert(mid>degree);
+					data[watchIdx]=data[mid];
 					data[mid]=data[widx];
 					data[widx]=l;
 					adj[l].emplace_back(cr,(widx<<1)+1);
-					NWATCHCHECKS+=i-degree;
+					NWATCHCHECKS+=watchIdx-degree;
 					return WatchStatus::FOUNDNEW;
 				}
 			}
@@ -1012,9 +1014,9 @@ struct {
 		constr->act = 0;
 		constr->degree = constraint.getDegree();
 		constr->header = {formula,learnt,length,(unsigned int)(locked?LOCKED:UNLOCKED),length};
-		constr->ntrailpops = 0;
-		constr->slack = -constr->degree;
-		constr->watchIdx = -asClause-asCard-asCard;
+		constr->ntrailpops = -1;
+		constr->slack = asClause?std::numeric_limits<Val>::min():(asCard?std::numeric_limits<Val>::min()+1:-constr->degree);
+		constr->watchIdx = 0;
 		assert(asClause == constr->isClause());
 		assert(asCard == constr->isCard());
 		for(unsigned int i=0; i<length; ++i){
