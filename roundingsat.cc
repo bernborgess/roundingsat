@@ -86,6 +86,31 @@ template<class T, class U> inline bool contains(const T& v, const U& x){
 	return std::find(v.cbegin(),v.cend(),x)!=v.cend();
 }
 
+template <class T>
+inline T ceildiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return (p+q-1)/q; } // NOTE: potential overflow
+template <class T>
+inline T floordiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return p/q; }
+template <class T>
+inline T ceildiv_safe(const T& p,const T& q){ assert(q>0); return (p<0?-floordiv(-p,q):ceildiv(p,q)); }
+template <class T>
+inline T floordiv_safe(const T& p,const T& q){ assert(q>0); return (p<0?-ceildiv(-p,q):floordiv(p,q)); }
+
+unsigned int gcd(unsigned int u, unsigned int v){
+	assert(u!=0);
+	assert(v!=0);
+	if (u%v==0) return v;
+	if (v%u==0) return u;
+	unsigned int t;
+	int shift = __builtin_ctz(u | v);
+	u >>= __builtin_ctz(u);
+	do {
+		v >>= __builtin_ctz(v);
+		if (u > v) { t = v; v = u; u = t; }
+		v = v - u;
+	} while (v != 0);
+	return u << shift;
+}
+
 // ---------------------------------------------------------------------
 // Exit and interrupt
 
@@ -128,7 +153,7 @@ const Coef INF=1e9+1;
 
 double initial_time;
 long long NTRAILPOPS=0, NWATCHLOOKUPS=0, NWATCHCHECKS=0, NADDEDLITERALS=0;
-long long NCONFL=0, NDECIDE=0, NPROP=0, NPROPCLAUSE=0;
+long long NCONFL=0, NDECIDE=0, NPROP=0, NPROPCLAUSE=0, NPROPCARD=0;
 inline long long getDetTime(){ return 1+NADDEDLITERALS+NWATCHLOOKUPS+NWATCHCHECKS+NPROP+NTRAILPOPS+NDECIDE; }
 __int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
 long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
@@ -202,7 +227,6 @@ std::ostream & operator<<(std::ostream & o, const Constr& C);
 int sz_constr(int length);
 struct Constr {
 	ID id;
-	float act;
 	Val degree;
 	// NOTE: above attributes not strictly needed in cache-sensitive Constr, but it did not matter after testing
 	struct {
@@ -213,12 +237,15 @@ struct Constr {
 		unsigned size         : 30;
 	} header;
 	long long ntrailpops;
-	Val slack; // sum of non-falsified watches minus w
+	float act;
 	unsigned int watchIdx;
+	Val slack; // sum of non-falsified watches minus w
 	int data[];
 
 	inline bool isClause() const { return (int)watchIdx==-1; }
-	inline int getMemSize() const { return sz_constr(size()+(isClause()?0:size())); }
+	inline bool isCard() const { return (int)watchIdx==-2; }
+	inline bool isSimple() const { return (int)watchIdx<0; }
+	inline int getMemSize() const { return sz_constr(size()+(isSimple()?0:size())); }
 	inline unsigned int size() const { return header.size; }
 	inline void setStatus(DeletionStatus ds){ header.status=(unsigned int) ds; }
 	inline DeletionStatus getStatus() const { return (DeletionStatus) header.status; }
@@ -226,14 +253,12 @@ struct Constr {
 	inline unsigned int lbd() const { return header.lbd; }
 	inline bool original() const { return header.original; }
 	inline bool learnt() const { return header.learnt; }
-	inline Coef largestCoef() const { return std::abs(data[0]); }
-	inline Coef coef(unsigned int i) const { return isClause()?1:std::abs(data[i<<1]); }
-	inline Lit lit(unsigned int i) const { return isClause()?data[i]:data[(i<<1)+1]; }
-	inline bool isWatched(unsigned int i) const { assert(i%2==0); return data[i]<0; }
+	inline Coef largestCoef() const { assert(!isSimple()); return std::abs(data[0]); }
+	inline Coef coef(unsigned int i) const { return isSimple()?1:std::abs(data[i<<1]); }
+	inline Lit lit(unsigned int i) const { return isSimple()?data[i]:data[(i<<1)+1]; }
+	inline bool isWatched(unsigned int i) const { assert(!isSimple()); return data[i]<0; }
 	inline void undoFalsified(int i) {
-		assert(!isClause());
-		assert(i>=0);
-		assert(i%2==0);
+		assert(!isSimple());
 		assert(countingProp || isWatched(i));
 		assert(isFalse(data[i+1]));
 		++NWATCHLOOKUPS;
@@ -262,7 +287,6 @@ struct Constr {
 				return WatchStatus::FOUNDNONE; // constraint is satisfied
 			}
 			const int Csize=size();
-			int i=2;
 			for(int i=2; i<Csize; ++i){
 				Lit l = data[i];
 				if(!isFalse(l)){
@@ -271,25 +295,50 @@ struct Constr {
 					data[mid]=watch;
 					data[widx]=l;
 					adj[l].emplace_back(cr,otherwatch-INF);
-					NWATCHCHECKS+=i-2;
+					NWATCHCHECKS+=i-1;
 					return WatchStatus::FOUNDNEW;
 				}
 			}
-			NWATCHCHECKS+=i-2;
+			NWATCHCHECKS+=Csize;
 			assert(isFalse(watch));
-			if(!isFalse(otherwatch)){
-				for(int i=2; i<Csize; ++i) assert(isFalse(data[i]));
-				++NPROPCLAUSE;
-				propagate(otherwatch,cr);
-				return WatchStatus::FOUNDNONE;
-			}else{
-				for(int i=0; i<Csize; ++i) assert(isFalse(data[i]));
-				return WatchStatus::CONFLICTING;
-			}
+			for(int i=2; i<Csize; ++i) assert(isFalse(data[i]));
+			if(isFalse(otherwatch)) return WatchStatus::CONFLICTING;
+			else{ assert(!isTrue(otherwatch)); ++NPROPCLAUSE; propagate(otherwatch,cr); }
+			return WatchStatus::FOUNDNONE;
 		}
 
 		assert(idx>=0);
+		if(isCard()){
+			assert(idx%2==1);
+			unsigned int widx=idx;
+			widx = widx>>1;
+			assert(data[widx]==p);
+			const unsigned int Csize=size();
+			for(unsigned int i=degree+1; i<Csize; ++i){
+				Lit l = data[i];
+				if(!isFalse(l)){
+					unsigned int mid = (i+degree+1)/2; assert(mid<Csize); assert(mid>degree);
+					data[i]=data[mid];
+					data[mid]=data[widx];
+					data[widx]=l;
+					adj[l].emplace_back(cr,(widx<<1)+1);
+					NWATCHCHECKS+=i-degree;
+					return WatchStatus::FOUNDNEW;
+				}
+			}
+			NWATCHCHECKS+=Csize;
+			assert(isFalse(data[widx]));
+			for(unsigned int i=degree+1; i<Csize; ++i) assert(isFalse(data[i]));
+			for(unsigned int i=0; i<=degree; ++i) if(i!=widx && isFalse(data[i])) return WatchStatus::CONFLICTING;
+			for(unsigned int i=0; i<=degree; ++i){
+				Lit l = data[i];
+				if(i!=widx && !isTrue(l)){ ++NPROPCARD; propagate(l,cr); }
+			}
+			return WatchStatus::FOUNDNONE;
+		}
+
 		assert(idx%2==0);
+		assert(data[idx+1]==p);
 		const unsigned int Csize2 = 2*size(); const Coef ClargestCoef = largestCoef();
 		const Coef c = data[idx];
 
@@ -301,7 +350,7 @@ struct Constr {
 				NWATCHCHECKS-=watchIdx;
 				for(; watchIdx<Csize2 && data[watchIdx]>slack; watchIdx+=2){
 					const Lit l = data[watchIdx+1];
-					if(isUnknown(l)) { NPROPCLAUSE+=(degree==1); propagate(l,cr); }
+					if(isUnknown(l)) { NPROPCLAUSE+=(degree==1); NPROPCARD+=(degree!=1 && ClargestCoef==1); propagate(l,cr); }
 				}
 				NWATCHCHECKS+=watchIdx;
 			}
@@ -333,7 +382,7 @@ struct Constr {
 		}else if(slack>=0){ // keep the watch, check for propagation
 			for(; watchIdx<Csize2 && std::abs(data[watchIdx])>slack; watchIdx+=2){ // NOTE: second innermost loop of RoundingSat
 				const Lit l = data[watchIdx+1];
-				if(isUnknown(l)){ NPROPCLAUSE+=(degree==1); propagate(l,cr); }
+				if(isUnknown(l)){ NPROPCLAUSE+=(degree==1); NPROPCARD+=(degree!=1 && ClargestCoef==1); propagate(l,cr); }
 			}
 			return WatchStatus::FOUNDNONE;
 		}else return WatchStatus::CONFLICTING;
@@ -342,15 +391,6 @@ struct Constr {
 
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
-
-template <class T>
-inline T ceildiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return (p+q-1)/q; } // NOTE: potential overflow
-template <class T>
-inline T floordiv(const T& p,const T& q){ assert(q>0); assert(p>=0); return p/q; }
-template <class T>
-inline T ceildiv_safe(const T& p,const T& q){ assert(q>0); return (p<0?-floordiv(-p,q):ceildiv(p,q)); }
-template <class T>
-inline T floordiv_safe(const T& p,const T& q){ assert(q>0); return (p<0?-ceildiv(-p,q):floordiv(p,q)); }
 
 template<class T> void resizeLitMap(std::vector<T>& _map, typename std::vector<T>::iterator& map, int size, T init){
 	assert(size<(1<<28));
@@ -364,22 +404,6 @@ template<class T> void resizeLitMap(std::vector<T>& _map, typename std::vector<T
 	for(; i>newsize+oldsize; --i) _map[i]=init;
 	for(; i>=newsize-oldsize; --i) _map[i]=_map[i-newsize+oldsize];
 	for(; i>=0; --i) _map[i]=init;
-}
-
-unsigned int gcd(unsigned int u, unsigned int v){
-	assert(u!=0);
-	assert(v!=0);
-	if (u%v==0) return v;
-	if (v%u==0) return u;
-	unsigned int t;
-	int shift = __builtin_ctz(u | v);
-	u >>= __builtin_ctz(u);
-	do {
-		v >>= __builtin_ctz(v);
-		if (u > v) { t = v; v = u; u = t; }
-		v = v - u;
-	} while (v != 0);
-	return u << shift;
 }
 
 template<class T>
@@ -974,12 +998,13 @@ struct {
 		// as the constraint is saturated, the coefficients are between 1 and 1e9 as well.
 		assert(!constraint.vars.empty());
 		unsigned int length = constraint.vars.size();
-		bool asClause = clauseProp && (constraint.getDegree()==1);
+		bool asClause = clauseProp && constraint.getDegree()==1;
+		bool asCard = !asClause && cardProp && constraint.isCardinality();
 
 		// note: coefficients can be arbitrarily ordered (we don't sort them in descending order for example)
 		// during maintenance of watches the order will be shuffled.
 		uint32_t old_at = at;
-		at += sz_constr(length+(asClause?0:length));
+		at += sz_constr(length+((asClause||asCard)?0:length));
 		capacity(at);
 		Constr* constr = (Constr*)(memory+old_at);
 		new (constr) Constr;
@@ -989,12 +1014,13 @@ struct {
 		constr->header = {formula,learnt,length,(unsigned int)(locked?LOCKED:UNLOCKED),length};
 		constr->ntrailpops = 0;
 		constr->slack = -constr->degree;
-		constr->watchIdx = -asClause;
-		assert((constr->degree==1 && clauseProp)==((int)constr->watchIdx==-1));
+		constr->watchIdx = -asClause-asCard-asCard;
+		assert(asClause == constr->isClause());
+		assert(asCard == constr->isCard());
 		for(unsigned int i=0; i<length; ++i){
 			Var v = constraint.vars[i];
 			assert(constraint.getLit(v)!=0);
-			if(asClause) constr->data[i]=constraint.getLit(v);
+			if(constr->isSimple()) constr->data[i]=constraint.getLit(v);
 			else{
 				constr->data[(i<<1)]=std::abs(constraint.coefs[v]);
 				constr->data[(i<<1)+1]=constraint.getLit(v);
@@ -1118,34 +1144,39 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 	LEARNEDLENGTHSUM+=C.size();
 	LEARNEDDEGREESUM+=C.degree;
 	if(C.degree==1) ++NCLAUSESLEARNED;
-	else if(C.largestCoef()==1) ++NCARDINALITIESLEARNED;
+	else if(C.isCard() || C.largestCoef()==1) ++NCARDINALITIESLEARNED;
 	else ++NGENERALSLEARNED;
 
-	if(C.size()==1){
-		assert(decisionLevel()==0);
-		assert(isUnknown(data[1-clauseProp]));
-		propagate(data[1-clauseProp],cr);
-		return cr;
-	}
+	if(C.isSimple()){
+		if(C.degree>=C.size()){
+			assert(decisionLevel()==0);
+			for(unsigned int i=0; i<C.size(); ++i){ assert(isUnknown(data[i])); propagate(data[i],cr); }
+			return cr;
+		}
 
-	if(C.isClause()){
-		for(unsigned int i=1; i<C.size(); ++i){
+		unsigned int watch=0;
+		for(unsigned int i=0; i<C.size(); ++i){
 			Lit l = data[i];
 			if(!isFalse(l)){
-				if(isFalse(data[0])){ data[i]=data[0]; data[0]=l; }
-				else{ data[i]=data[1]; data[1]=l; break; }
+				data[i]=data[watch];
+				data[watch++]=l;
+				if(watch>C.degree+1) break;
 			}
 		}
-		assert(!isFalse(data[0]));
-		if(isFalse(data[1])){
-			if(!isTrue(data[0])) propagate(data[0],cr);
-			for(unsigned int i=2; i<C.size(); ++i){ // ensure second watch is last falsified literal
+		assert(watch>=C.degree); // we found enough watches to satisfy the constraint
+		if(isFalse(data[C.degree])){
+			for(unsigned int i=0; i<C.degree; ++i){
+				assert(!isFalse(data[i]));
+				if(!isTrue(data[i])) propagate(data[i],cr);
+			}
+			for(unsigned int i=C.degree+1; i<C.size(); ++i){ // ensure last watch is last falsified literal
 				Lit l = data[i];
 				assert(isFalse(l));
-				if(Level[-l]>Level[-data[1]]){ data[i]=data[1]; data[1]=l; }
+				if(Level[-l]>Level[-data[C.degree]]){ data[i]=data[C.degree]; data[C.degree]=l; }
 			}
 		}
-		for(int i=0; i<2; ++i) adj[data[i]].emplace_back(cr,data[1-i]-INF);
+		if(C.isClause()) for(unsigned int i=0; i<2; ++i) adj[data[i]].emplace_back(cr,data[1-i]-INF); // add blocked literal
+		else for(unsigned int i=0; i<=C.degree; ++i) adj[data[i]].emplace_back(cr,(i<<1)+1); // add watch index
 		return cr;
 	}
 
@@ -1203,7 +1234,7 @@ void undoOne(){
 	++NTRAILPOPS;
 	Lit l = trail.back();
 	if(qhead==(int)trail.size()){
-		for(const Watch& w: adj[-l]) if(w.idx>=0) ca[w.cref].undoFalsified(w.idx);
+		for(const Watch& w: adj[-l]) if(w.idx>=0 && w.idx%2==0) ca[w.cref].undoFalsified(w.idx);
 		--qhead;
 	}
 	Var v = std::abs(l);
@@ -1320,7 +1351,7 @@ CRef runPropagation() {
 				++NTRAILPOPS;
 				for(int i=0; i<=it_ws; ++i){
 					const Watch& w=ws[i];
-					if(w.idx>=0) ca[w.cref].undoFalsified(w.idx);
+					if(w.idx>=0 && w.idx%2==0) ca[w.cref].undoFalsified(w.idx);
 				}
 				--qhead;
 				return cr;
@@ -1702,6 +1733,7 @@ void print_stats() {
 		printf("c core cardinality constraints returned %lld\n", NCORECARDINALITIES);
 	}
 	printf("c clausal propagations %lld\n", NPROPCLAUSE);
+	printf("c cardinality propagations %lld\n", NPROPCARD);
 	printf("c watch lookups %lld\n", NWATCHLOOKUPS);
 	printf("c watch checks %lld\n", NWATCHCHECKS);
 	printf("c constraint additions %lld\n", NADDEDLITERALS);
