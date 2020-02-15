@@ -466,7 +466,7 @@ struct Constraint{
 		return degree;
 	}
 	inline SMALL getCoef(Lit l) const {
-		assert(std::abs(l)<coefs.size());
+		assert((unsigned int)std::abs(l)<coefs.size());
 		return coefs[std::abs(l)]==_unused_()?0:(l<0?-coefs[-l]:coefs[l]);
 	}
 	inline Lit getLit(Lit l) const { // NOTE: answer of 0 means coef 0 or not in vars
@@ -951,9 +951,9 @@ public:
 	inline void resize(int size){ resizeLitMap(_values,values,size,_unused_()); }
 	inline size_t size() const { return keys.size(); }
 
-	inline bool has(int key) const { return _values.size()>2*std::abs(key) && values[key]!=_unused_(); }
+	inline bool has(int key) const { return _values.size()>(unsigned int)2*std::abs(key) && values[key]!=_unused_(); }
 	void add(int key){
-		if(_values.size()<=2*std::abs(key)) resize(std::abs(key));
+		if(_values.size()<=(unsigned int)2*std::abs(key)) resize(std::abs(key));
 		if(values[key]!=_unused_()) return;
 		values[key]=true;
 		keys.push_back(key);
@@ -1697,18 +1697,18 @@ void reduceDB(){
 
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
-double luby(double y, Var x){
-	// Find the finite subsequence that contains index 'x', and the
+double luby(double y, int i){
+	// Find the finite subsequence that contains index 'i', and the
 	// size of that subsequence:
 	int size, seq;
-	for (size = 1, seq = 0; size < x+1; seq++, size = 2*size+1);
-	while(size != x+1){
+	for (size = 1, seq = 0; size < i+1; seq++, size = 2*size+1);
+	while(size != i+1){
 		size = (size-1)>>1;
 		seq--;
 		assert(size!=0);
-		x = x % size;
+		i = i % size;
 	}
-	return pow(y, seq);
+	return std::pow(y, seq);
 }
 
 // ---------------------------------------------------------------------
