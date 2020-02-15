@@ -152,9 +152,9 @@ const int resize_factor=2;
 const Coef INF=1e9+1;
 
 double initial_time;
-long long NTRAILPOPS=0, NWATCHLOOKUPS=0, NWATCHCHECKS=0, NADDEDLITERALS=0;
+long long NTRAILPOPS=0, NWATCHLOOKUPS=0, NWATCHCHECKS=0, NPROPCHECKS=0, NADDEDLITERALS=0;
 long long NCONFL=0, NDECIDE=0, NPROP=0, NPROPCLAUSE=0, NPROPCARD=0;
-inline long long getDetTime(){ return 1+NADDEDLITERALS+NWATCHLOOKUPS+NWATCHCHECKS+NPROP+NTRAILPOPS+NDECIDE; }
+inline long long getDetTime(){ return 1+NADDEDLITERALS+NWATCHLOOKUPS+NWATCHCHECKS+NPROPCHECKS+NPROP+NTRAILPOPS+NDECIDE;}
 __int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
 long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
 long long NGCD=0, NCARDDETECT=0, NCORECARDINALITIES=0, NCORES=0, NSOLS=0;
@@ -299,11 +299,12 @@ struct Constr {
 					return WatchStatus::FOUNDNEW;
 				}
 			}
-			NWATCHCHECKS+=Csize;
+			NWATCHCHECKS+=Csize-2;
 			assert(isFalse(watch));
 			for(unsigned int i=2; i<Csize; ++i) assert(isFalse(data[i]));
 			if(isFalse(otherwatch)) return WatchStatus::CONFLICTING;
 			else{ assert(!isTrue(otherwatch)); ++NPROPCLAUSE; propagate(otherwatch,cr); }
+			++NPROPCHECKS;
 			return WatchStatus::FOUNDNONE;
 		}
 
@@ -316,6 +317,7 @@ struct Constr {
 			const unsigned int Csize=size();
 			if(puebloProp || ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=degree+1; }
 			assert(watchIdx>degree);
+			NWATCHCHECKS-=watchIdx;
 			for(; watchIdx<Csize; ++watchIdx){
 				Lit l = data[watchIdx];
 				if(!isFalse(l)){
@@ -324,11 +326,11 @@ struct Constr {
 					data[mid]=data[widx];
 					data[widx]=l;
 					adj[l].emplace_back(cr,(widx<<1)+1);
-					NWATCHCHECKS+=watchIdx-degree;
+					NWATCHCHECKS+=watchIdx+1;
 					return WatchStatus::FOUNDNEW;
 				}
 			}
-			NWATCHCHECKS+=Csize;
+			NWATCHCHECKS+=watchIdx;
 			assert(isFalse(data[widx]));
 			for(unsigned int i=degree+1; i<Csize; ++i) assert(isFalse(data[i]));
 			for(unsigned int i=0; i<=degree; ++i) if(i!=widx && isFalse(data[i])) return WatchStatus::CONFLICTING;
@@ -336,6 +338,7 @@ struct Constr {
 				Lit l = data[i];
 				if(i!=widx && !isTrue(l)){ ++NPROPCARD; propagate(l,cr); }
 			}
+			NPROPCHECKS+=degree+1;
 			return WatchStatus::FOUNDNONE;
 		}
 
@@ -349,12 +352,12 @@ struct Constr {
 			if(slack<0) return WatchStatus::CONFLICTING;
 			if(slack<ClargestCoef){
 				if(puebloProp || ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=0; }
-				NWATCHCHECKS-=watchIdx;
+				NPROPCHECKS-=watchIdx>>1;
 				for(; watchIdx<Csize2 && data[watchIdx]>slack; watchIdx+=2){
 					const Lit l = data[watchIdx+1];
 					if(isUnknown(l)) { NPROPCLAUSE+=(degree==1); NPROPCARD+=(degree!=1 && ClargestCoef==1); propagate(l,cr); }
 				}
-				NWATCHCHECKS+=watchIdx;
+				NPROPCHECKS+=watchIdx>>1;
 			}
 			return WatchStatus::FOUNDNONE;
 		}
@@ -364,7 +367,7 @@ struct Constr {
 		assert(c<0);
 		slack+=c;
 		if(puebloProp || slack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
-			NWATCHCHECKS-=watchIdx;
+			NWATCHCHECKS-=watchIdx>>1;
 			for(; watchIdx<Csize2 && slack<ClargestCoef; watchIdx+=2){ // NOTE: first innermost loop of RoundingSat
 				const Coef cf = data[watchIdx];
 				const Lit l = data[watchIdx+1];
@@ -374,20 +377,20 @@ struct Constr {
 					adj[l].emplace_back(cr,watchIdx);
 				}
 			}
-			NWATCHCHECKS+=watchIdx;
+			NWATCHCHECKS+=watchIdx>>1;
 			if(slack<ClargestCoef){ assert(watchIdx==Csize2); watchIdx=0; }
 		} // else we did not find enough watches last time, so we can skip looking for them now
 
-		if(slack>=ClargestCoef){
-			data[idx]=-c;
-			return WatchStatus::FOUNDNEW;
-		}else if(slack>=0){ // keep the watch, check for propagation
-			for(; watchIdx<Csize2 && std::abs(data[watchIdx])>slack; watchIdx+=2){ // NOTE: second innermost loop of RoundingSat
-				const Lit l = data[watchIdx+1];
-				if(isUnknown(l)){ NPROPCLAUSE+=(degree==1); NPROPCARD+=(degree!=1 && ClargestCoef==1); propagate(l,cr); }
-			}
-			return WatchStatus::FOUNDNONE;
-		}else return WatchStatus::CONFLICTING;
+		if(slack>=ClargestCoef){ data[idx]=-c; return WatchStatus::FOUNDNEW; }
+		if(slack<0) return WatchStatus::CONFLICTING;
+		// keep the watch, check for propagation
+		NPROPCHECKS-=watchIdx>>1;
+		for(; watchIdx<Csize2 && std::abs(data[watchIdx])>slack; watchIdx+=2){ // NOTE: second innermost loop of RoundingSat
+			const Lit l = data[watchIdx+1];
+			if(isUnknown(l)){ NPROPCLAUSE+=(degree==1); NPROPCARD+=(degree!=1 && ClargestCoef==1); propagate(l,cr); }
+		}
+		NPROPCHECKS+=watchIdx>>1;
+		return WatchStatus::FOUNDNONE;
 	}
 };
 
@@ -1738,6 +1741,7 @@ void print_stats() {
 	printf("c cardinality propagations %lld\n", NPROPCARD);
 	printf("c watch lookups %lld\n", NWATCHLOOKUPS);
 	printf("c watch checks %lld\n", NWATCHCHECKS);
+	printf("c propagation checks %lld\n", NPROPCHECKS);
 	printf("c constraint additions %lld\n", NADDEDLITERALS);
 	printf("c trail pops %lld\n", NTRAILPOPS);
 }
