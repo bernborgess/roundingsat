@@ -154,9 +154,10 @@ const int resize_factor=2;
 const Coef INF=1e9+1;
 
 double initial_time;
-long long NTRAILPOPS=0, NWATCHLOOKUPS=0, NWATCHCHECKS=0, NPROPCHECKS=0, NADDEDLITERALS=0;
+long long NTRAILPOPS=0, NWATCHLOOKUPS=0, NWATCHLOOKUPSBJ=0, NWATCHCHECKS=0, NPROPCHECKS=0, NADDEDLITERALS=0;
 long long NCONFL=0, NDECIDE=0, NPROP=0, NPROPCLAUSE=0, NPROPCARD=0;
-inline long long getDetTime(){ return 1+NADDEDLITERALS+NWATCHLOOKUPS+NWATCHCHECKS+NPROPCHECKS+NPROP+NTRAILPOPS+NDECIDE;}
+inline long long getDetTime(){ return 1+NADDEDLITERALS+NWATCHLOOKUPS+NWATCHLOOKUPSBJ+NWATCHCHECKS+NPROPCHECKS+NPROP+
+NTRAILPOPS+NDECIDE; }
 __int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
 long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
 long long NGCD=0, NCARDDETECT=0, NCORECARDINALITIES=0, NCORES=0, NSOLS=0;
@@ -264,7 +265,7 @@ struct Constr {
 		assert(!isSimple());
 		assert(countingProp || isWatched(i));
 		assert(isFalse(data[i+1]));
-		++NWATCHLOOKUPS;
+		++NWATCHLOOKUPSBJ;
 		slack += abs(data[i]); // TODO: slack -= data[i] when only watched propagation
 	}
 	inline WatchStatus propagateWatch(CRef cr, int& idx, Lit p){
@@ -1743,6 +1744,7 @@ void print_stats() {
 	printf("c clausal propagations %lld\n", NPROPCLAUSE);
 	printf("c cardinality propagations %lld\n", NPROPCARD);
 	printf("c watch lookups %lld\n", NWATCHLOOKUPS);
+	printf("c watch backjump lookups %lld\n", NWATCHLOOKUPSBJ);
 	printf("c watch checks %lld\n", NWATCHCHECKS);
 	printf("c propagation checks %lld\n", NPROPCHECKS);
 	printf("c constraint additions %lld\n", NADDEDLITERALS);
