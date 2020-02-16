@@ -683,16 +683,20 @@ struct Constraint{
 		if(simplifyToCardinality(true)) ++NCARDDETECT;
 	}
 
-	bool falsifiedCurrentLvlIsOne() const {
-		bool result = false;
-		for(int i=0; i<(int)vars.size(); ++i){
-			Var v = vars[i];
-			if((coefs[v]>0 && Level[-v]==decisionLevel()) || (coefs[v]<0 && Level[v]==decisionLevel())){
-				if(result) return false;
-				else result=true;
+	inline bool falseAtLevel(Var v, int lvl){
+		return (coefs[v]>0 && Level[-v]==lvl) || (coefs[v]<0 && Level[v]==lvl);
+	}
+	Var falsev1=0; Var falsev2=0;
+	bool falsifiedAtLvlIsOne(int lvl) {
+		if(getLit(falsev1)!=0 && getLit(falsev2)!=0 && falseAtLevel(falsev1,lvl) && falseAtLevel(falsev2,lvl)) return false;
+		falsev1=0; falsev2=0;
+		for(Var v: vars){
+			if(coefs[v]!=0 && falseAtLevel(v,lvl)){
+				if(falsev1==0) falsev1=v;
+				else{ falsev2=v; return false; };
 			}
 		}
-		return result;
+		return falsev1!=0;
 	}
 
 	// @return: earliest decision level that propagates a variable
@@ -1305,32 +1309,29 @@ void analyze(CRef confl){
 		assert(std::abs(confl_data.getCoef(-l))<INF);
 		Coef confl_coef_l = confl_data.getCoef(-l);
 		if(confl_coef_l>0) {
-			if (confl_data.falsifiedCurrentLvlIsOne()) {
-				break;
-			} else {
-				assert(Reason[std::abs(l)] != CRef_Undef);
-				if(originalRoundToOne){
-					confl_data.roundToOne(confl_coef_l,false);
-					confl_coef_l=1;
-				}
-				Constr& reasonC = ca[Reason[std::abs(l)]];
-				if (reasonC.learnt()) {
-					cBumpActivity(reasonC);
-					recomputeLBD(reasonC);
-				}
-				tmpConstraint.init(reasonC);
-				tmpConstraint.removeUnitsAndZeroes(); // NOTE: also saturates
-				tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack()); // NOTE: also saturates
-				assert(tmpConstraint.getCoef(l)>tmpConstraint.getSlack());
-				tmpConstraint.roundToOne(tmpConstraint.getCoef(l),!originalRoundToOne);
-				assert(tmpConstraint.getCoef(l)==1);
-				assert(tmpConstraint.getSlack()<=0);
-				for(Var v: tmpConstraint.vars) actSet.add(tmpConstraint.getLit(v));
-				confl_data.add(tmpConstraint,confl_coef_l);
-				tmpConstraint.reset();
-				assert(confl_data.getCoef(-l)==0);
-				assert(confl_data.getSlack()<0);
+			if (confl_data.falsifiedAtLvlIsOne(decisionLevel())) break;
+			assert(Reason[std::abs(l)] != CRef_Undef);
+			if(originalRoundToOne){
+				confl_data.roundToOne(confl_coef_l,false);
+				confl_coef_l=1;
 			}
+			Constr& reasonC = ca[Reason[std::abs(l)]];
+			if (reasonC.learnt()) {
+				cBumpActivity(reasonC);
+				recomputeLBD(reasonC);
+			}
+			tmpConstraint.init(reasonC);
+			tmpConstraint.removeUnitsAndZeroes(); // NOTE: also saturates
+			tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack()); // NOTE: also saturates
+			assert(tmpConstraint.getCoef(l)>tmpConstraint.getSlack());
+			tmpConstraint.roundToOne(tmpConstraint.getCoef(l),!originalRoundToOne);
+			assert(tmpConstraint.getCoef(l)==1);
+			assert(tmpConstraint.getSlack()<=0);
+			for(Var v: tmpConstraint.vars) actSet.add(tmpConstraint.getLit(v));
+			confl_data.add(tmpConstraint,confl_coef_l);
+			tmpConstraint.reset();
+			assert(confl_data.getCoef(-l)==0);
+			assert(confl_data.getSlack()<0);
 		}
 		undoOne();
 	}
