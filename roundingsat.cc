@@ -155,7 +155,8 @@ const Coef INF=1e9+1;
 
 double initial_time;
 long long NTRAILPOPS=0, NWATCHLOOKUPS=0, NWATCHLOOKUPSBJ=0, NWATCHCHECKS=0, NPROPCHECKS=0, NADDEDLITERALS=0;
-long long NCONFL=0, NDECIDE=0, NPROP=0, NPROPCLAUSE=0, NPROPCARD=0;
+long long NCONFL=0, NDECIDE=0, NPROP=0, NPROPCLAUSE=0, NPROPCARD=0, NPROPWATCH=0, NPROPCOUNTING=0;
+long long NWATCHED=0, NCOUNTING=0;
 inline long long getDetTime(){ return 1+NADDEDLITERALS+NWATCHLOOKUPS+NWATCHLOOKUPSBJ+NWATCHCHECKS+NPROPCHECKS+NPROP+
 NTRAILPOPS+NDECIDE; }
 __int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
@@ -178,7 +179,7 @@ std::ofstream proof_out; std::ofstream formula_out;
 ID last_proofID = 0; ID last_formID = 0;
 std::vector<ID> unitIDs;
 long long logStartTime=0;
-bool countingProp=false;
+float countingProp=0.5;
 bool clauseProp=true;
 bool cardProp=true;
 bool idxProp=true;
@@ -236,7 +237,8 @@ struct Constr {
 	struct {
 		unsigned original     : 1;
 		unsigned learnt       : 1;
-		unsigned lbd          : 30;
+		unsigned counting     : 1;
+		unsigned lbd          : 29;
 		unsigned status       : 2;
 		unsigned size         : 30;
 	} header;
@@ -257,13 +259,15 @@ struct Constr {
 	inline unsigned int lbd() const { return header.lbd; }
 	inline bool original() const { return header.original; }
 	inline bool learnt() const { return header.learnt; }
+	inline bool isCounting() const { return header.counting; }
+	inline void setCounting(bool c){ header.counting=(unsigned int) c; }
 	inline Coef largestCoef() const { assert(!isSimple()); return std::abs(data[0]); }
 	inline Coef coef(unsigned int i) const { return isSimple()?1:std::abs(data[i<<1]); }
 	inline Lit lit(unsigned int i) const { return isSimple()?data[i]:data[(i<<1)+1]; }
 	inline bool isWatched(unsigned int i) const { assert(!isSimple()); return data[i]<0; }
 	inline void undoFalsified(int i) {
 		assert(!isSimple());
-		assert(countingProp || isWatched(i));
+		assert(isCounting() || isWatched(i));
 		assert(isFalse(data[i+1]));
 		++NWATCHLOOKUPSBJ;
 		slack += abs(data[i]); // TODO: slack -= data[i] when only watched propagation
@@ -351,7 +355,7 @@ struct Constr {
 		const unsigned int Csize2 = 2*size(); const Coef ClargestCoef = largestCoef();
 		const Coef c = data[idx];
 
-		if(countingProp){ // use counting propagation
+		if(isCounting()){ // use counting propagation
 			slack-=c;
 			if(slack<0) return WatchStatus::CONFLICTING;
 			if(slack<ClargestCoef){
@@ -359,7 +363,10 @@ struct Constr {
 				NPROPCHECKS-=watchIdx>>1;
 				for(; watchIdx<Csize2 && data[watchIdx]>slack; watchIdx+=2){
 					const Lit l = data[watchIdx+1];
-					if(isUnknown(l)) { NPROPCLAUSE+=(degree==1); NPROPCARD+=(degree!=1 && ClargestCoef==1); propagate(l,cr); }
+					if(isUnknown(l)){
+						NPROPCLAUSE+=(degree==1); NPROPCARD+=(degree!=1 && ClargestCoef==1); ++NPROPCOUNTING;
+						propagate(l,cr);
+					}
 				}
 				NPROPCHECKS+=watchIdx>>1;
 			}
@@ -391,7 +398,10 @@ struct Constr {
 		NPROPCHECKS-=watchIdx>>1;
 		for(; watchIdx<Csize2 && std::abs(data[watchIdx])>slack; watchIdx+=2){ // NOTE: second innermost loop of RoundingSat
 			const Lit l = data[watchIdx+1];
-			if(isUnknown(l)){ NPROPCLAUSE+=(degree==1); NPROPCARD+=(degree!=1 && ClargestCoef==1); propagate(l,cr); }
+			if(isUnknown(l)){
+				NPROPCLAUSE+=(degree==1); NPROPCARD+=(degree!=1 && ClargestCoef==1); ++NPROPWATCH;
+				propagate(l,cr);
+			}
 		}
 		NPROPCHECKS+=watchIdx>>1;
 		return WatchStatus::FOUNDNONE;
@@ -1024,7 +1034,7 @@ struct {
 		constr->id = proofID;
 		constr->act = 0;
 		constr->degree = constraint.getDegree();
-		constr->header = {formula,learnt,length,(unsigned int)(locked?LOCKED:UNLOCKED),length};
+		constr->header = {formula,learnt,0,0x1FFFFFFF,(unsigned int)(locked?LOCKED:UNLOCKED),length};
 		constr->ntrailpops = -1;
 		constr->slack = asClause?std::numeric_limits<Val>::min():(asCard?std::numeric_limits<Val>::min()+1:-constr->degree);
 		constr->watchIdx = 0;
@@ -1194,7 +1204,16 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 		return cr;
 	}
 
-	if(countingProp){ // use counting propagation
+	Val watchSum=-C.degree-C.largestCoef();
+	unsigned int minWatches=0;
+	for(; minWatches<2*C.size() && watchSum<0; minWatches+=2) watchSum+=data[minWatches];
+	minWatches>>=1;
+	assert(C.size()>0);
+	assert(minWatches>0);
+	C.setCounting(countingProp==1 || countingProp>minWatches/C.size());
+
+	if(C.isCounting()){ // use counting propagation
+		++NCOUNTING;
 		for(unsigned int i=0; i<2*C.size(); i+=2){
 			Lit l = data[i+1];
 			adj[l].emplace_back(cr,i);
@@ -1210,6 +1229,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 	}
 
 	// watched propagation
+	++NWATCHED;
 	for(unsigned int i=0; i<2*C.size() && C.slack<C.largestCoef(); i+=2){
 		Lit l = data[i+1];
 		if(!isFalse(l) || Pos[std::abs(l)]>=qhead){
@@ -1730,6 +1750,8 @@ void print_stats() {
 	printf("c inprocessing phases %lld\n", cnt_reduceDB);
 	printf("c clauses %lld\n", NCLAUSESLEARNED);
 	printf("c cardinalities %lld\n", NCARDINALITIESLEARNED);
+	printf("c watched constraints %lld\n", NWATCHED);
+	printf("c counting constraints %lld\n", NCOUNTING);
 	printf("c general constraints %lld\n", NGENERALSLEARNED);
 	printf("c average constraint length %.2f\n", NCONFL==0?0:(double)LEARNEDLENGTHSUM/NCONFL);
 	printf("c average constraint degree %.2f\n", NCONFL==0?0:(double)LEARNEDDEGREESUM/NCONFL);
@@ -1745,6 +1767,8 @@ void print_stats() {
 	}
 	printf("c clausal propagations %lld\n", NPROPCLAUSE);
 	printf("c cardinality propagations %lld\n", NPROPCARD);
+	printf("c watched propagations %lld\n", NPROPWATCH);
+	printf("c counting propagations %lld\n", NPROPCOUNTING);
 	printf("c watch lookups %lld\n", NWATCHLOOKUPS);
 	printf("c watch backjump lookups %lld\n", NWATCHLOOKUPSBJ);
 	printf("c watch checks %lld\n", NWATCHCHECKS);
@@ -1823,11 +1847,11 @@ void usage(char* name) {
 	printf("  --verbosity=arg  Set the verbosity of the output (default %d).\n",verbosity);
 	printf("\n");
 	printf("  --var-decay=arg  Set the VSIDS decay factor (0.5<=arg<1; default %lf).\n",v_vsids_decay);
-	printf("  --rinc=arg       Set the base of the Luby restart sequence (floating point number >=1; default %lf).\n",rinc);
+	printf("  --rinc=arg       Set the base of the Luby restart sequence (float >=1; default %lf).\n",rinc);
 	printf("  --rfirst=arg     Set the interval of the Luby restart sequence (integer >=1; default %lld).\n",rfirst);
 	printf("  --original-rto=arg Set whether to use RoundingSat's original round-to-one conflict analysis (0 or 1; default %d).\n",originalRoundToOne);
 	printf("  --opt-mode=arg   Set optimization mode: 0 linear, 1(2) (lazy) core-guided, 3(4) (lazy) hybrid (default %d).\n",opt_mode);
-	printf("  --prop-counting=arg Counting propagation instead of watched propagation (0 or 1; default %d).\n",countingProp);
+	printf("  --prop-counting=arg Counting propagation instead of watched propagation (float between 0 (no counting) and 1 (always counting)); default %lf).\n",countingProp);
 	printf("  --prop-clause=arg Optimized two-watched propagation for clauses (0 or 1; default %d).\n",clauseProp);
 	printf("  --prop-card=arg  Optimized watched propagation for cardinalities (0 or 1; default %d).\n",cardProp);
 	printf("  --prop-idx=arg   Optimize index of watches during propagation (0 or 1; default %d).\n",idxProp);
@@ -1879,7 +1903,7 @@ std::string read_options(int argc, char**argv) {
 	getOptionNum(opt_val,"rfirst",[](double x)->bool{return x>=1;},rfirst);
 	getOptionNum(opt_val,"original-rto",[](double x)->bool{return x==0 || x==1;},originalRoundToOne);
 	getOptionNum(opt_val,"opt-mode",[](double x)->bool{return x==0 || x==1 || x==2 || x==3 || x==4;},opt_mode);
-	getOptionNum(opt_val,"prop-counting",[](double x)->bool{return x==0 || x==1;},countingProp);
+	getOptionNum(opt_val,"prop-counting",[](double x)->bool{return x>=0 || x<=1;},countingProp);
 	getOptionNum(opt_val,"prop-clause",[](double x)->bool{return x==0 || x==1;},clauseProp);
 	getOptionNum(opt_val,"prop-card",[](double x)->bool{return x==0 || x==1;},cardProp);
 	getOptionNum(opt_val,"prop-idx",[](double x)->bool{return x==0 || x==1;},idxProp);
