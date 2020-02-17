@@ -1108,11 +1108,12 @@ double c_vsids_inc=1.0;
 double c_vsids_decay=0.999;
 void cDecayActivity() { c_vsids_inc *= (1 / c_vsids_decay); }
 void cBumpActivity (Constr& c) {
-		if ( (c.act += c_vsids_inc) > 1e20 ) {
-			// Rescale:
-			for (size_t i = 0; i < constraints.size(); i++)
-				ca[constraints[i]].act *= 1e-20;
-			c_vsids_inc *= 1e-20; } }
+	c.act += c_vsids_inc;
+	if(c.act > 1e20){ // Rescale:
+		for (size_t i = 0; i < constraints.size(); i++) ca[constraints[i]].act *= 1e-20;
+		c_vsids_inc *= 1e-20;
+	}
+}
 
 // ---------------------------------------------------------------------
 // Search
@@ -1283,7 +1284,7 @@ void recomputeLBD(Constr& C) {
 	if(C.lbd()<=2) return;
 	assert(tmpSet.size()==0);
 	for (int i=0; i<(int)C.size(); i++) if (isFalse(C.lit(i))) tmpSet.add(Level[-C.lit(i)]);
-	C.setLBD(tmpSet.size());
+	C.setLBD(1+tmpSet.size()); // +1 because, e.g., a binary learned clause contains 1 false literal but should have LBD 2
 	tmpSet.reset();
 }
 
