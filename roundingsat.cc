@@ -1210,7 +1210,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 	minWatches>>=1;
 	assert(C.size()>0);
 	assert(minWatches>0);
-	C.setCounting(countingProp==1 || countingProp>minWatches/C.size());
+	C.setCounting(countingProp==1 || countingProp>(1-minWatches/(float)C.size()));
 
 	if(C.isCounting()){ // use counting propagation
 		++NCOUNTING;
