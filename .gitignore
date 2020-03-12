@@ -48,5 +48,3 @@ roundingsat*_debug
 # proof logging
 *.formula
 *.proof
-test_proofs.sh
-hornproof.opb
