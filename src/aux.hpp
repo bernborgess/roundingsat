@@ -99,7 +99,7 @@ inline T ceildiv_safe(const T& p,const T& q){ assert(q>0); return (p<0?-floordiv
 template <class T>
 inline T floordiv_safe(const T& p,const T& q){ assert(q>0); return (p<0?-ceildiv(-p,q):floordiv(p,q)); }
 
-unsigned int gcd(unsigned int u, unsigned int v){
+unsigned int gcd(unsigned int u, unsigned int v){ // TODO: C++17 provides std::gcd
 	assert(u!=0);
 	assert(v!=0);
 	if (u%v==0) return v;

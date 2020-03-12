@@ -92,7 +92,7 @@ std::ofstream proof_out; std::ofstream formula_out;
 ID last_proofID = 0; ID last_formID = 0;
 std::vector<ID> unitIDs;
 long long logStartTime=0;
-float countingProp=0.5;
+float countingProp=0.7;
 bool clauseProp=true;
 bool cardProp=true;
 bool idxProp=true;
