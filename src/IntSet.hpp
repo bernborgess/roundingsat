@@ -31,7 +31,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "aux.hpp"
 
-struct IntSet{ // TODO: parametrize type // TODO: external data structure
+struct IntSet{ // TODO: template to long long, int128, ...?
 private:
 	std::vector<bool> _values={false};
 	std::vector<bool>::iterator values=_values.begin();
@@ -49,14 +49,20 @@ public:
 		keys.clear();
 	}
 
-	inline void resize(int size){ aux::resizeIntMap(_values,values,resize_factor,size,_unused_()); }
+	inline void resize(int size){ aux::resizeIntMap(_values,values,size,resize_factor,_unused_()); }
 	inline size_t size() const { return keys.size(); }
 
 	inline bool has(int key) const { return _values.size()>(unsigned int)2*std::abs(key) && values[key]!=_unused_(); }
 	void add(int key){
 		if(_values.size()<=(unsigned int)2*std::abs(key)) resize(std::abs(key));
 		if(values[key]!=_unused_()) return;
-		values[key]=true;
+		assert(!aux::contains(keys,key));
+		values[key]=!_unused_();
 		keys.push_back(key);
 	}
 };
+
+std::ostream& operator<<(std::ostream& os, const IntSet& is){
+	for(int k: is.keys) if(is.has(k)) os << k << " ";
+	return os;
+}

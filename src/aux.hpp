@@ -43,6 +43,11 @@ std::ostream& operator<<(std::ostream& os, const std::unordered_map<T,U>& m){
 	for(const auto& e: m) os<<e<<";";
 	return os;
 }
+template<class T>
+std::ostream& operator<<(std::ostream& os, const std::vector<T>& m){
+	for(const auto& e: m) os<<e<<" ";
+	return os;
+}
 std::ostream& operator<<(std::ostream& os, __int128 x){
 	if(x<0){ os << "-"; x = -x; }
 	uint64_t tenPow18 = 1000000000000000000;
