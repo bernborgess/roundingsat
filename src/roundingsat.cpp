@@ -313,18 +313,23 @@ struct Constraint{
 	}
 
 	template<class S, class L>
-	void add(Constraint<S,L>& c, SMALL mult=1, bool saturateAndReduce=true, bool partial=false){
+	void add(Constraint<S,L>& c, SMALL cmult=1, SMALL thismult=1, bool saturateAndReduce=true, bool partial=false){
 		assert(!saturateAndReduce || isSaturated());
 		assert(c._unused_()<=_unused_()); // don't add large stuff into small stuff
-		assert(mult>=0);
-		if(logProof()) proofBuffer << c.proofBuffer.str() << proofMult(mult) << "+ ";
+		assert(cmult>=0);
+		if(logProof()) proofBuffer << proofMult(thismult) << c.proofBuffer.str() << proofMult(cmult) << "+ ";
+		if(thismult!=1){
+			degree = thismult*getDegree();
+			rhs *= thismult;
+			for(Var v: vars) coefs[v] *= thismult;
+		}
 		LARGE old_degree = getDegree();
-		degree+=(LARGE)mult*(LARGE)c.getDegree();
-		rhs+=(LARGE)mult*(LARGE)c.getRhs();
+		degree+=(LARGE)cmult*(LARGE)c.getDegree();
+		rhs+=(LARGE)cmult*(LARGE)c.getRhs();
 		for(Var v: c.vars){
 			assert(v<(Var)coefs.size());
 			assert(v>0);
-			SMALL val = mult*c.coefs[v];
+			SMALL val = cmult*c.coefs[v];
 			if(coefs[v]==_unused_()){
 				vars.push_back(v);
 				coefs[v]=val;
@@ -1218,11 +1223,17 @@ void analyze(CRef confl){
 			tmpConstraint.removeUnitsAndZeroes(); // NOTE: also saturates
 			tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack()); // NOTE: also saturates
 			assert(tmpConstraint.getCoef(l)>tmpConstraint.getSlack());
-			tmpConstraint.roundToOne(tmpConstraint.getCoef(l),!originalRoundToOne);
-			assert(tmpConstraint.getCoef(l)==1);
+			Coef slk = tmpConstraint.getSlack();
+			if(slk>0){
+				Coef div = slk+1;
+				if(originalRoundToOne){ tmpConstraint.weaken(-(tmpConstraint.getCoef(l)%div),l); tmpConstraint.saturate(); }
+				tmpConstraint.roundToOne(div,!originalRoundToOne);
+			}
 			assert(tmpConstraint.getSlack()<=0);
 			for(Var v: tmpConstraint.vars) actSet.add(tmpConstraint.getLit(v));
-			confl_data.add(tmpConstraint,confl_coef_l);
+			Coef reason_coef_l = tmpConstraint.getCoef(l);
+			Coef gcd_coef_l = aux::gcd(reason_coef_l,confl_coef_l);
+			confl_data.add(tmpConstraint,confl_coef_l/gcd_coef_l,reason_coef_l/gcd_coef_l);
 			tmpConstraint.reset();
 			assert(confl_data.getCoef(-l)==0);
 			assert(confl_data.getSlack()<0);
@@ -1839,10 +1850,16 @@ void extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit 
 			tmpConstraint.removeUnitsAndZeroes();
 			tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack()); // NOTE: also saturates
 			assert(tmpConstraint.getCoef(l)>tmpConstraint.getSlack());
-			tmpConstraint.roundToOne(tmpConstraint.getCoef(l),true);
-			assert(tmpConstraint.getCoef(l)==1);
+			Coef slk = tmpConstraint.getSlack();
+			if(slk>0){
+				Coef div = slk+1;
+				if(originalRoundToOne){ tmpConstraint.weaken(-(tmpConstraint.getCoef(l)%div),l); tmpConstraint.saturate(); }
+				tmpConstraint.roundToOne(div,!originalRoundToOne);
+			}
 			assert(tmpConstraint.getSlack()<=0);
-			confl_data.add(tmpConstraint,confl_coef_l);
+			Coef reason_coef_l = tmpConstraint.getCoef(l);
+			Coef gcd_coef_l = aux::gcd(reason_coef_l,confl_coef_l);
+			confl_data.add(tmpConstraint,confl_coef_l/gcd_coef_l,reason_coef_l/gcd_coef_l);
 			tmpConstraint.reset();
 			assert(confl_data.getCoef(-l)==0);
 			assert(confl_data.getSlack()<0);
@@ -2116,7 +2133,7 @@ ID handleInconsistency(longConstr& reformObj, intConstr& core, Val& lower_bound,
 		reformObj.resize(newN+1);
 		// reformulate the objective
 		core.copyTo(tmpConstraint,true);
-		reformObj.add(tmpConstraint,mult,false);
+		reformObj.add(tmpConstraint,mult,1,false);
 		tmpConstraint.reset();
 		reformObj.addLhs(mult,newN); // add only one variable for now
 		assert(lower_bound==-reformObj.getDegree());
@@ -2135,7 +2152,7 @@ ID handleInconsistency(longConstr& reformObj, intConstr& core, Val& lower_bound,
 		// reformulate the objective
 		for(Var v=oldN+1; v<=newN; ++v) core.addLhs(-1,v);
 		core.copyTo(tmpConstraint,true);
-		reformObj.add(tmpConstraint,mult,false);
+		reformObj.add(tmpConstraint,mult,1,false);
 		assert(lower_bound==-reformObj.getDegree());
 		// add channeling constraints
 		addInputConstraint(tmpConstraint,false,true);
@@ -2217,12 +2234,12 @@ void optimize(intConstr& origObj, intConstr& core){
 				origObj.copyTo(tmpConstraint,true);
 				tmpConstraint.addRhs(1-last_sol_obj_val);
 				tmpConstraint.resetBuffer(origUpperBound);
-				coreAggregate.add(tmpConstraint,1,false);
+				coreAggregate.add(tmpConstraint,1,1,false);
 				tmpConstraint.reset();
 				origObj.copyTo(tmpConstraint);
 				tmpConstraint.addRhs(lower_bound);
 				tmpConstraint.resetBuffer(origLowerBound);
-				coreAggregate.add(tmpConstraint,1,false);
+				coreAggregate.add(tmpConstraint,1,1,false);
 				tmpConstraint.reset();
 				coreAggregate.logInconsistency(proof_out, last_proofID);
 				assert(coreAggregate.getSlack()<0);
