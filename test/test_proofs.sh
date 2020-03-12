@@ -2,6 +2,7 @@
 
 cd ..
 make debug
+#g++ -o roundingsat_debug roundingsat.cc -g -O3
 cd test
 
 declare -a arr_dec=(
