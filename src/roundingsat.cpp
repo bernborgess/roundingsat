@@ -62,7 +62,28 @@ static void SIGINT_exit(int signum){
 }
 
 // ---------------------------------------------------------------------
-// Global variables
+// Internal datastructures
+
+struct CRef {
+	uint32_t ofs;
+	bool operator==(CRef const&o)const{return ofs==o.ofs;}
+	bool operator!=(CRef const&o)const{return ofs!=o.ofs;}
+	bool operator< (CRef const&o)const{return ofs< o.ofs;}
+};
+const CRef CRef_Undef = { UINT32_MAX };
+std::ostream& operator<<(std::ostream& os, CRef cr) { return os << cr.ofs; }
+
+struct Watch {
+	CRef cref;
+	int idx; // >=0: index of watched literal (counting/watched propagation). <0: blocked literal (clausal propagation).
+	Watch(CRef cr, int i):cref(cr),idx(i){};
+	bool operator==(const Watch& other)const{return other.cref==cref && other.idx==idx;}
+};
+
+enum DeletionStatus { LOCKED, UNLOCKED, FORCEDELETE, MARKEDFORDELETE };
+enum WatchStatus { FOUNDNEW, FOUNDNONE, CONFLICTING };
+enum SolveState { SAT, UNSAT, INPROCESSING };
+
 struct Stats {
 	long long NTRAILPOPS=0, NWATCHLOOKUPS=0, NWATCHLOOKUPSBJ=0, NWATCHCHECKS=0, NPROPCHECKS=0, NADDEDLITERALS=0;
 	long long NCONFL=0, NDECIDE=0, NPROP=0, NPROPCLAUSE=0, NPROPCARD=0, NPROPWATCH=0, NPROPCOUNTING=0;
@@ -77,54 +98,42 @@ struct Stats {
 		return 1+NADDEDLITERALS+NWATCHLOOKUPS+NWATCHLOOKUPSBJ+NWATCHCHECKS+NPROPCHECKS+NPROP+NTRAILPOPS+NDECIDE;
 	}
 };
-Stats stats;
 
-const int resize_factor=2;
-double initial_time;
-double rinc=2;
-long long rfirst=100;
-long long nbconstrsbeforereduce=2000;
-long long incReduceDB=300;
+// ---------------------------------------------------------------------
+// Globals
+
+// Parameters
+int verbosity=1;
+bool print_sol=false;
 bool originalRoundToOne=false;
 int opt_mode=4;
-long long nconfl_to_restart=0;
-bool print_sol = false;
-std::string proof_log_name;
-bool logProof(){ return !proof_log_name.empty(); }
-std::ofstream proof_out; std::ofstream formula_out;
-ID last_proofID = 0; ID last_formID = 0;
-std::vector<ID> unitIDs;
-long long logStartTime=0;
-float countingProp=0.7;
 bool clauseProp=true;
 bool cardProp=true;
 bool idxProp=true;
 bool supProp=true;
+float countingProp=0.7;
 
-struct CRef {
-	uint32_t ofs;
-	bool operator==(CRef const&o)const{return ofs==o.ofs;}
-	bool operator!=(CRef const&o)const{return ofs!=o.ofs;}
-	bool operator< (CRef const&o)const{return ofs< o.ofs;}
-};
-const CRef CRef_Undef = { UINT32_MAX };
-std::ostream& operator<<(std::ostream& os, CRef cr) { return os << cr.ofs; }
+double rinc=2;
+long long rfirst=100;
+long long nbconstrsbeforereduce=2000;
+long long incReduceDB=300;
+long long nconfl_to_restart=0;
+int resize_factor=2;
+double v_vsids_decay=0.95;
+double v_vsids_inc=1.0;
+double c_vsids_inc=1.0;
+double c_vsids_decay=0.999;
 
-int verbosity = 1;
+// Variables
+Stats stats;
+IntSet tmpSet;
+IntSet actSet;
+
+double initial_time;
 Var n = 0;
 Var orig_n = 0;
 std::vector<CRef> constraints;
 std::unordered_map<ID,CRef> external;
-struct Watch {
-	CRef cref;
-	int idx; // >=0: index of watched literal (counting/watched propagation). <0: blocked literal (clausal propagation).
-	Watch(CRef cr, int i):cref(cr),idx(i){};
-	bool operator==(const Watch& other)const{return other.cref==cref && other.idx==idx;}
-};
-
-IntSet tmpSet;
-IntSet actSet;
-
 std::vector<std::vector<Watch>> _adj={{}}; std::vector<std::vector<Watch>>::iterator adj;
 std::vector<int> _Level={-1}; std::vector<int>::iterator Level;
 inline bool isTrue(Lit l){ return ~Level[l]; }
@@ -139,11 +148,17 @@ Val last_sol_obj_val = std::numeric_limits<Val>::max();
 inline bool foundSolution(){ return last_sol_obj_val<std::numeric_limits<Val>::max(); }
 std::vector<bool> last_sol;
 std::vector<Lit> phase;
+std::vector<double> activity;
 inline void newDecisionLevel() { trail_lim.push_back(trail.size()); }
 inline int decisionLevel() { return trail_lim.size(); }
 
-enum DeletionStatus { LOCKED, UNLOCKED, FORCEDELETE, MARKEDFORDELETE };
-enum WatchStatus { FOUNDNEW, FOUNDNONE, CONFLICTING };
+// Proof logging
+std::string proof_log_name;
+bool logProof(){ return !proof_log_name.empty(); }
+std::ofstream proof_out; std::ofstream formula_out;
+ID last_proofID = 0; ID last_formID = 0;
+std::vector<ID> unitIDs;
+long long logStartTime=0;
 
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
@@ -936,7 +951,6 @@ struct {
 // ---------------------------------------------------------------------
 // VSIDS
 
-std::vector<double> activity;
 struct{
 	int cap=0;
 	// segment tree (fast implementation of priority queue).
@@ -977,8 +991,6 @@ struct{
 	}
 } order_heap;
 
-double v_vsids_decay=0.95;
-double v_vsids_inc=1.0;
 void vDecayActivity() { v_vsids_inc *= (1 / v_vsids_decay); }
 void vBumpActivity(Var v){
 	assert(v>0);
@@ -993,8 +1005,6 @@ void vBumpActivity(Var v){
 		order_heap.percolateUp(v);
 }
 
-double c_vsids_inc=1.0;
-double c_vsids_decay=0.999;
 void cDecayActivity() { c_vsids_inc *= (1 / c_vsids_decay); }
 void cBumpActivity (Constr& c) {
 	c.act += c_vsids_inc;
@@ -1883,8 +1893,6 @@ void extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit 
 	assert(assumpSlack(assumptions,outCore)<0);
 	backjumpTo(0);
 }
-
-enum SolveState { SAT, UNSAT, INPROCESSING };
 
 SolveState solve(const IntSet& assumptions, intConstr& out) {
 	out.reset();
