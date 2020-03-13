@@ -38,6 +38,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <cstring>
 #include <csignal>
 #include <unordered_map>
+#include <memory>
 
 #include "aux.hpp"
 #include "typedefs.hpp"
@@ -99,6 +100,28 @@ struct Stats {
 	}
 };
 
+struct Logger{
+	std::ofstream formula_out;
+	std::ofstream proof_out;
+	ID last_formID = 0;
+	ID last_proofID = 0;
+	std::vector<ID> unitIDs;
+
+	Logger(std::string& proof_log_name){
+		formula_out = std::ofstream(proof_log_name+".formula");
+		formula_out << "* #variable= 0 #constraint= 0\n";
+		formula_out << " >= 0 ;\n"; ++last_formID;
+		proof_out = std::ofstream(proof_log_name+".proof");
+		proof_out << "pseudo-Boolean proof version 1.0\n";
+		proof_out << "l 1\n"; ++last_proofID;
+	}
+
+	void flush(){
+		formula_out.flush();
+		proof_out.flush();
+	}
+};
+
 // ---------------------------------------------------------------------
 // Globals
 
@@ -126,6 +149,7 @@ double c_vsids_decay=0.999;
 
 // Variables
 Stats stats;
+std::shared_ptr<Logger> logger;
 IntSet tmpSet;
 IntSet actSet;
 
@@ -151,14 +175,7 @@ std::vector<Lit> phase;
 std::vector<double> activity;
 inline void newDecisionLevel() { trail_lim.push_back(trail.size()); }
 inline int decisionLevel() { return trail_lim.size(); }
-
-// Proof logging
-std::string proof_log_name;
-bool logProof(){ return !proof_log_name.empty(); }
-std::ofstream proof_out; std::ofstream formula_out;
-ID last_proofID = 0; ID last_formID = 0;
-std::vector<ID> unitIDs;
-long long logStartTime=0;
+ID crefID = 0;
 
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
@@ -170,6 +187,7 @@ struct Constraint{
 	std::vector<Var> vars;
 	std::vector<SMALL> coefs;
 	std::stringstream proofBuffer;
+	std::shared_ptr<Logger> plogger;
 	static constexpr SMALL _unused_(){ return std::numeric_limits<SMALL>::max(); }
 	static constexpr LARGE _invalid_(){ return std::numeric_limits<LARGE>::min(); }
 
@@ -182,17 +200,26 @@ struct Constraint{
 	inline void resize(size_t s){ if(s>coefs.size()) coefs.resize(s,_unused_()); }
 
 	void resetBuffer(ID proofID){
+		assert(plogger);
 		proofBuffer.clear();
 		proofBuffer.str(std::string());
 		proofBuffer << proofID << " ";
 	}
+	void initializeLogging(std::shared_ptr<Logger>& l){
+		assert(l);
+		assert(isReset());
+		plogger=l;
+		resetBuffer(1);
+	}
+	template<class T>
+	inline static std::string proofMult(T mult){ return (mult==1?"":std::to_string(mult)+" * "); }
 
 	bool isReset() const { return vars.size()==0 && rhs==0; }
 	void reset(){
 		for(Var v: vars) coefs[v]=_unused_();
 		vars.clear();
 		rhs=0; degree = 0;
-		if(logProof()) resetBuffer(1); // NOTE: proofID 1 equals the constraint 0 >= 0
+		if(plogger) resetBuffer(1); // NOTE: proofID 1 equals the constraint 0 >= 0
 	}
 
 	inline void addRhs(LARGE r){ rhs+=r; if(degree!=_invalid_()) degree+=r; }
@@ -238,7 +265,7 @@ struct Constraint{
 	}
 	inline void weaken(SMALL m, Lit l){ // add m*(l>=0) if m>0 and -m*(-l>=-1) if m<0
 		if(m==0) return;
-		if(logProof()){
+		if(plogger){
 			if(m>0) proofBuffer << (l<0?"~x":"x") << std::abs(l) <<  " " << proofMult(m) << "+ ";
 			else proofBuffer << (l<0?"x":"~x") << std::abs(l) <<  " " << proofMult(-m) << "+ ";
 		}
@@ -248,11 +275,12 @@ struct Constraint{
 
 	// @post: preserves order of vars
 	void removeUnitsAndZeroes(bool doSaturation=true){
-		if(logProof()){
+		if(plogger){
 			for(Var v: vars){
 				Lit l = getLit(v); SMALL c = getCoef(l);
+				if(l==0) continue;
 				if(isUnit(l)) proofBuffer << (l<0?"x":"~x") << v << " " << proofMult(c) << "+ ";
-				else if (isUnit(-l)) proofBuffer << unitIDs[Pos[v]] << " " << proofMult(c) << "+ ";
+				else if(isUnit(-l)) proofBuffer << plogger->unitIDs[Pos[v]] << " " << proofMult(c) << "+ ";
 			}
 		}
 		int j=0;
@@ -294,7 +322,7 @@ struct Constraint{
 
 	// @post: preserves order of vars
 	void saturate(const std::vector<Var>& vs){
-		if(logProof() && !isSaturated()) proofBuffer << "s "; // log saturation only if it modifies the constraint
+		if(plogger && !isSaturated()) proofBuffer << "s "; // log saturation only if it modifies the constraint
 		LARGE w = getDegree();
 		if(w<=0){ // NOTE: does not call reset(0), as we do not want to reset the buffer
 			for(Var v: vars) coefs[v]=_unused_();
@@ -324,7 +352,7 @@ struct Constraint{
 		for(Var v: vars) out.coefs[v]=mult*coefs[v];
 		if(inverted || degree==_invalid_()) out.degree=out._invalid_();
 		else out.degree=degree;
-		if(logProof()){
+		if(plogger){
 			out.proofBuffer.str(std::string());
 			out.proofBuffer << proofBuffer.str() << proofMult(mult);
 		}
@@ -335,7 +363,7 @@ struct Constraint{
 		assert(!saturateAndReduce || isSaturated());
 		assert(c._unused_()<=_unused_()); // don't add large stuff into small stuff
 		assert(cmult>=0);
-		if(logProof()) proofBuffer << proofMult(thismult) << c.proofBuffer.str() << proofMult(cmult) << "+ ";
+		if(plogger) proofBuffer << proofMult(thismult) << c.proofBuffer.str() << proofMult(cmult) << "+ ";
 		if(thismult!=1){
 			degree = thismult*getDegree();
 			rhs *= thismult;
@@ -392,7 +420,7 @@ struct Constraint{
 		rhs=aux::ceildiv_safe<LARGE>(rhs,d);
 		degree=_invalid_();
 		saturate(); // NOTE: needed, as weakening can change degree significantly
-		if(logProof()) proofBuffer << d << " d s ";
+		if(plogger) proofBuffer << d << " d s ";
 	}
 
 	bool divideByGCD(){
@@ -411,7 +439,7 @@ struct Constraint{
 		// NOTE: as all coefficients are divisible, we can aux::ceildiv the rhs instead of the degree
 		rhs=aux::ceildiv_safe<LARGE>(rhs,_gcd);
 		if(degree!=_invalid_()) degree=aux::ceildiv_safe<LARGE>(degree,_gcd);
-		if(logProof()) proofBuffer << _gcd << " d ";
+		if(plogger) proofBuffer << _gcd << " d ";
 		return true;
 	}
 
@@ -558,7 +586,7 @@ struct Constraint{
 		}
 		assert(skippable>=largeCoefsNeeded);
 
-		if(logProof()){
+		if(plogger){
 			SMALL div_coef = std::abs(coefs[vars[largeCoefsNeeded-1]]);
 			for(int i=0; i<largeCoefsNeeded; ++i){ // partially weaken large vars
 				Lit l = getLit(vars[i]);
@@ -588,7 +616,9 @@ struct Constraint{
 	}
 
 	// @pre: reducible to unit over v
-	void reduceToUnit(Var v_unit){
+	void logUnit(Var v_unit){
+		assert(plogger);
+		// reduce to unit over v
 		removeUnitsAndZeroes();
 		assert(getLit(v_unit)!=0);
 		for(Var v: vars) if(v!=v_unit) weaken(-coefs[v],v);
@@ -598,6 +628,8 @@ struct Constraint{
 		if(coefs[v_unit]>0){ coefs[v_unit]=1; rhs=1;}
 		else{ coefs[v_unit]=-1; rhs=0; }
 		degree=1;
+		logProofLine("u", stats);
+		plogger->unitIDs.push_back(plogger->last_proofID);
 	}
 
 	void sortInDecreasingCoefOrder() {
@@ -608,31 +640,31 @@ struct Constraint{
 		return true;
 	}
 
-	void logAsInput(std::ofstream& proof_out, std::ofstream& formula_out, ID& last_proofID, ID& last_formID){
-		toStreamAsOPB(formula_out);
-		proof_out << "l " << ++last_formID << "\n";
-		resetBuffer(++last_proofID); // ensure consistent proofBuffer
+	void logAsInput(){
+		assert(plogger);
+		toStreamAsOPB(plogger->formula_out);
+		plogger->proof_out << "l " << ++plogger->last_formID << "\n";
+		resetBuffer(++plogger->last_proofID); // ensure consistent proofBuffer
 	}
 
-	void logProofLine(std::string info, std::ofstream& proof_out, ID& last_proofID, Stats& sts){
+	void logProofLine(std::string info, Stats& sts){
+		assert(plogger);
 		_unused(info); _unused(sts);
-//		if(logStartTime<sts.getDetTime()){
-		proof_out << "p " << proofBuffer.str() << "0\n";
-		resetBuffer(++last_proofID); // ensure consistent proofBuffer
+		plogger->proof_out << "p " << proofBuffer.str() << "0\n";
+		resetBuffer(++plogger->last_proofID); // ensure consistent proofBuffer
 		#if !NDEBUG
-		proof_out << "* " << sts.getDetTime() << " " << info << "\n";
-		proof_out << "e " << last_proofID << " ";
-		toStreamAsOPB(proof_out);
+		plogger->proof_out << "* " << sts.getDetTime() << " " << info << "\n";
+		plogger->proof_out << "e " << plogger->last_proofID << " ";
+		toStreamAsOPB(plogger->proof_out);
 		#endif
-//		}else{
-//			logAsInput(proof_out, formula_out, last_proofID, last_formID);
-//		}
 	}
 
-	void logInconsistency(std::ofstream& proof_out, ID& last_proofID, Stats& sts){
+	void logInconsistency(Stats& sts){
+		assert(plogger);
 		removeUnitsAndZeroes();
-		logProofLine("i", proof_out, last_proofID, sts);
-		proof_out << "c " << last_proofID << " 0" << std::endl;
+		logProofLine("i", sts);
+		assert(getSlack()<0);
+		plogger->proof_out << "c " << plogger->last_proofID << " 0" << std::endl;
 	}
 
 	void toStreamAsOPB(std::ofstream& o) {
@@ -660,7 +692,7 @@ std::ostream & operator<<(std::ostream & o, Constraint<S,L>& C) {
 	return o;
 }
 
-using intConstr = Constraint<int,long long>;
+using intConstr = Constraint<int,long long>; // TODO: move to typedefs
 using longConstr = Constraint<long long,__int128>;
 
 intConstr tmpConstraint;
@@ -857,7 +889,7 @@ struct Constr {
 		out.addRhs(degree);
 		for(size_t i=0;i<size();++i){ assert(coef(i)!=0); out.addLhs(coef(i), lit(i)); }
 		out.degree=degree;
-		if(logProof()) out.resetBuffer(id);
+		if(out.plogger) out.resetBuffer(id);
 	}
 };
 std::ostream & operator<<(std::ostream & o, const Constr& C) {
@@ -906,8 +938,7 @@ struct {
 	}
 
 	// TODO: allow constraints with 10^18 bit degree
-	CRef alloc(intConstr& constraint, ID proofID, bool formula, bool learnt, bool locked){
-		assert(proofID!=0);
+	CRef alloc(intConstr& constraint, bool formula, bool learnt, bool locked){
 		assert(constraint.getDegree()>0);
 		assert(constraint.getDegree()<INF);
 		assert(constraint.isSaturated());
@@ -924,7 +955,7 @@ struct {
 		capacity(at);
 		Constr* constr = (Constr*)(memory+old_at);
 		new (constr) Constr;
-		constr->id = proofID;
+		constr->id = logger?logger->last_proofID:++crefID; assert(constr->id>0);
 		constr->act = 0;
 		constr->degree = constraint.getDegree();
 		constr->header = {formula,learnt,0,0x1FFFFFFF,(unsigned int)(locked?LOCKED:UNLOCKED),length};
@@ -1025,14 +1056,12 @@ void uncheckedEnqueue(Lit p, CRef from){
 	Reason[v] = from;
 	if(decisionLevel()==0){
 		Reason[v] = CRef_Undef; // no need to keep track of reasons for unit literals
-		if(logProof()){
+		if(logger){
 			Constr& C = ca[from];
 			C.toConstraint(logConstraint);
-			logConstraint.reduceToUnit(v);
-			logConstraint.logProofLine("u", proof_out, last_proofID, stats);
+			logConstraint.logUnit(v);
 			logConstraint.reset();
-			assert(unitIDs.size()==trail.size());
-			unitIDs.push_back(last_proofID);
+			assert(logger->unitIDs.size()==trail.size()+1);
 		}
 	}
 	Level[p] = decisionLevel();
@@ -1048,9 +1077,8 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 	assert(constraint.getDegree()>0);
 	assert(constraint.vars.size()>0);
 
-	if(logProof()) constraint.logProofLine("a", proof_out, last_proofID, stats);
-	else ++last_proofID; // proofID's function as CRef ID's
-	CRef cr = ca.alloc(constraint,last_proofID,formula,learnt,locked);
+	if(logger) constraint.logProofLine("a", stats);
+	CRef cr = ca.alloc(constraint,formula,learnt,locked);
 	constraints.push_back(cr);
 	Constr& C = ca[cr]; int* data = C.data;
 
@@ -1212,7 +1240,7 @@ void analyze(CRef confl){
 	while(true){
 		if(asynch_interrupt)exit_INDETERMINATE();
 		if (decisionLevel() == 0) {
-			if(logProof()) confl_data.logInconsistency(proof_out, last_proofID, stats);
+			if(logger) confl_data.logInconsistency(stats);
 			assert(confl_data.getSlack()<0);
 			exit_UNSAT();
 		}
@@ -1346,7 +1374,7 @@ void learnConstraint(longConstr& confl){
 	assert(qhead==(int)trail.size()); // jumped back sufficiently far to catch up with qhead
 	Val slk = tmpConstraint.getSlack();
 	if(slk<0){
-		if(logProof()) tmpConstraint.logInconsistency(proof_out, last_proofID, stats);
+		if(logger) tmpConstraint.logInconsistency(stats);
 		assert(decisionLevel()==0);
 		exit_UNSAT();
 	}
@@ -1362,14 +1390,14 @@ void learnConstraint(longConstr& confl){
 
 CRef addInputConstraint(intConstr& c, bool original, bool locked){
 	assert(decisionLevel()==0);
-	if(logProof()) c.logAsInput(proof_out, formula_out, last_proofID, last_formID);
+	if(logger) c.logAsInput();
 	c.postProcess(true,stats);
 	if(c.getDegree()>=(Val) INF) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
 	if(c.getDegree()<=0) return CRef_Undef; // already satisfied.
 
 	if(c.getSlack()<0){
 		puts("c Inconsistent input constraint");
-		if(logProof()) c.logInconsistency(proof_out, last_proofID, stats);
+		if(logger) c.logInconsistency(stats);
 		assert(decisionLevel()==0);
 		exit_UNSAT();
 	}
@@ -1378,9 +1406,9 @@ CRef addInputConstraint(intConstr& c, bool original, bool locked){
 	CRef confl = runPropagation();
 	if (confl != CRef_Undef){
 		puts("c Input conflict");
-		if(logProof()){
+		if(logger){
 			ca[confl].toConstraint(logConstraint);
-			logConstraint.logInconsistency(proof_out, last_proofID, stats);
+			logConstraint.logInconsistency(stats);
 			logConstraint.reset();
 		}
 		assert(decisionLevel()==0);
@@ -1408,6 +1436,7 @@ int read_number(const std::string & s) { // TODO: should also read larger number
 
 void opb_read(std::istream & in, intConstr& objective) {
 	intConstr inverted;
+	inverted.initializeLogging(logger);
 	bool first_constraint = true; _unused(first_constraint);
 	for (std::string line; getline(in, line);) {
 		if (line.empty()) continue;
@@ -1701,6 +1730,7 @@ void printSol(){
 }
 
 void exit_SAT() {
+	if(logger) logger->flush();
 	print_stats();
 	if(foundSolution()) std::cout << "o " << last_sol_obj_val << std::endl;
 	puts("s SATISFIABLE");
@@ -1709,6 +1739,7 @@ void exit_SAT() {
 }
 
 void exit_UNSAT() {
+	if(logger) logger->flush();
 	print_stats();
 	if(foundSolution()){
 		std::cout << "o " << last_sol_obj_val << std::endl;
@@ -1723,12 +1754,15 @@ void exit_UNSAT() {
 
 void exit_INDETERMINATE() {
 	if(foundSolution()) exit_SAT();
+	if(logger) logger->flush();
 	print_stats();
 	puts("s UNKNOWN");
 	exit(0);
 }
 
 void exit_ERROR(const std::initializer_list<std::string>& messages){
+	if(logger) logger->flush();
+	print_stats();
 	std::cout << "Error: ";
 	for(const std::string& m: messages) std::cout << m;
 	std::cout << std::endl;
@@ -1805,7 +1839,9 @@ std::string read_options(int argc, char**argv) {
 	getOptionNum(opt_val,"prop-card",[](double x)->bool{return x==0 || x==1;},cardProp);
 	getOptionNum(opt_val,"prop-idx",[](double x)->bool{return x==0 || x==1;},idxProp);
 	getOptionNum(opt_val,"prop-sup",[](double x)->bool{return x==0 || x==1;},supProp);
+	std::string proof_log_name="";
 	getOptionStr(opt_val,"proof-log",proof_log_name);
+	if(!proof_log_name.empty()) logger=std::make_shared<Logger>(proof_log_name);
 	return filename;
 }
 
@@ -1903,9 +1939,9 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 		CRef confl = runPropagation();
 		if (confl != CRef_Undef) {
 			if(decisionLevel() == 0){
-				if(logProof()){
+				if(logger){
 					ca[confl].toConstraint(logConstraint);
-					logConstraint.logInconsistency(proof_out, last_proofID, stats);
+					logConstraint.logInconsistency(stats);
 					logConstraint.reset();
 				}
 				assert(getSlack(ca[confl])<0);
@@ -2010,11 +2046,10 @@ ID handleNewSolution(const intConstr& origObj, ID& lastUpperBound){
 
 	origObj.copyTo(tmpConstraint,true);
 	tmpConstraint.addRhs(-last_sol_obj_val+1);
-	ID origUpperBound = last_proofID+1;
 	CRef cr = addInputConstraint(tmpConstraint,false,true);
 	tmpConstraint.reset();
 	lastUpperBound = replaceExternal(cr,lastUpperBound);
-	return origUpperBound;
+	return ca[cr].id;
 }
 
 struct LazyVar{
@@ -2106,11 +2141,10 @@ void checkLazyVariables(longConstr& reformObj, intConstr& core, std::vector<Lazy
 ID addLowerBound(const intConstr& origObj, Val lowerBound, ID& lastLowerBound){
 	origObj.copyTo(tmpConstraint);
 	tmpConstraint.addRhs(lowerBound);
-	ID origLowerBound = last_proofID+1;
 	CRef cr = addInputConstraint(tmpConstraint,false,true);
 	tmpConstraint.reset();
 	lastLowerBound = replaceExternal(cr,lastLowerBound);
-	return origLowerBound;
+	return ca[cr].id;
 }
 ID handleInconsistency(longConstr& reformObj, intConstr& core, Val& lower_bound,
                          std::vector<LazyVar*>& lazyVars, const intConstr& origObj, ID& lastLowerBound){
@@ -2229,7 +2263,7 @@ void optimize(intConstr& origObj, intConstr& core){
 		}	else if(reply==SolveState::UNSAT) {
 			++stats.NCORES;
 			if(core.getSlack()<0){
-				if(logProof()) core.logInconsistency(proof_out, last_proofID, stats);
+				if(logger) core.logInconsistency(stats);
 				assert(decisionLevel()==0);
 				exit_UNSAT();
 			}
@@ -2239,22 +2273,23 @@ void optimize(intConstr& origObj, intConstr& core){
 			printObjBounds(lower_bound,last_sol_obj_val);
 			assert(lastUpperBound>0);
 			assert(lastLowerBound>0);
-			if(logProof()){
+			if(logger){
 				longConstr coreAggregate;
+				coreAggregate.initializeLogging(logger);
 				coreAggregate.resize(n+1);
 				origObj.copyTo(tmpConstraint,true);
 				tmpConstraint.addRhs(1-last_sol_obj_val);
-				tmpConstraint.resetBuffer(origUpperBound);
+				tmpConstraint.resetBuffer(origUpperBound-1); // -1 to get the unprocessed formula line
 				coreAggregate.add(tmpConstraint,1,1,false);
 				tmpConstraint.reset();
 				origObj.copyTo(tmpConstraint);
 				tmpConstraint.addRhs(lower_bound);
-				tmpConstraint.resetBuffer(origLowerBound);
+				tmpConstraint.resetBuffer(origLowerBound-1); // -1 to get the unprocessed formula line
 				coreAggregate.add(tmpConstraint,1,1,false);
 				tmpConstraint.reset();
-				coreAggregate.logInconsistency(proof_out, last_proofID, stats);
 				assert(coreAggregate.getSlack()<0);
 				assert(decisionLevel()==0);
+				coreAggregate.logInconsistency(stats);
 			}
 			exit_UNSAT();
 		}
@@ -2272,14 +2307,11 @@ int main(int argc, char**argv){
 	signal(SIGXCPU,SIGINT_exit);
 
 	std::string filename = read_options(argc, argv);
-	if(logProof()){
-		formula_out = std::ofstream(proof_log_name+".formula");
-		formula_out << "* #variable= 0 #constraint= 0\n";
-		formula_out << " >= 0 ;\n"; ++last_formID;
-		proof_out = std::ofstream(proof_log_name+".proof");
-		proof_out << "pseudo-Boolean proof version 1.0\n";
-		proof_out << "l 1\n"; ++last_proofID;
-	}
+	tmpConstraint.initializeLogging(logger);
+	confl_data.initializeLogging(logger);
+	logConstraint.initializeLogging(logger);
+	inconsistency.initializeLogging(logger);
+
 	if (!filename.empty()) {
 		std::ifstream fin(filename);
 		if (!fin) exit_ERROR({"Could not open ",filename});
@@ -2288,7 +2320,7 @@ int main(int argc, char**argv){
 		if (verbosity > 0) std::cout << "c No filename given, reading from standard input." << std::endl;
 		file_read(std::cin,objective);
 	}
-	if(logProof()) formula_out << "* INPUT FORMULA ABOVE - AUXILIARY AXIOMS BELOW\n";
+	if(logger) logger->formula_out << "* INPUT FORMULA ABOVE - AUXILIARY AXIOMS BELOW\n";
 	std::cout << "c #variables=" << orig_n << " #constraints=" << constraints.size() << std::endl;
 
 	signal(SIGINT, SIGINT_interrupt);
@@ -2300,7 +2332,7 @@ int main(int argc, char**argv){
 		SolveState reply = solve({},inconsistency);
 		if(reply==SolveState::SAT) exit_SAT();
 		else if(reply==SolveState::UNSAT){
-			if(logProof()) inconsistency.logInconsistency(proof_out, last_proofID, stats);
+			if(logger) inconsistency.logInconsistency(stats);
 			assert(decisionLevel()==0);
 			assert(inconsistency.getSlack()<0);
 			exit_UNSAT();

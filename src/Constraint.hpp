@@ -32,10 +32,3 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "aux.hpp"
 #include "typedefs.hpp"
 
-class Constr;
-
-template<class T>
-inline std::string proofMult(T mult){
-	return (mult==1?"":std::to_string(mult)+" * ");
-}
-
