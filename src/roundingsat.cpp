@@ -63,27 +63,30 @@ static void SIGINT_exit(int signum){
 
 // ---------------------------------------------------------------------
 // Global variables
+struct Stats {
+	long long NTRAILPOPS=0, NWATCHLOOKUPS=0, NWATCHLOOKUPSBJ=0, NWATCHCHECKS=0, NPROPCHECKS=0, NADDEDLITERALS=0;
+	long long NCONFL=0, NDECIDE=0, NPROP=0, NPROPCLAUSE=0, NPROPCARD=0, NPROPWATCH=0, NPROPCOUNTING=0;
+	long long NWATCHED=0, NCOUNTING=0;
+	__int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
+	long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
+	long long NGCD=0, NCARDDETECT=0, NCORECARDINALITIES=0, NCORES=0, NSOLS=0;
+	long long NWEAKENEDNONIMPLYING=0, NWEAKENEDNONIMPLIED=0;
+	long long NRESTARTS=0, NCLEANUP=0;
+
+	inline long long getDetTime(){
+		return 1+NADDEDLITERALS+NWATCHLOOKUPS+NWATCHLOOKUPSBJ+NWATCHCHECKS+NPROPCHECKS+NPROP+NTRAILPOPS+NDECIDE;
+	}
+};
+Stats stats;
 
 const int resize_factor=2;
-
 double initial_time;
-long long NTRAILPOPS=0, NWATCHLOOKUPS=0, NWATCHLOOKUPSBJ=0, NWATCHCHECKS=0, NPROPCHECKS=0, NADDEDLITERALS=0;
-long long NCONFL=0, NDECIDE=0, NPROP=0, NPROPCLAUSE=0, NPROPCARD=0, NPROPWATCH=0, NPROPCOUNTING=0;
-long long NWATCHED=0, NCOUNTING=0;
-inline long long getDetTime(){ return 1+NADDEDLITERALS+NWATCHLOOKUPS+NWATCHLOOKUPSBJ+NWATCHCHECKS+NPROPCHECKS+NPROP+
-NTRAILPOPS+NDECIDE; }
-__int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
-long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
-long long NGCD=0, NCARDDETECT=0, NCORECARDINALITIES=0, NCORES=0, NSOLS=0;
-long long NWEAKENEDNONIMPLYING=0, NWEAKENEDNONIMPLIED=0;
 double rinc=2;
 long long rfirst=100;
 long long nbconstrsbeforereduce=2000;
 long long incReduceDB=300;
-long long cnt_reduceDB=0;
 bool originalRoundToOne=false;
 int opt_mode=4;
-long long curr_restarts=0;
 long long nconfl_to_restart=0;
 bool print_sol = false;
 std::string proof_log_name;
@@ -398,11 +401,11 @@ struct Constraint{
 	}
 
 	// NOTE: only equivalence preserving operations!
-	void postProcess(bool sortFirst){
+	void postProcess(bool sortFirst, Stats& sts){
 		removeUnitsAndZeroes(); // NOTE: also saturates
 		if(sortFirst) sortInDecreasingCoefOrder();
-		if(divideByGCD()) ++NGCD;
-		if(simplifyToCardinality(true)) ++NCARDDETECT;
+		if(divideByGCD()) ++sts.NGCD;
+		if(simplifyToCardinality(true)) ++sts.NCARDDETECT;
 	}
 
 	inline bool falseAtLevel(Var v, int lvl){
@@ -464,32 +467,32 @@ struct Constraint{
 	}
 
 	// @post: preserves order after removeZeroes()
-	void weakenNonImplied(LARGE slack){
+	void weakenNonImplied(LARGE slack, Stats& sts){
 		for(Var v: vars) if(coefs[v]!=0 && std::abs(coefs[v])<=slack && !falsified(v)){
 				weaken(-coefs[v],v);
-				++NWEAKENEDNONIMPLIED;
+				++sts.NWEAKENEDNONIMPLIED;
 			}
 	}
 	// @post: preserves order after removeZeroes()
-	bool weakenNonImplying(SMALL propCoef, LARGE slack){
+	bool weakenNonImplying(SMALL propCoef, LARGE slack, Stats& sts){
 		assert(hasNoZeroes());
 		assert(isSortedInDecreasingCoefOrder());
-		long long oldCount = NWEAKENEDNONIMPLYING;
+		long long oldCount = sts.NWEAKENEDNONIMPLYING;
 		for(int i=vars.size()-1; i>=0 && slack+std::abs(coefs[vars[i]])<propCoef; --i){
 			Var v = vars[i];
 			if(falsified(v)){
 				SMALL c = coefs[v];
 				slack+=std::abs(c);
 				weaken(-c,v);
-				++NWEAKENEDNONIMPLYING;
+				++sts.NWEAKENEDNONIMPLYING;
 			}
 		}
-		bool changed = oldCount!=NWEAKENEDNONIMPLYING;
+		bool changed = oldCount!=sts.NWEAKENEDNONIMPLYING;
 		if(changed) saturate();
 		return changed;
 	}
 	// @post: preserves order after removeZeroes()
-	void heuristicWeakening(LARGE slk){
+	void heuristicWeakening(LARGE slk, Stats& sts){
 		if (slk<0) return; // no propagation, no idea what to weaken
 		assert(isSortedInDecreasingCoefOrder());
 		Var v_prop = -1;
@@ -498,9 +501,9 @@ struct Constraint{
 			if(std::abs(coefs[v])>slk && isUnknown(v)){ v_prop=v; break; }
 		}
 		if(v_prop==-1) return; // no propagation, no idea what to weaken
-		if(weakenNonImplying(std::abs(coefs[v_prop]),slk)) slk = getSlack(); // slack changed
+		if(weakenNonImplying(std::abs(coefs[v_prop]),slk,sts)) slk = getSlack(); // slack changed
 		assert(getSlack()<std::abs(coefs[v_prop]));
-		weakenNonImplied(slk);
+		weakenNonImplied(slk,sts);
 	}
 
 	// @post: preserves order of vars
@@ -596,13 +599,13 @@ struct Constraint{
 		resetBuffer(++last_proofID); // ensure consistent proofBuffer
 	}
 
-	void logProofLine(std::string info, std::ofstream& proof_out, ID& last_proofID){
-		_unused(info);
-//		if(logStartTime<getDetTime()){
+	void logProofLine(std::string info, std::ofstream& proof_out, ID& last_proofID, Stats& sts){
+		_unused(info); _unused(sts);
+//		if(logStartTime<sts.getDetTime()){
 		proof_out << "p " << proofBuffer.str() << "0\n";
 		resetBuffer(++last_proofID); // ensure consistent proofBuffer
 		#if !NDEBUG
-		proof_out << "* " << getDetTime() << " " << info << "\n";
+		proof_out << "* " << sts.getDetTime() << " " << info << "\n";
 		proof_out << "e " << last_proofID << " ";
 		toStreamAsOPB(proof_out);
 		#endif
@@ -611,9 +614,9 @@ struct Constraint{
 //		}
 	}
 
-	void logInconsistency(std::ofstream& proof_out, ID& last_proofID){
+	void logInconsistency(std::ofstream& proof_out, ID& last_proofID, Stats& sts){
 		removeUnitsAndZeroes();
-		logProofLine("i", proof_out, last_proofID);
+		logProofLine("i", proof_out, last_proofID, sts);
 		proof_out << "c " << last_proofID << " 0" << std::endl;
 	}
 
@@ -695,12 +698,12 @@ struct Constr {
 		assert(!isSimple());
 		assert(isCounting() || isWatched(i));
 		assert(isFalse(data[i+1]));
-		++NWATCHLOOKUPSBJ;
+		++stats.NWATCHLOOKUPSBJ;
 		slack += abs(data[i]); // TODO: slack -= data[i] when only watched propagation
 	}
 	inline WatchStatus propagateWatch(CRef cr, int& idx, Lit p){
 		assert(isFalse(p));
-		++NWATCHLOOKUPS;
+		++stats.NWATCHLOOKUPS;
 
 		if(isClause()){
 			assert(idx<0);
@@ -729,16 +732,16 @@ struct Constr {
 					data[mid]=watch;
 					data[widx]=l;
 					adj[l].emplace_back(cr,otherwatch-INF);
-					NWATCHCHECKS+=i-1;
+					stats.NWATCHCHECKS+=i-1;
 					return WatchStatus::FOUNDNEW;
 				}
 			}
-			NWATCHCHECKS+=Csize-2;
+			stats.NWATCHCHECKS+=Csize-2;
 			assert(isFalse(watch));
 			for(unsigned int i=2; i<Csize; ++i) assert(isFalse(data[i]));
 			if(isFalse(otherwatch)) return WatchStatus::CONFLICTING;
-			else{ assert(!isTrue(otherwatch)); ++NPROPCLAUSE; propagate(otherwatch,cr); }
-			++NPROPCHECKS;
+			else{ assert(!isTrue(otherwatch)); ++stats.NPROPCLAUSE; propagate(otherwatch,cr); }
+			++stats.NPROPCHECKS;
 			return WatchStatus::FOUNDNONE;
 		}
 
@@ -749,9 +752,9 @@ struct Constr {
 			widx = widx>>1;
 			assert(data[widx]==p);
 			const unsigned int Csize=size();
-			if(!idxProp || ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=degree+1; }
+			if(!idxProp || ntrailpops<stats.NTRAILPOPS){ ntrailpops=stats.NTRAILPOPS; watchIdx=degree+1; }
 			assert(watchIdx>degree);
-			NWATCHCHECKS-=watchIdx;
+			stats.NWATCHCHECKS-=watchIdx;
 			for(; watchIdx<Csize; ++watchIdx){
 				Lit l = data[watchIdx];
 				if(!isFalse(l)){
@@ -760,19 +763,19 @@ struct Constr {
 					data[mid]=data[widx];
 					data[widx]=l;
 					adj[l].emplace_back(cr,(widx<<1)+1);
-					NWATCHCHECKS+=watchIdx+1;
+					stats.NWATCHCHECKS+=watchIdx+1;
 					return WatchStatus::FOUNDNEW;
 				}
 			}
-			NWATCHCHECKS+=watchIdx;
+			stats.NWATCHCHECKS+=watchIdx;
 			assert(isFalse(data[widx]));
 			for(unsigned int i=degree+1; i<Csize; ++i) assert(isFalse(data[i]));
 			for(unsigned int i=0; i<=degree; ++i) if(i!=widx && isFalse(data[i])) return WatchStatus::CONFLICTING;
 			for(unsigned int i=0; i<=degree; ++i){
 				Lit l = data[i];
-				if(i!=widx && !isTrue(l)){ ++NPROPCARD; propagate(l,cr); }
+				if(i!=widx && !isTrue(l)){ ++stats.NPROPCARD; propagate(l,cr); }
 			}
-			NPROPCHECKS+=degree+1;
+			stats.NPROPCHECKS+=degree+1;
 			return WatchStatus::FOUNDNONE;
 		}
 
@@ -785,26 +788,26 @@ struct Constr {
 			slack-=c;
 			if(slack<0) return WatchStatus::CONFLICTING;
 			if(slack<ClargestCoef){
-				if(!idxProp || ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=0; }
-				NPROPCHECKS-=watchIdx>>1;
+				if(!idxProp || ntrailpops<stats.NTRAILPOPS){ ntrailpops=stats.NTRAILPOPS; watchIdx=0; }
+				stats.NPROPCHECKS-=watchIdx>>1;
 				for(; watchIdx<Csize2 && data[watchIdx]>slack; watchIdx+=2){
 					const Lit l = data[watchIdx+1];
 					if(isUnknown(l)){
-						NPROPCLAUSE+=(degree==1); NPROPCARD+=(degree!=1 && ClargestCoef==1); ++NPROPCOUNTING;
+						stats.NPROPCLAUSE+=(degree==1); stats.NPROPCARD+=(degree!=1 && ClargestCoef==1); ++stats.NPROPCOUNTING;
 						propagate(l,cr);
 					}
 				}
-				NPROPCHECKS+=watchIdx>>1;
+				stats.NPROPCHECKS+=watchIdx>>1;
 			}
 			return WatchStatus::FOUNDNONE;
 		}
 
 		// use watched propagation
-		if(!idxProp || ntrailpops<NTRAILPOPS){ ntrailpops=NTRAILPOPS; watchIdx=0; }
+		if(!idxProp || ntrailpops<stats.NTRAILPOPS){ ntrailpops=stats.NTRAILPOPS; watchIdx=0; }
 		assert(c<0);
 		slack+=c;
 		if(!supProp || slack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
-			NWATCHCHECKS-=watchIdx>>1;
+			stats.NWATCHCHECKS-=watchIdx>>1;
 			for(; watchIdx<Csize2 && slack<ClargestCoef; watchIdx+=2){ // NOTE: first innermost loop of RoundingSat
 				const Coef cf = data[watchIdx];
 				const Lit l = data[watchIdx+1];
@@ -814,22 +817,22 @@ struct Constr {
 					adj[l].emplace_back(cr,watchIdx);
 				}
 			}
-			NWATCHCHECKS+=watchIdx>>1;
+			stats.NWATCHCHECKS+=watchIdx>>1;
 			if(slack<ClargestCoef){ assert(watchIdx==Csize2); watchIdx=0; }
 		} // else we did not find enough watches last time, so we can skip looking for them now
 
 		if(slack>=ClargestCoef){ data[idx]=-c; return WatchStatus::FOUNDNEW; }
 		if(slack<0) return WatchStatus::CONFLICTING;
 		// keep the watch, check for propagation
-		NPROPCHECKS-=watchIdx>>1;
+		stats.NPROPCHECKS-=watchIdx>>1;
 		for(; watchIdx<Csize2 && std::abs(data[watchIdx])>slack; watchIdx+=2){ // NOTE: second innermost loop of RoundingSat
 			const Lit l = data[watchIdx+1];
 			if(isUnknown(l)){
-				NPROPCLAUSE+=(degree==1); NPROPCARD+=(degree!=1 && ClargestCoef==1); ++NPROPWATCH;
+				stats.NPROPCLAUSE+=(degree==1); stats.NPROPCARD+=(degree!=1 && ClargestCoef==1); ++stats.NPROPWATCH;
 				propagate(l,cr);
 			}
 		}
-		NPROPCHECKS+=watchIdx>>1;
+		stats.NPROPCHECKS+=watchIdx>>1;
 		return WatchStatus::FOUNDNONE;
 	}
 
@@ -1016,7 +1019,7 @@ void uncheckedEnqueue(Lit p, CRef from){
 			Constr& C = ca[from];
 			C.toConstraint(logConstraint);
 			logConstraint.reduceToUnit(v);
-			logConstraint.logProofLine("u", proof_out, last_proofID);
+			logConstraint.logProofLine("u", proof_out, last_proofID, stats);
 			logConstraint.reset();
 			assert(unitIDs.size()==trail.size());
 			unitIDs.push_back(last_proofID);
@@ -1035,17 +1038,17 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 	assert(constraint.getDegree()>0);
 	assert(constraint.vars.size()>0);
 
-	if(logProof()) constraint.logProofLine("a", proof_out, last_proofID);
+	if(logProof()) constraint.logProofLine("a", proof_out, last_proofID, stats);
 	else ++last_proofID; // proofID's function as CRef ID's
 	CRef cr = ca.alloc(constraint,last_proofID,formula,learnt,locked);
 	constraints.push_back(cr);
 	Constr& C = ca[cr]; int* data = C.data;
 
-	LEARNEDLENGTHSUM+=C.size();
-	LEARNEDDEGREESUM+=C.degree;
-	if(C.degree==1) ++NCLAUSESLEARNED;
-	else if(C.isCard() || C.largestCoef()==1) ++NCARDINALITIESLEARNED;
-	else ++NGENERALSLEARNED;
+	stats.LEARNEDLENGTHSUM+=C.size();
+	stats.LEARNEDDEGREESUM+=C.degree;
+	if(C.degree==1) ++stats.NCLAUSESLEARNED;
+	else if(C.isCard() || C.largestCoef()==1) ++stats.NCARDINALITIESLEARNED;
+	else ++stats.NGENERALSLEARNED;
 
 	if(C.isSimple()){
 		if(C.degree>=C.size()){
@@ -1089,7 +1092,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 	C.setCounting(countingProp==1 || countingProp>(1-minWatches/(float)C.size()));
 
 	if(C.isCounting()){ // use counting propagation
-		++NCOUNTING;
+		++stats.NCOUNTING;
 		for(unsigned int i=0; i<2*C.size(); i+=2){
 			Lit l = data[i+1];
 			adj[l].emplace_back(cr,i);
@@ -1105,7 +1108,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 	}
 
 	// watched propagation
-	++NWATCHED;
+	++stats.NWATCHED;
 	for(unsigned int i=0; i<2*C.size() && C.slack<C.largestCoef(); i+=2){
 		Lit l = data[i+1];
 		if(!isFalse(l) || Pos[std::abs(l)]>=qhead){
@@ -1141,7 +1144,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 
 void undoOne(){
 	assert(!trail.empty());
-	++NTRAILPOPS;
+	++stats.NTRAILPOPS;
 	Lit l = trail.back();
 	if(qhead==(int)trail.size()){
 		for(const Watch& w: adj[-l]) if(w.idx>=0 && w.idx%2==0) ca[w.cref].undoFalsified(w.idx);
@@ -1162,14 +1165,14 @@ inline void backjumpTo(int level){
 }
 
 inline void decide(Lit l){
-	++NDECIDE;
+	++stats.NDECIDE;
 	newDecisionLevel();
 	uncheckedEnqueue(l,CRef_Undef);
 }
 
 inline void propagate(Lit l, CRef reason){
 	assert(reason!=CRef_Undef);
-	++NPROP;
+	++stats.NPROP;
 	uncheckedEnqueue(l,reason);
 }
 
@@ -1192,14 +1195,14 @@ void analyze(CRef confl){
 	}
 
 	C.toConstraint(confl_data);
-	NADDEDLITERALS+=confl_data.vars.size();
+	stats.NADDEDLITERALS+=confl_data.vars.size();
 	confl_data.removeUnitsAndZeroes();
 	assert(actSet.size()==0); // will hold the literals that need their activity bumped
 	for(Var v: confl_data.vars) actSet.add(confl_data.getLit(v));
 	while(true){
 		if(asynch_interrupt)exit_INDETERMINATE();
 		if (decisionLevel() == 0) {
-			if(logProof()) confl_data.logInconsistency(proof_out, last_proofID);
+			if(logProof()) confl_data.logInconsistency(proof_out, last_proofID, stats);
 			assert(confl_data.getSlack()<0);
 			exit_UNSAT();
 		}
@@ -1219,9 +1222,9 @@ void analyze(CRef confl){
 				recomputeLBD(reasonC);
 			}
 			reasonC.toConstraint(tmpConstraint);
-			NADDEDLITERALS+=tmpConstraint.vars.size();
+			stats.NADDEDLITERALS+=tmpConstraint.vars.size();
 			tmpConstraint.removeUnitsAndZeroes(); // NOTE: also saturates
-			tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack()); // NOTE: also saturates
+			tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack(),stats); // NOTE: also saturates
 			assert(tmpConstraint.getCoef(l)>tmpConstraint.getSlack());
 			Coef slk = tmpConstraint.getSlack();
 			if(slk>0){
@@ -1263,7 +1266,7 @@ CRef runPropagation() {
 			WatchStatus wstat = C.propagateWatch(cr,ws[it_ws].idx,-p);
 			if(wstat==WatchStatus::FOUNDNEW) aux::swapErase(ws,it_ws--);
 			else if(wstat==WatchStatus::CONFLICTING){ // clean up current level and stop propagation
-				++NTRAILPOPS;
+				++stats.NTRAILPOPS;
 				for(int i=0; i<=it_ws; ++i){
 					const Watch& w=ws[i];
 					if(w.idx>=0 && w.idx%2==0) ca[w.cref].undoFalsified(w.idx);
@@ -1333,12 +1336,12 @@ void learnConstraint(longConstr& confl){
 	assert(qhead==(int)trail.size()); // jumped back sufficiently far to catch up with qhead
 	Val slk = tmpConstraint.getSlack();
 	if(slk<0){
-		if(logProof()) tmpConstraint.logInconsistency(proof_out, last_proofID);
+		if(logProof()) tmpConstraint.logInconsistency(proof_out, last_proofID, stats);
 		assert(decisionLevel()==0);
 		exit_UNSAT();
 	}
-	tmpConstraint.heuristicWeakening(slk);
-	tmpConstraint.postProcess(false);
+	tmpConstraint.heuristicWeakening(slk,stats);
+	tmpConstraint.postProcess(false,stats);
 	assert(tmpConstraint.isSaturated());
 
 	CRef cr = attachConstraint(tmpConstraint,false,true,false);
@@ -1350,13 +1353,13 @@ void learnConstraint(longConstr& confl){
 CRef addInputConstraint(intConstr& c, bool original, bool locked){
 	assert(decisionLevel()==0);
 	if(logProof()) c.logAsInput(proof_out, formula_out, last_proofID, last_formID);
-	c.postProcess(true);
+	c.postProcess(true,stats);
 	if(c.getDegree()>=(Val) INF) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
 	if(c.getDegree()<=0) return CRef_Undef; // already satisfied.
 
 	if(c.getSlack()<0){
 		puts("c Inconsistent input constraint");
-		if(logProof()) c.logInconsistency(proof_out, last_proofID);
+		if(logProof()) c.logInconsistency(proof_out, last_proofID, stats);
 		assert(decisionLevel()==0);
 		exit_UNSAT();
 	}
@@ -1367,7 +1370,7 @@ CRef addInputConstraint(intConstr& c, bool original, bool locked){
 		puts("c Input conflict");
 		if(logProof()){
 			ca[confl].toConstraint(logConstraint);
-			logConstraint.logInconsistency(proof_out, last_proofID);
+			logConstraint.logInconsistency(proof_out, last_proofID, stats);
 			logConstraint.reset();
 		}
 		assert(decisionLevel()==0);
@@ -1626,39 +1629,39 @@ double luby(double y, int i){
 void print_stats() {
 	double timespent = aux::cpuTime()-initial_time;
 	printf("c CPU time			  : %g s\n", timespent);
-	printf("c deterministic time %lld %.2e\n", getDetTime(),(double)getDetTime());
-	printf("c propagations %lld\n", NPROP);
-	printf("c decisions %lld\n", NDECIDE);
-	printf("c conflicts %lld\n", NCONFL);
-	printf("c restarts %lld\n", curr_restarts);
-	printf("c inprocessing phases %lld\n", cnt_reduceDB);
-	printf("c clauses %lld\n", NCLAUSESLEARNED);
-	printf("c cardinalities %lld\n", NCARDINALITIESLEARNED);
-	printf("c watched constraints %lld\n", NWATCHED);
-	printf("c counting constraints %lld\n", NCOUNTING);
-	printf("c general constraints %lld\n", NGENERALSLEARNED);
-	printf("c average constraint length %.2f\n", NCONFL==0?0:(double)LEARNEDLENGTHSUM/NCONFL);
-	printf("c average constraint degree %.2f\n", NCONFL==0?0:(double)LEARNEDDEGREESUM/NCONFL);
-	printf("c gcd simplifications %lld\n", NGCD);
-	printf("c detected cardinalities %lld\n", NCARDDETECT);
-	printf("c weakened non-implied lits %lld\n", NWEAKENEDNONIMPLIED);
-	printf("c weakened non-implying lits %lld\n", NWEAKENEDNONIMPLYING);
+	printf("c deterministic time %lld %.2e\n", stats.getDetTime(),(double)stats.getDetTime());
+	printf("c propagations %lld\n", stats.NPROP);
+	printf("c decisions %lld\n", stats.NDECIDE);
+	printf("c conflicts %lld\n", stats.NCONFL);
+	printf("c restarts %lld\n", stats.NRESTARTS);
+	printf("c inprocessing phases %lld\n", stats.NCLEANUP);
+	printf("c clauses %lld\n", stats.NCLAUSESLEARNED);
+	printf("c cardinalities %lld\n", stats.NCARDINALITIESLEARNED);
+	printf("c watched constraints %lld\n", stats.NWATCHED);
+	printf("c counting constraints %lld\n", stats.NCOUNTING);
+	printf("c general constraints %lld\n", stats.NGENERALSLEARNED);
+	printf("c average constraint length %.2f\n", stats.NCONFL==0?0:(double)stats.LEARNEDLENGTHSUM/stats.NCONFL);
+	printf("c average constraint degree %.2f\n", stats.NCONFL==0?0:(double)stats.LEARNEDDEGREESUM/stats.NCONFL);
+	printf("c gcd simplifications %lld\n", stats.NGCD);
+	printf("c detected cardinalities %lld\n", stats.NCARDDETECT);
+	printf("c weakened non-implied lits %lld\n", stats.NWEAKENEDNONIMPLIED);
+	printf("c weakened non-implying lits %lld\n", stats.NWEAKENEDNONIMPLYING);
 	printf("c auxiliary variables introduced %d\n", n-orig_n);
 	if(opt_mode>0){
-		printf("c solutions found %lld\n", NSOLS);
-		printf("c cores constructed %lld\n", NCORES);
-		printf("c core cardinality constraints returned %lld\n", NCORECARDINALITIES);
+		printf("c solutions found %lld\n", stats.NSOLS);
+		printf("c cores constructed %lld\n", stats.NCORES);
+		printf("c core cardinality constraints returned %lld\n", stats.NCORECARDINALITIES);
 	}
-	printf("c clausal propagations %lld\n", NPROPCLAUSE);
-	printf("c cardinality propagations %lld\n", NPROPCARD);
-	printf("c watched propagations %lld\n", NPROPWATCH);
-	printf("c counting propagations %lld\n", NPROPCOUNTING);
-	printf("c watch lookups %lld\n", NWATCHLOOKUPS);
-	printf("c watch backjump lookups %lld\n", NWATCHLOOKUPSBJ);
-	printf("c watch checks %lld\n", NWATCHCHECKS);
-	printf("c propagation checks %lld\n", NPROPCHECKS);
-	printf("c constraint additions %lld\n", NADDEDLITERALS);
-	printf("c trail pops %lld\n", NTRAILPOPS);
+	printf("c clausal propagations %lld\n", stats.NPROPCLAUSE);
+	printf("c cardinality propagations %lld\n", stats.NPROPCARD);
+	printf("c watched propagations %lld\n", stats.NPROPWATCH);
+	printf("c counting propagations %lld\n", stats.NPROPCOUNTING);
+	printf("c watch lookups %lld\n", stats.NWATCHLOOKUPS);
+	printf("c watch backjump lookups %lld\n", stats.NWATCHLOOKUPSBJ);
+	printf("c watch checks %lld\n", stats.NWATCHCHECKS);
+	printf("c propagation checks %lld\n", stats.NPROPCHECKS);
+	printf("c constraint additions %lld\n", stats.NADDEDLITERALS);
+	printf("c trail pops %lld\n", stats.NTRAILPOPS);
 }
 
 Val lhs(Constr& C, const std::vector<bool>& sol){
@@ -1834,7 +1837,7 @@ void extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit 
 	for(Lit l: props) propagate(l,Reason[std::abs(l)]);
 
 	ca[confl].toConstraint(confl_data);
-	NADDEDLITERALS+=confl_data.vars.size();
+	stats.NADDEDLITERALS+=confl_data.vars.size();
 	confl_data.removeUnitsAndZeroes();
 	assert(confl_data.getSlack()<0);
 
@@ -1846,9 +1849,9 @@ void extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit 
 		Coef confl_coef_l = confl_data.getCoef(-l);
 		if(confl_coef_l>0) {
 			ca[Reason[std::abs(l)]].toConstraint(tmpConstraint);
-			NADDEDLITERALS+=tmpConstraint.vars.size();
+			stats.NADDEDLITERALS+=tmpConstraint.vars.size();
 			tmpConstraint.removeUnitsAndZeroes();
-			tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack()); // NOTE: also saturates
+			tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack(),stats); // NOTE: also saturates
 			assert(tmpConstraint.getCoef(l)>tmpConstraint.getSlack());
 			Coef slk = tmpConstraint.getSlack();
 			if(slk>0){
@@ -1876,7 +1879,7 @@ void extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit 
 
 	// weaken non-falsifieds
 	for(Var v: outCore.vars) if(!assumptions.has(-outCore.getLit(v))) outCore.weaken(-outCore.coefs[v],v);
-	outCore.postProcess(true);
+	outCore.postProcess(true,stats);
 	assert(assumpSlack(assumptions,outCore)<0);
 	backjumpTo(0);
 }
@@ -1894,7 +1897,7 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 			if(decisionLevel() == 0){
 				if(logProof()){
 					ca[confl].toConstraint(logConstraint);
-					logConstraint.logInconsistency(proof_out, last_proofID);
+					logConstraint.logInconsistency(proof_out, last_proofID, stats);
 					logConstraint.reset();
 				}
 				assert(getSlack(ca[confl])<0);
@@ -1902,10 +1905,10 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 			}
 			vDecayActivity();
 			cDecayActivity();
-			NCONFL++; nconfl_to_restart--;
-			if(NCONFL%1000==0){
+			stats.NCONFL++; nconfl_to_restart--;
+			if(stats.NCONFL%1000==0){
 				if (verbosity > 0) {
-					printf("c #Conflicts: %10lld | #Constraints: %10lld\n",NCONFL,(long long)constraints.size());
+					printf("c #Conflicts: %10lld | #Constraints: %10lld\n",stats.NCONFL,(long long)constraints.size());
 //					print_stats();
 					if(verbosity>2){
 						// memory usage
@@ -1927,12 +1930,12 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 			if(asynch_interrupt)exit_INDETERMINATE();
 			if(nconfl_to_restart <= 0){
 				backjumpTo(0);
-				double rest_base = luby(rinc, curr_restarts++);
+				double rest_base = luby(rinc, ++stats.NRESTARTS);
 				nconfl_to_restart = (long long) rest_base * rfirst;
-				if(NCONFL >= (cnt_reduceDB+1)*nbconstrsbeforereduce) {
-					++cnt_reduceDB;
+				if(stats.NCONFL >= (stats.NCLEANUP+1)*nbconstrsbeforereduce) {
+					++stats.NCLEANUP;
 					reduceDB();
-					while(NCONFL >= cnt_reduceDB*nbconstrsbeforereduce) nbconstrsbeforereduce += incReduceDB;
+					while(stats.NCONFL >= stats.NCLEANUP*nbconstrsbeforereduce) nbconstrsbeforereduce += incReduceDB;
 					return SolveState::INPROCESSING;
 				}
 			}
@@ -2116,7 +2119,7 @@ ID handleInconsistency(longConstr& reformObj, intConstr& core, Val& lower_bound,
 	core.simplifyToCardinality(false);
 
 	// adjust the lower bound
-	if(core.getDegree()>1) ++NCORECARDINALITIES;
+	if(core.getDegree()>1) ++stats.NCORECARDINALITIES;
 	long long mult = INF;
 	for(Var v: core.vars){
 		assert(reformObj.getLit(v)!=0);
@@ -2195,7 +2198,7 @@ void optimize(intConstr& origObj, intConstr& core){
 	size_t upper_time=0, lower_time=0;
 	SolveState reply = SolveState::UNSAT;
 	while(true){
-		size_t current_time=getDetTime();
+		size_t current_time=stats.getDetTime();
 		if(reply!=SolveState::INPROCESSING) printObjBounds(lower_bound,last_sol_obj_val);
 		assumps.reset();
 		if(opt_mode==1 || opt_mode==2 || (opt_mode>2 && lower_time<upper_time)){ // use core-guided step
@@ -2209,16 +2212,16 @@ void optimize(intConstr& origObj, intConstr& core){
 		assert(last_sol_obj_val>lower_bound);
 		reply = solve(assumps,core);
 		assert(decisionLevel()==0);
-		if(assumps.size()==0) upper_time+=getDetTime()-current_time;
-		else lower_time+=getDetTime()-current_time;
+		if(assumps.size()==0) upper_time+=stats.getDetTime()-current_time;
+		else lower_time+=stats.getDetTime()-current_time;
 		if(reply==SolveState::SAT){
-			++NSOLS;
+			++stats.NSOLS;
 			origUpperBound = handleNewSolution(origObj,lastUpperBound);
 			assert((opt_mode!=1 && opt_mode!=2) || lower_bound==last_sol_obj_val);
 		}	else if(reply==SolveState::UNSAT) {
-			++NCORES;
+			++stats.NCORES;
 			if(core.getSlack()<0){
-				if(logProof()) core.logInconsistency(proof_out, last_proofID);
+				if(logProof()) core.logInconsistency(proof_out, last_proofID, stats);
 				assert(decisionLevel()==0);
 				exit_UNSAT();
 			}
@@ -2241,7 +2244,7 @@ void optimize(intConstr& origObj, intConstr& core){
 				tmpConstraint.resetBuffer(origLowerBound);
 				coreAggregate.add(tmpConstraint,1,1,false);
 				tmpConstraint.reset();
-				coreAggregate.logInconsistency(proof_out, last_proofID);
+				coreAggregate.logInconsistency(proof_out, last_proofID, stats);
 				assert(coreAggregate.getSlack()<0);
 				assert(decisionLevel()==0);
 			}
@@ -2289,7 +2292,7 @@ int main(int argc, char**argv){
 		SolveState reply = solve({},inconsistency);
 		if(reply==SolveState::SAT) exit_SAT();
 		else if(reply==SolveState::UNSAT){
-			if(logProof()) inconsistency.logInconsistency(proof_out, last_proofID);
+			if(logProof()) inconsistency.logInconsistency(proof_out, last_proofID, stats);
 			assert(decisionLevel()==0);
 			assert(inconsistency.getSlack()<0);
 			exit_UNSAT();
