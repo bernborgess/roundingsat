@@ -41,6 +41,8 @@ CMakeCache.txt
 roundingsat
 roundingsat_lp*
 roundingsat*_debug
+roundingsat*_info
+*.cbp
 
 # editor
 .idea/*
