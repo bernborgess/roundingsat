@@ -44,6 +44,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "typedefs.hpp"
 #include "IntSet.hpp"
 #include "Constraint.hpp"
+#include "LazyVar.hpp"
 
 // ---------------------------------------------------------------------
 // Exit and interrupt
@@ -65,15 +66,6 @@ static void SIGINT_exit(int signum){
 // ---------------------------------------------------------------------
 // Internal datastructures
 
-struct CRef {
-	uint32_t ofs;
-	bool operator==(CRef const&o)const{return ofs==o.ofs;}
-	bool operator!=(CRef const&o)const{return ofs!=o.ofs;}
-	bool operator< (CRef const&o)const{return ofs< o.ofs;}
-};
-const CRef CRef_Undef = { UINT32_MAX };
-std::ostream& operator<<(std::ostream& os, CRef cr) { return os << cr.ofs; }
-
 struct Watch {
 	CRef cref;
 	int idx; // >=0: index of watched literal (counting/watched propagation). <0: blocked literal (clausal propagation).
@@ -81,9 +73,8 @@ struct Watch {
 	bool operator==(const Watch& other)const{return other.cref==cref && other.idx==idx;}
 };
 
-enum DeletionStatus { LOCKED, UNLOCKED, FORCEDELETE, MARKEDFORDELETE };
 enum WatchStatus { FOUNDNEW, FOUNDNONE, CONFLICTING };
-enum SolveState { SAT, UNSAT, INPROCESSING };
+enum DeletionStatus { LOCKED, UNLOCKED, FORCEDELETE, MARKEDFORDELETE };
 
 // ---------------------------------------------------------------------
 // Globals
@@ -336,12 +327,6 @@ std::ostream & operator<<(std::ostream & o, const Constr& C) {
 	o << C.id << ": " << logConstraint << " sl: " << logConstraint.getSlack(Level);
 	logConstraint.reset();
 	return o;
-}
-Val getSlack(Constr& C){
-	C.toConstraint(logConstraint);
-	Val slack = logConstraint.getSlack(Level);
-	logConstraint.reset();
-	return slack;
 }
 
 // ---------------------------------------------------------------------
@@ -853,7 +838,6 @@ CRef addInputConstraint(intConstr& c, bool original, bool locked){
 			logConstraint.reset();
 		}
 		assert(decisionLevel()==0);
-		assert(getSlack(ca[confl])<0);
 		exit_UNSAT();
 	}
 	return cr;
@@ -1106,9 +1090,8 @@ double luby(double y, int i){
 // ---------------------------------------------------------------------
 // Main
 
-void print_stats() {
-	double timespent = aux::cpuTime()-initial_time;
-	printf("c CPU time			  : %g s\n", timespent);
+void print_stats(const Stats& stats) {
+	printf("c CPU time			  : %g s\n", aux::cpuTime()-initial_time);
 	printf("c deterministic time %lld %.2e\n", stats.getDetTime(),(double)stats.getDetTime());
 	printf("c propagations %lld\n", stats.NPROP);
 	printf("c decisions %lld\n", stats.NDECIDE);
@@ -1117,9 +1100,9 @@ void print_stats() {
 	printf("c inprocessing phases %lld\n", stats.NCLEANUP);
 	printf("c clauses %lld\n", stats.NCLAUSESLEARNED);
 	printf("c cardinalities %lld\n", stats.NCARDINALITIESLEARNED);
+	printf("c general constraints %lld\n", stats.NGENERALSLEARNED);
 	printf("c watched constraints %lld\n", stats.NWATCHED);
 	printf("c counting constraints %lld\n", stats.NCOUNTING);
-	printf("c general constraints %lld\n", stats.NGENERALSLEARNED);
 	printf("c average constraint length %.2f\n", stats.NCONFL==0?0:(double)stats.LEARNEDLENGTHSUM/stats.NCONFL);
 	printf("c average constraint degree %.2f\n", stats.NCONFL==0?0:(double)stats.LEARNEDDEGREESUM/stats.NCONFL);
 	printf("c gcd simplifications %lld\n", stats.NGCD);
@@ -1127,11 +1110,9 @@ void print_stats() {
 	printf("c weakened non-implied lits %lld\n", stats.NWEAKENEDNONIMPLIED);
 	printf("c weakened non-implying lits %lld\n", stats.NWEAKENEDNONIMPLYING);
 	printf("c auxiliary variables introduced %d\n", n-orig_n);
-	if(opt_mode>0){
-		printf("c solutions found %lld\n", stats.NSOLS);
-		printf("c cores constructed %lld\n", stats.NCORES);
-		printf("c core cardinality constraints returned %lld\n", stats.NCORECARDINALITIES);
-	}
+	printf("c solutions found %lld\n", stats.NSOLS);
+	printf("c cores constructed %lld\n", stats.NCORES);
+	printf("c core cardinality constraints returned %lld\n", stats.NCORECARDINALITIES);
 	printf("c clausal propagations %lld\n", stats.NPROPCLAUSE);
 	printf("c cardinality propagations %lld\n", stats.NPROPCARD);
 	printf("c watched propagations %lld\n", stats.NPROPWATCH);
@@ -1172,7 +1153,7 @@ void printSol(){
 
 void exit_SAT() {
 	if(logger) logger->flush();
-	print_stats();
+	print_stats(stats);
 	if(foundSolution()) std::cout << "o " << last_sol_obj_val << std::endl;
 	puts("s SATISFIABLE");
 	printSol();
@@ -1181,7 +1162,7 @@ void exit_SAT() {
 
 void exit_UNSAT() {
 	if(logger) logger->flush();
-	print_stats();
+	print_stats(stats);
 	if(foundSolution()){
 		std::cout << "o " << last_sol_obj_val << std::endl;
 		std::cout << "s OPTIMUM FOUND" << std::endl;
@@ -1196,14 +1177,14 @@ void exit_UNSAT() {
 void exit_INDETERMINATE() {
 	if(foundSolution()) exit_SAT();
 	if(logger) logger->flush();
-	print_stats();
+	print_stats(stats);
 	puts("s UNKNOWN");
 	exit(0);
 }
 
 void exit_ERROR(const std::initializer_list<std::string>& messages){
 	if(logger) logger->flush();
-	print_stats();
+	print_stats(stats);
 	std::cout << "Error: ";
 	for(const std::string& m: messages) std::cout << m;
 	std::cout << std::endl;
@@ -1385,7 +1366,6 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 					logConstraint.logInconsistency(Level,Pos,stats);
 					logConstraint.reset();
 				}
-				assert(getSlack(ca[confl])<0);
 				exit_UNSAT();
 			}
 			vDecayActivity();
@@ -1394,7 +1374,6 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 			if(stats.NCONFL%1000==0){
 				if (verbosity > 0) {
 					printf("c #Conflicts: %10lld | #Constraints: %10lld\n",stats.NCONFL,(long long)constraints.size());
-//					print_stats();
 					if(verbosity>2){
 						// memory usage
 						std::cout<<"c total constraint space: "<<ca.cap*4/1024./1024.<<"MB"<<std::endl;
@@ -1502,7 +1481,7 @@ struct LazyVar{
 	ID atMostID=0;
 
 	LazyVar(intConstr& core, Var startvar, int m):
-		mult(m),rhs(core.getDegree()),introducedVars{startvar}{
+			mult(m),rhs(core.getDegree()),introducedVars{startvar}{
 		assert(core.isCardinality());
 		lhs.reserve(core.vars.size());
 		for(Var v: core.vars) lhs.push_back(core.getLit(v));

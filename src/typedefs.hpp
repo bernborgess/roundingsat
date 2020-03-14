@@ -36,3 +36,14 @@ using Coef=int;
 using Val=long long;
 
 const Coef INF=1e9+1;
+
+struct CRef {
+	uint32_t ofs;
+	bool operator==(CRef const&o)const{return ofs==o.ofs;}
+	bool operator!=(CRef const&o)const{return ofs!=o.ofs;}
+	bool operator< (CRef const&o)const{return ofs< o.ofs;}
+};
+const CRef CRef_Undef = { UINT32_MAX };
+std::ostream& operator<<(std::ostream& os, CRef cr) { return os << cr.ofs; }
+
+enum SolveState { SAT, UNSAT, INPROCESSING };

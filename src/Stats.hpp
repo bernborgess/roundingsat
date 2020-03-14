@@ -39,7 +39,7 @@ struct Stats {
 	long long NWEAKENEDNONIMPLYING=0, NWEAKENEDNONIMPLIED=0;
 	long long NRESTARTS=0, NCLEANUP=0;
 
-	inline long long getDetTime(){
+	inline long long getDetTime() const {
 		return 1+NADDEDLITERALS+NWATCHLOOKUPS+NWATCHLOOKUPSBJ+NWATCHCHECKS+NPROPCHECKS+NPROP+NTRAILPOPS+NDECIDE;
 	}
 };
