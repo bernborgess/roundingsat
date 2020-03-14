@@ -35,8 +35,10 @@ using Lit=int;
 using Coef=int;
 using Val=long long;
 
-const Coef INF=1e9+1;
+const Coef INF = 1e9+1;
+bool asynch_interrupt = false;
 
+// TODO: below is part of Solver.hpp
 struct CRef {
 	uint32_t ofs;
 	bool operator==(CRef const&o)const{return ofs==o.ofs;}
@@ -44,6 +46,7 @@ struct CRef {
 	bool operator< (CRef const&o)const{return ofs< o.ofs;}
 };
 const CRef CRef_Undef = { UINT32_MAX };
+const CRef CRef_Unsat = { UINT32_MAX-1 };
 std::ostream& operator<<(std::ostream& os, CRef cr) { return os << cr.ofs; }
 
-enum SolveState { SAT, UNSAT, INPROCESSING };
+enum SolveState { SAT, UNSAT, INCONSISTENT, INTERRUPTED, INPROCESSING}; // TODO: add RESTARTING?

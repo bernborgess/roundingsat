@@ -51,7 +51,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 void exit_SAT(),exit_UNSAT(),exit_INDETERMINATE(),exit_ERROR(const std::initializer_list<std::string>&);
 
-bool asynch_interrupt = false;
 static void SIGINT_interrupt(int signum){
 	_unused(signum);
 	asynch_interrupt = true;
@@ -649,7 +648,7 @@ void recomputeLBD(Constr& C) {
 	tmpSet.reset();
 }
 
-void analyze(CRef confl){
+bool analyze(CRef confl){
 	Constr& C = ca[confl];
 	if (C.learnt()) {
 		cBumpActivity(C);
@@ -661,13 +660,8 @@ void analyze(CRef confl){
 	conflConstraint.removeUnitsAndZeroes(Level,Pos);
 	assert(actSet.size()==0); // will hold the literals that need their activity bumped
 	for(Var v: conflConstraint.vars) actSet.add(conflConstraint.getLit(v));
-	while(true){
-		if(asynch_interrupt)exit_INDETERMINATE();
-		if (decisionLevel() == 0) {
-			if(logger) conflConstraint.logInconsistency(Level,Pos,stats);
-			assert(conflConstraint.getSlack(Level)<0);
-			exit_UNSAT();
-		}
+	while(decisionLevel()>0){
+		if(asynch_interrupt) return false;
 		Lit l = trail.back();
 		assert(std::abs(conflConstraint.getCoef(-l))<INF);
 		Coef confl_coef_l = conflConstraint.getCoef(-l);
@@ -708,6 +702,7 @@ void analyze(CRef confl){
 	assert(conflConstraint.getSlack(Level)<0);
 	for(Lit l: actSet.keys) if(l!=0) vBumpActivity(std::abs(l));
 	actSet.reset();
+	return true;
 }
 
 /**
@@ -765,8 +760,8 @@ void init(){
 }
 
 void setNbVariables(long long nvars){
-	if (nvars < 0) exit_ERROR({"Number of variables must be positive."});
-	if (nvars >= INF) exit_ERROR({"Number of variables cannot exceed 10^9."});
+	assert(nvars>0);
+	assert(nvars<INF);
 	if (nvars <= n) return;
 	aux::resizeIntMap(_adj,adj,nvars,resize_factor,{});
 	aux::resizeIntMap(_Level,Level,nvars,resize_factor,-1);
@@ -786,7 +781,7 @@ void setNbVariables(long long nvars){
 // ---------------------------------------------------------------------
 // Constraint addition
 
-void learnConstraint(longConstr& confl){
+bool learnConstraint(longConstr& confl){
 	assert(confl.getDegree()>0);
 	assert(confl.getDegree()<INF);
 	assert(confl.isSaturated());
@@ -800,9 +795,9 @@ void learnConstraint(longConstr& confl){
 	assert(qhead==(int)trail.size()); // jumped back sufficiently far to catch up with qhead
 	Val slk = tmpConstraint.getSlack(Level);
 	if(slk<0){
-		if(logger) tmpConstraint.logInconsistency(Level,Pos,stats);
 		assert(decisionLevel()==0);
-		exit_UNSAT();
+		if(logger) tmpConstraint.logInconsistency(Level,Pos,stats);
+		return false;
 	}
 	tmpConstraint.heuristicWeakening(Level,Pos,slk,stats);
 	tmpConstraint.postProcess(Level,Pos,false,stats);
@@ -812,20 +807,21 @@ void learnConstraint(longConstr& confl){
 	tmpConstraint.reset();
 	Constr& C = ca[cr];
 	recomputeLBD(C);
+	return true;
 }
 
 CRef addInputConstraint(intConstr& c, bool original, bool locked){
 	assert(decisionLevel()==0);
 	if(logger) c.logAsInput();
 	c.postProcess(Level,Pos,true,stats);
-	if(c.getDegree()>=(Val) INF) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
+	assert(c.getDegree()<INF);
 	if(c.getDegree()<=0) return CRef_Undef; // already satisfied.
 
 	if(c.getSlack(Level)<0){
 		puts("c Inconsistent input constraint");
 		if(logger) c.logInconsistency(Level,Pos,stats);
 		assert(decisionLevel()==0);
-		exit_UNSAT();
+		return CRef_Unsat;
 	}
 
 	CRef cr = attachConstraint(c,original,false,locked);
@@ -838,7 +834,7 @@ CRef addInputConstraint(intConstr& c, bool original, bool locked){
 			logConstraint.reset();
 		}
 		assert(decisionLevel()==0);
-		exit_UNSAT();
+		return CRef_Unsat;
 	}
 	return cr;
 }
@@ -911,11 +907,13 @@ void opb_read(std::istream & in, intConstr& objective) {
 				// Handle equality case with two constraints
 				bool equality = line0.find(" = ") != std::string::npos;
 				if(equality) tmpConstraint.copyTo(inverted,true);
+				if(tmpConstraint.getDegree()>=(Val) INF || inverted.getDegree()>=(Val) INF)
+					exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
 				// NOTE: addInputConstraint modifies tmpConstraint, so the inverted version is stored first
-				addInputConstraint(tmpConstraint,true,false);
+				if(addInputConstraint(tmpConstraint,true,false)==CRef_Unsat) exit_UNSAT();
 				tmpConstraint.reset();
 				if(equality){
-					addInputConstraint(inverted,true,false);
+					if(addInputConstraint(inverted,true,false)==CRef_Unsat) exit_UNSAT();
 					inverted.reset();
 				}
 			}
@@ -944,7 +942,9 @@ void wcnf_read(std::istream & in, long long top, intConstr& objective) {
 				objective.addLhs(weight,n);
 				tmpConstraint.addLhs(1,n);
 			} // else hard clause
-			addInputConstraint(tmpConstraint,true,false);
+			if(tmpConstraint.getDegree()>=(Val) INF)
+				exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
+			if(addInputConstraint(tmpConstraint,true,false)==CRef_Unsat) exit_UNSAT();
 			tmpConstraint.reset();
 		}
 	}
@@ -960,7 +960,7 @@ void cnf_read(std::istream & in) {
 			tmpConstraint.addRhs(1);
 			Lit l;
 			while (is >> l, l) tmpConstraint.addLhs(1,l);
-			addInputConstraint(tmpConstraint,true,false);
+			if(addInputConstraint(tmpConstraint,true,false)==CRef_Unsat) exit_UNSAT();
 			tmpConstraint.reset();
 		}
 	}
@@ -1274,7 +1274,7 @@ LARGE assumpSlack(const IntSet& assumptions, const Constraint<SMALL, LARGE>& cor
 	return slack;
 }
 
-void extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit l_assump=0){
+bool extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit l_assump=0){
 	assert(confl!=CRef_Undef);
 
 	if(l_assump!=0){ // l_assump is an assumption propagated to the opposite value
@@ -1312,6 +1312,7 @@ void extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit 
 	// analyze conflict
 	Val assumpslk = assumpSlack(assumptions,conflConstraint);
 	while(assumpslk>=0){
+		if(asynch_interrupt) return false;
 		Lit l = trail.back();
 		assert(std::abs(conflConstraint.getCoef(-l))<INF);
 		Coef confl_coef_l = conflConstraint.getCoef(-l);
@@ -1350,6 +1351,7 @@ void extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit 
 	outCore.postProcess(Level,Pos,true,stats);
 	assert(assumpSlack(assumptions,outCore)<0);
 	backjumpTo(0);
+	return true;
 }
 
 SolveState solve(const IntSet& assumptions, intConstr& out) {
@@ -1358,6 +1360,7 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 	std::vector<int> assumptions_lim={0};
 	assumptions_lim.reserve((int)assumptions.size()+1);
 	while (true) {
+		if(asynch_interrupt) return SolveState::INTERRUPTED;
 		CRef confl = runPropagation();
 		if (confl != CRef_Undef) {
 			if(decisionLevel() == 0){
@@ -1366,7 +1369,7 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 					logConstraint.logInconsistency(Level,Pos,stats);
 					logConstraint.reset();
 				}
-				exit_UNSAT();
+				return SolveState::UNSAT;
 			}
 			vDecayActivity();
 			cDecayActivity();
@@ -1383,15 +1386,14 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 			}
 
 			if(decisionLevel()>=(int)assumptions_lim.size()){
-				analyze(confl);
-				learnConstraint(conflConstraint);
+				if(!analyze(confl)) return SolveState::INTERRUPTED;
+				if(!learnConstraint(conflConstraint)) return SolveState::UNSAT;
 				conflConstraint.reset();
 			}else{
-				extractCore(assumptions,confl,out);
-				return SolveState::UNSAT;
+				if(!extractCore(assumptions,confl,out)) return SolveState::INTERRUPTED;
+				return SolveState::INCONSISTENT;
 			}
 		} else {
-			if(asynch_interrupt)exit_INDETERMINATE();
 			if(nconfl_to_restart <= 0){
 				backjumpTo(0);
 				double rest_base = luby(rinc, ++stats.NRESTARTS);
@@ -1410,8 +1412,8 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 					Lit l = trail[i];
 					if(assumptions.has(-l)){ // found conflicting assumption
 						if(isUnit(Level,l)) backjumpTo(0), out.reset(); // negated assumption is unit
-						else extractCore(assumptions,Reason[std::abs(l)],out,-l);
-						return SolveState::UNSAT;
+						else if(!extractCore(assumptions,Reason[std::abs(l)],out,-l)) return SolveState::INTERRUPTED;
+						return SolveState::INCONSISTENT;
 					}
 				}
 			}
@@ -1467,6 +1469,7 @@ ID handleNewSolution(const intConstr& origObj, ID& lastUpperBound){
 	origObj.copyTo(tmpConstraint,true);
 	tmpConstraint.addRhs(-last_sol_obj_val+1);
 	CRef cr = addInputConstraint(tmpConstraint,false,true);
+	if(cr==CRef_Unsat) exit_UNSAT();
 	tmpConstraint.reset();
 	lastUpperBound = replaceExternal(cr,lastUpperBound);
 	return ca[cr].id;
@@ -1501,6 +1504,7 @@ struct LazyVar{
 		for(Lit l: lhs) out.addLhs(1,l);
 		for(Var v: introducedVars) out.addLhs(-1,v);
 		CRef cr = addInputConstraint(out,false,true);
+		if(cr==CRef_Unsat) exit_UNSAT();
 		out.reset();
 		replaceExternal(cr,atLeastID);
 	}
@@ -1513,6 +1517,7 @@ struct LazyVar{
 		for(Var v: introducedVars) out.addLhs(1,v);
 		out.addLhs(lhs.size()-rhs-introducedVars.size(), getCurrentVar());
 		CRef cr = addInputConstraint(out,false,true);
+		if(cr==CRef_Unsat) exit_UNSAT();
 		out.reset();
 		replaceExternal(cr,atMostID);
 	}
@@ -1524,11 +1529,10 @@ struct LazyVar{
 		out.addRhs(1);
 		out.addLhs(1,prevvar);
 		out.addLhs(1,-getCurrentVar());
-		addInputConstraint(out,false,true);
+		if(addInputConstraint(out,false,true)==CRef_Unsat) exit_UNSAT();
 		out.reset();
 	}
 };
-
 std::ostream & operator<<(std::ostream & o, const LazyVar* lv) {
 	for(Var v: lv->introducedVars) o << v << " ";
 	o << "| ";
@@ -1562,6 +1566,7 @@ ID addLowerBound(const intConstr& origObj, Val lowerBound, ID& lastLowerBound){
 	origObj.copyTo(tmpConstraint);
 	tmpConstraint.addRhs(lowerBound);
 	CRef cr = addInputConstraint(tmpConstraint,false,true);
+	if(cr==CRef_Unsat) exit_UNSAT();
 	tmpConstraint.reset();
 	lastLowerBound = replaceExternal(cr,lastLowerBound);
 	return ca[cr].id;
@@ -1620,17 +1625,17 @@ ID handleInconsistency(longConstr& reformObj, intConstr& core, Val& lower_bound,
 		reformObj.addUp(Level,tmpConstraint,mult,1,false);
 		assert(lower_bound==-reformObj.getDegree());
 		// add channeling constraints
-		addInputConstraint(tmpConstraint,false,true);
+		if(addInputConstraint(tmpConstraint,false,true)==CRef_Unsat) exit_UNSAT();
 		tmpConstraint.reset();
 		core.copyTo(tmpConstraint);
-		addInputConstraint(tmpConstraint,false,true);
+		if(addInputConstraint(tmpConstraint,false,true)==CRef_Unsat) exit_UNSAT();
 		tmpConstraint.reset();
 		for(Var v=oldN+1; v<newN; ++v){ // add symmetry breaking constraints
 			assert(tmpConstraint.isReset());
 			tmpConstraint.addRhs(1);
 			tmpConstraint.addLhs(1,v);
 			tmpConstraint.addLhs(1,-v-1);
-			addInputConstraint(tmpConstraint,false,true);
+			if(addInputConstraint(tmpConstraint,false,true)==CRef_Unsat) exit_UNSAT();
 			tmpConstraint.reset();
 		}
 	}
@@ -1658,7 +1663,7 @@ void optimize(intConstr& origObj, intConstr& core){
 	IntSet assumps;
 	std::vector<LazyVar*> lazyVars;
 	size_t upper_time=0, lower_time=0;
-	SolveState reply = SolveState::UNSAT;
+	SolveState reply = SolveState::SAT;
 	while(true){
 		size_t current_time=stats.getDetTime();
 		if(reply!=SolveState::INPROCESSING) printObjBounds(lower_bound,last_sol_obj_val);
@@ -1673,6 +1678,8 @@ void optimize(intConstr& origObj, intConstr& core){
 		}
 		assert(last_sol_obj_val>lower_bound);
 		reply = solve(assumps,core);
+		if(reply==SolveState::INTERRUPTED) exit_INDETERMINATE();
+		else if(reply==SolveState::UNSAT) exit_UNSAT();
 		assert(decisionLevel()==0);
 		if(assumps.size()==0) upper_time+=stats.getDetTime()-current_time;
 		else lower_time+=stats.getDetTime()-current_time;
@@ -1680,7 +1687,7 @@ void optimize(intConstr& origObj, intConstr& core){
 			++stats.NSOLS;
 			origUpperBound = handleNewSolution(origObj,lastUpperBound);
 			assert((opt_mode!=1 && opt_mode!=2) || lower_bound==last_sol_obj_val);
-		}	else if(reply==SolveState::UNSAT) {
+		} else if(reply==SolveState::INCONSISTENT) {
 			++stats.NCORES;
 			if(core.getSlack(Level)<0){
 				if(logger) core.logInconsistency(Level,Pos,stats);
@@ -1716,15 +1723,26 @@ void optimize(intConstr& origObj, intConstr& core){
 	}
 }
 
+void decide(intConstr& core){
+	while(true){
+		SolveState reply = solve({},core);
+		assert(reply!=SolveState::INCONSISTENT);
+		if(reply==SolveState::INTERRUPTED) exit_INDETERMINATE();
+		if(reply==SolveState::SAT) exit_SAT();
+		else if(reply==SolveState::UNSAT) exit_UNSAT();
+	}
+}
+
 int main(int argc, char**argv){
 	initial_time = aux::cpuTime();
-	init();
 	intConstr objective;
 	intConstr inconsistency;
 
 	signal(SIGINT, SIGINT_exit);
 	signal(SIGTERM,SIGINT_exit);
 	signal(SIGXCPU,SIGINT_exit);
+
+	init();
 
 	std::string filename = read_options(argc, argv);
 	tmpConstraint.initializeLogging(logger);
@@ -1748,14 +1766,5 @@ int main(int argc, char**argv){
 	signal(SIGXCPU,SIGINT_interrupt);
 
 	if(objective.vars.size() > 0) optimize(objective,inconsistency);
-	else while(true){
-		SolveState reply = solve({},inconsistency);
-		if(reply==SolveState::SAT) exit_SAT();
-		else if(reply==SolveState::UNSAT){
-			if(logger) inconsistency.logInconsistency(Level,Pos,stats);
-			assert(decisionLevel()==0);
-			assert(inconsistency.getSlack(Level)<0);
-			exit_UNSAT();
-		}
-	}
+	else decide(inconsistency);
 }

@@ -66,10 +66,9 @@ struct Constraint{
 		proofBuffer << proofID << " ";
 	}
 	void initializeLogging(std::shared_ptr<Logger>& l){
-		assert(l);
 		assert(isReset());
 		plogger=l;
-		resetBuffer(1);
+		if(plogger) resetBuffer(1);
 	}
 	template<class T>
 	inline static std::string proofMult(T mult){ return (mult==1?"":std::to_string(mult)+" * "); }
@@ -394,6 +393,7 @@ struct Constraint{
 	}
 	// @post: preserves order after removeZeroes()
 	void heuristicWeakening(const std::vector<int>::iterator& level, const std::vector<int>& pos, LARGE slk, Stats& sts){
+		assert(slk==getSlack(level));
 		if (slk<0) return; // no propagation, no idea what to weaken
 		assert(isSortedInDecreasingCoefOrder());
 		Var v_prop = -1;
