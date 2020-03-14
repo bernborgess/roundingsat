@@ -85,43 +85,6 @@ enum DeletionStatus { LOCKED, UNLOCKED, FORCEDELETE, MARKEDFORDELETE };
 enum WatchStatus { FOUNDNEW, FOUNDNONE, CONFLICTING };
 enum SolveState { SAT, UNSAT, INPROCESSING };
 
-struct Stats {
-	long long NTRAILPOPS=0, NWATCHLOOKUPS=0, NWATCHLOOKUPSBJ=0, NWATCHCHECKS=0, NPROPCHECKS=0, NADDEDLITERALS=0;
-	long long NCONFL=0, NDECIDE=0, NPROP=0, NPROPCLAUSE=0, NPROPCARD=0, NPROPWATCH=0, NPROPCOUNTING=0;
-	long long NWATCHED=0, NCOUNTING=0;
-	__int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
-	long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
-	long long NGCD=0, NCARDDETECT=0, NCORECARDINALITIES=0, NCORES=0, NSOLS=0;
-	long long NWEAKENEDNONIMPLYING=0, NWEAKENEDNONIMPLIED=0;
-	long long NRESTARTS=0, NCLEANUP=0;
-
-	inline long long getDetTime(){
-		return 1+NADDEDLITERALS+NWATCHLOOKUPS+NWATCHLOOKUPSBJ+NWATCHCHECKS+NPROPCHECKS+NPROP+NTRAILPOPS+NDECIDE;
-	}
-};
-
-struct Logger{
-	std::ofstream formula_out;
-	std::ofstream proof_out;
-	ID last_formID = 0;
-	ID last_proofID = 0;
-	std::vector<ID> unitIDs;
-
-	Logger(std::string& proof_log_name){
-		formula_out = std::ofstream(proof_log_name+".formula");
-		formula_out << "* #variable= 0 #constraint= 0\n";
-		formula_out << " >= 0 ;\n"; ++last_formID;
-		proof_out = std::ofstream(proof_log_name+".proof");
-		proof_out << "pseudo-Boolean proof version 1.0\n";
-		proof_out << "l 1\n"; ++last_proofID;
-	}
-
-	void flush(){
-		formula_out.flush();
-		proof_out.flush();
-	}
-};
-
 // ---------------------------------------------------------------------
 // Globals
 
@@ -150,8 +113,13 @@ double c_vsids_decay=0.999;
 // Variables
 Stats stats;
 std::shared_ptr<Logger> logger;
+
 IntSet tmpSet;
 IntSet actSet;
+
+intConstr tmpConstraint;
+longConstr conflConstraint; // functions as old confl_data
+intConstr logConstraint;
 
 double initial_time;
 Var n = 0;
@@ -160,12 +128,8 @@ std::vector<CRef> constraints;
 std::unordered_map<ID,CRef> external;
 std::vector<std::vector<Watch>> _adj={{}}; std::vector<std::vector<Watch>>::iterator adj;
 std::vector<int> _Level={-1}; std::vector<int>::iterator Level;
-inline bool isTrue(Lit l){ return ~Level[l]; }
-inline bool isFalse(Lit l){ return ~Level[-l]; }
-inline bool isUnit(Lit l){ return Level[l]==0; }
 std::vector<Lit> trail;
 std::vector<int> trail_lim, Pos;
-inline bool isUnknown(Lit l){ return Pos[std::abs(l)]==-1; }
 std::vector<CRef> Reason;
 int qhead; // for unit propagation
 Val last_sol_obj_val = std::numeric_limits<Val>::max();
@@ -173,540 +137,15 @@ inline bool foundSolution(){ return last_sol_obj_val<std::numeric_limits<Val>::m
 std::vector<bool> last_sol;
 std::vector<Lit> phase;
 std::vector<double> activity;
-inline void newDecisionLevel() { trail_lim.push_back(trail.size()); }
 inline int decisionLevel() { return trail_lim.size(); }
 ID crefID = 0;
 
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
 
-template<class SMALL, class LARGE> // LARGE should be able to fit sums of SMALL
-struct Constraint{
-	LARGE degree = 0;
-	LARGE rhs = 0;
-	std::vector<Var> vars;
-	std::vector<SMALL> coefs;
-	std::stringstream proofBuffer;
-	std::shared_ptr<Logger> plogger;
-	static constexpr SMALL _unused_(){ return std::numeric_limits<SMALL>::max(); }
-	static constexpr LARGE _invalid_(){ return std::numeric_limits<LARGE>::min(); }
-
-	Constraint(){
-		assert(std::numeric_limits<SMALL>::is_specialized);
-		assert(std::numeric_limits<LARGE>::is_specialized);
-		reset();
-	}
-
-	inline void resize(size_t s){ if(s>coefs.size()) coefs.resize(s,_unused_()); }
-
-	void resetBuffer(ID proofID){
-		assert(plogger);
-		proofBuffer.clear();
-		proofBuffer.str(std::string());
-		proofBuffer << proofID << " ";
-	}
-	void initializeLogging(std::shared_ptr<Logger>& l){
-		assert(l);
-		assert(isReset());
-		plogger=l;
-		resetBuffer(1);
-	}
-	template<class T>
-	inline static std::string proofMult(T mult){ return (mult==1?"":std::to_string(mult)+" * "); }
-
-	bool isReset() const { return vars.size()==0 && rhs==0; }
-	void reset(){
-		for(Var v: vars) coefs[v]=_unused_();
-		vars.clear();
-		rhs=0; degree = 0;
-		if(plogger) resetBuffer(1); // NOTE: proofID 1 equals the constraint 0 >= 0
-	}
-
-	inline void addRhs(LARGE r){ rhs+=r; if(degree!=_invalid_()) degree+=r; }
-	inline LARGE getRhs() const { return rhs; }
-	inline LARGE getDegree() {
-		if(degree!=_invalid_()) return degree;
-		degree = rhs;
-		for (Var v: vars) degree -= std::min<SMALL>(0,coefs[v]); // considering negative coefficients
-		return degree;
-	}
-	inline SMALL getCoef(Lit l) const {
-		assert((unsigned int)std::abs(l)<coefs.size());
-		return coefs[std::abs(l)]==_unused_()?0:(l<0?-coefs[-l]:coefs[l]);
-	}
-	inline Lit getLit(Lit l) const { // NOTE: answer of 0 means coef 0 or not in vars
-		Var v = std::abs(l);
-		if(v>=(Var)coefs.size()) return 0;
-		SMALL c = coefs[v];
-		if(c==0 || c==_unused_()) return 0;
-		else if(c<0) return -v;
-		else return v;
-	}
-	inline bool falsified(Var v) const {
-		assert(v>0);
-		assert((getLit(v)!=0 && !isFalse(getLit(v)))==(coefs[v]>0 && !isFalse(v)) || (coefs[v]<0 && !isTrue(v)));
-		return ((coefs[v]>0 && isFalse(v)) || (coefs[v]<0 && isTrue(v)));
-	}
-	LARGE getSlack() const {
-		LARGE slack = -rhs;
-		for(Var v: vars) if(isTrue(v) || (!isFalse(v) && coefs[v]>0)) slack+=coefs[v];
-		return slack;
-	}
-
-	// NOTE: erasing variables with coef 0 in addLhs would lead to invalidated iteration (e.g., for loops that weaken)
-	void addLhs(SMALL c, Lit l){ // treats negative literals as 1-v
-		assert(l!=0);
-		degree=_invalid_();
-		Var v = l;
-		if(l<0){ rhs -= c; c = -c; v = -l; }
-		assert(v<(Var)coefs.size());
-		if(coefs[v]==_unused_()) vars.push_back(v), coefs[v]=0;
-		coefs[v]+=c;
-	}
-	inline void weaken(SMALL m, Lit l){ // add m*(l>=0) if m>0 and -m*(-l>=-1) if m<0
-		if(m==0) return;
-		if(plogger){
-			if(m>0) proofBuffer << (l<0?"~x":"x") << std::abs(l) <<  " " << proofMult(m) << "+ ";
-			else proofBuffer << (l<0?"x":"~x") << std::abs(l) <<  " " << proofMult(-m) << "+ ";
-		}
-		addLhs(m,l); // resets degree // TODO: optimize this method by not calling addLhs
-		if(m<0) addRhs(m);
-	}
-
-	// @post: preserves order of vars
-	void removeUnitsAndZeroes(bool doSaturation=true){
-		if(plogger){
-			for(Var v: vars){
-				Lit l = getLit(v); SMALL c = getCoef(l);
-				if(l==0) continue;
-				if(isUnit(l)) proofBuffer << (l<0?"x":"~x") << v << " " << proofMult(c) << "+ ";
-				else if(isUnit(-l)) proofBuffer << plogger->unitIDs[Pos[v]] << " " << proofMult(c) << "+ ";
-			}
-		}
-		int j=0;
-		for(int i=0; i<(int)vars.size(); ++i){
-			Var v=vars[i];
-			SMALL c=coefs[v];
-			if(c==0) coefs[v]=_unused_();
-			else if(isUnit(v)){
-				rhs-=c;
-				if(degree!=_invalid_() && c>0) degree-=c;
-				coefs[v]=_unused_();
-			}else if(isUnit(-v)){
-				if(degree!=_invalid_() && c<0) degree+=c;
-				coefs[v]=_unused_();
-			}else vars[j++]=v;
-		}
-		vars.resize(j);
-		if(doSaturation) saturate();
-	}
-	bool hasNoUnits() const {
-		for(Var v: vars) if(isUnit(v) || isUnit(-v)) return false;
-		return true;
-	}
-
-	// @post: mutates order of vars
-	void removeZeroes() {
-		for(int i=0; i<(int)vars.size(); ++i){
-			Var v=vars[i];
-			if(coefs[v]==0){
-				coefs[v]=_unused_();
-				aux::swapErase(vars,i--);
-			}
-		}
-	}
-	bool hasNoZeroes() const {
-		for(Var v: vars) if(coefs[v]==0) return false;
-		return true;
-	}
-
-	// @post: preserves order of vars
-	void saturate(const std::vector<Var>& vs){
-		if(plogger && !isSaturated()) proofBuffer << "s "; // log saturation only if it modifies the constraint
-		LARGE w = getDegree();
-		if(w<=0){ // NOTE: does not call reset(0), as we do not want to reset the buffer
-			for(Var v: vars) coefs[v]=_unused_();
-			vars.clear(); rhs=0; degree=0;
-			return;
-		}
-		for (Var v: vs){
-			if(coefs[v]<-w) rhs-=coefs[v]+w, coefs[v]=-w;
-			else coefs[v]=std::min<LARGE>(coefs[v],w);
-		}
-		assert(isSaturated());
-	}
-	void saturate(){ saturate(vars); }
-	bool isSaturated() {
-		LARGE w = getDegree();
-		for(Var v:vars) if(std::abs(coefs[v])>w) return false;
-		return true;
-	}
-
-	template<class S, class L>
-	void copyTo(Constraint<S,L>& out, bool inverted=false) const {
-		assert(out.isReset());
-		int mult=(inverted?-1:1);
-		out.rhs=mult*rhs;
-		out.vars=vars;
-		out.resize(coefs.size());
-		for(Var v: vars) out.coefs[v]=mult*coefs[v];
-		if(inverted || degree==_invalid_()) out.degree=out._invalid_();
-		else out.degree=degree;
-		if(plogger){
-			out.proofBuffer.str(std::string());
-			out.proofBuffer << proofBuffer.str() << proofMult(mult);
-		}
-	}
-
-	template<class S, class L>
-	void add(Constraint<S,L>& c, SMALL cmult=1, SMALL thismult=1, bool saturateAndReduce=true, bool partial=false){
-		assert(!saturateAndReduce || isSaturated());
-		assert(c._unused_()<=_unused_()); // don't add large stuff into small stuff
-		assert(cmult>=0);
-		if(plogger) proofBuffer << proofMult(thismult) << c.proofBuffer.str() << proofMult(cmult) << "+ ";
-		if(thismult!=1){
-			degree = thismult*getDegree();
-			rhs *= thismult;
-			for(Var v: vars) coefs[v] *= thismult;
-		}
-		LARGE old_degree = getDegree();
-		degree+=(LARGE)cmult*(LARGE)c.getDegree();
-		rhs+=(LARGE)cmult*(LARGE)c.getRhs();
-		for(Var v: c.vars){
-			assert(v<(Var)coefs.size());
-			assert(v>0);
-			SMALL val = cmult*c.coefs[v];
-			if(coefs[v]==_unused_()){
-				vars.push_back(v);
-				coefs[v]=val;
-			}else{
-				SMALL cf = coefs[v];
-				if((cf<0)!=(val<0)) degree -= std::min(std::abs(cf),std::abs(val));
-				coefs[v]=cf+val;
-			}
-		}
-		if(!saturateAndReduce) return;
-		if(old_degree>getDegree()){ removeZeroes(); saturate(); }
-		else{ saturate(c.vars); } // only saturate changed vars
-		if(getDegree() >= (LARGE) INF){ removeZeroes(); roundToOne(aux::ceildiv<LARGE>(getDegree(), 1e9), partial); }
-		assert(getDegree() < (LARGE) INF);
-		assert(isSaturated());
-	}
-
-	void roundToOne(const SMALL d, bool partial){
-		assert(isSaturated());
-		assert(d>0);
-		if(d==1) return;
-		for(Var v:vars){
-			assert(!isUnit(-v));
-			assert(!isUnit( v));
-			if(coefs[v]%d!=0){
-				if(!falsified(v)){
-					if(partial) weaken(-coefs[v]%d,v); // partial weakening
-					else weaken(-coefs[v],v);
-				}else{
-					assert((!isTrue(v))==(coefs[v]>0));
-					if(coefs[v]<0){
-						SMALL weakening = d+(coefs[v]%d);
-						coefs[v]-=weakening;
-						rhs-=weakening;
-					}else coefs[v]+=d-(coefs[v]%d);
-				}
-			}
-			assert(coefs[v]%d==0);
-			coefs[v]/=d;
-		}
-		// NOTE: as all coefficients are divisible by d, we can aux::ceildiv the rhs instead of the degree
-		rhs=aux::ceildiv_safe<LARGE>(rhs,d);
-		degree=_invalid_();
-		saturate(); // NOTE: needed, as weakening can change degree significantly
-		if(plogger) proofBuffer << d << " d s ";
-	}
-
-	bool divideByGCD(){
-		assert(isSaturated());
-		assert(isSortedInDecreasingCoefOrder());
-		assert(hasNoZeroes());
-		if(vars.size()==0) return false;
-		if(std::abs(coefs[vars[0]])>=INF) return false; // TODO: large coefs currently unsupported
-		unsigned int _gcd = std::abs(coefs[vars.back()]);
-		for(Var v: vars){
-			_gcd = aux::gcd(_gcd,(unsigned int) std::abs(coefs[v]));
-			if(_gcd==1) return false;
-		}
-		assert(_gcd>1); assert(_gcd<(unsigned int)INF);
-		for (Var v: vars) coefs[v] /= (Coef)_gcd;
-		// NOTE: as all coefficients are divisible, we can aux::ceildiv the rhs instead of the degree
-		rhs=aux::ceildiv_safe<LARGE>(rhs,_gcd);
-		if(degree!=_invalid_()) degree=aux::ceildiv_safe<LARGE>(degree,_gcd);
-		if(plogger) proofBuffer << _gcd << " d ";
-		return true;
-	}
-
-	// NOTE: only equivalence preserving operations!
-	void postProcess(bool sortFirst, Stats& sts){
-		removeUnitsAndZeroes(); // NOTE: also saturates
-		if(sortFirst) sortInDecreasingCoefOrder();
-		if(divideByGCD()) ++sts.NGCD;
-		if(simplifyToCardinality(true)) ++sts.NCARDDETECT;
-	}
-
-	inline bool falseAtLevel(Var v, int lvl){
-		return (coefs[v]>0 && Level[-v]==lvl) || (coefs[v]<0 && Level[v]==lvl);
-	}
-	Var falsev1=0; Var falsev2=0;
-	bool falsifiedAtLvlIsOne(int lvl) {
-		if(getLit(falsev1)!=0 && getLit(falsev2)!=0 && falseAtLevel(falsev1,lvl) && falseAtLevel(falsev2,lvl)) return false;
-		falsev1=0; falsev2=0;
-		for(Var v: vars){
-			if(coefs[v]!=0 && falseAtLevel(v,lvl)){
-				if(falsev1==0) falsev1=v;
-				else{ falsev2=v; return false; };
-			}
-		}
-		return falsev1!=0;
-	}
-
-	// @return: earliest decision level that propagates a variable
-	int getAssertionLevel() const {
-		assert(getSlack()<0);
-		if(decisionLevel()==0) return 0;
-
-		// calculate slack at level -1
-		LARGE slack = -rhs;
-		for(Var v: vars) if(coefs[v]>0) slack+=coefs[v];
-		if(slack<0) return 0;
-
-		assert(hasNoZeroes());
-		assert(isSortedInDecreasingCoefOrder());
-
-		// create useful datastructures
-		std::vector<Lit> litsByPos;
-		litsByPos.reserve(vars.size());
-		for(Var v: vars){
-			Lit l = getLit(v); assert(l!=0);
-			if(isFalse(l)) litsByPos.push_back(-l);
-		}
-		std::sort(litsByPos.begin(),litsByPos.end(),[&](Lit l1,Lit l2){ return Pos[std::abs(l1)]<Pos[std::abs(l2)]; });
-
-		// calculate earliest propagating decision level by decreasing slack one decision level at a time
-		auto posIt = litsByPos.cbegin();
-		auto coefIt = vars.cbegin();
-		int assertionLevel = 0;
-		while(true){
-			while(posIt!=litsByPos.cend() && Level[*posIt]<=assertionLevel){
-				slack-=std::abs(coefs[std::abs(*posIt)]);
-				++posIt;
-			}
-			if(slack<0){ assertionLevel=std::max(assertionLevel-1,0); break; }
-			while((unsigned int)assertionLevel>=(unsigned int)Level[getLit(*coefIt)]) ++coefIt;
-			// NOTE: unsigned int cast ensures assertionLevel < -1
-			assert(coefIt!=vars.cend());
-			if(slack<std::abs(coefs[*coefIt])) break;
-			++assertionLevel;
-		}
-		assert(assertionLevel<decisionLevel());
-		return assertionLevel;
-	}
-
-	// @post: preserves order after removeZeroes()
-	void weakenNonImplied(LARGE slack, Stats& sts){
-		for(Var v: vars) if(coefs[v]!=0 && std::abs(coefs[v])<=slack && !falsified(v)){
-				weaken(-coefs[v],v);
-				++sts.NWEAKENEDNONIMPLIED;
-			}
-	}
-	// @post: preserves order after removeZeroes()
-	bool weakenNonImplying(SMALL propCoef, LARGE slack, Stats& sts){
-		assert(hasNoZeroes());
-		assert(isSortedInDecreasingCoefOrder());
-		long long oldCount = sts.NWEAKENEDNONIMPLYING;
-		for(int i=vars.size()-1; i>=0 && slack+std::abs(coefs[vars[i]])<propCoef; --i){
-			Var v = vars[i];
-			if(falsified(v)){
-				SMALL c = coefs[v];
-				slack+=std::abs(c);
-				weaken(-c,v);
-				++sts.NWEAKENEDNONIMPLYING;
-			}
-		}
-		bool changed = oldCount!=sts.NWEAKENEDNONIMPLYING;
-		if(changed) saturate();
-		return changed;
-	}
-	// @post: preserves order after removeZeroes()
-	void heuristicWeakening(LARGE slk, Stats& sts){
-		if (slk<0) return; // no propagation, no idea what to weaken
-		assert(isSortedInDecreasingCoefOrder());
-		Var v_prop = -1;
-		for(int i=vars.size()-1; i>=0; --i){
-			Var v = vars[i];
-			if(std::abs(coefs[v])>slk && isUnknown(v)){ v_prop=v; break; }
-		}
-		if(v_prop==-1) return; // no propagation, no idea what to weaken
-		if(weakenNonImplying(std::abs(coefs[v_prop]),slk,sts)) slk = getSlack(); // slack changed
-		assert(getSlack()<std::abs(coefs[v_prop]));
-		weakenNonImplied(slk,sts);
-	}
-
-	// @post: preserves order of vars
-	bool simplifyToCardinality(bool equivalencePreserving){
-		assert(isSaturated());
-		assert(isSortedInDecreasingCoefOrder());
-		assert(hasNoZeroes());
-		if(vars.size()==0 || std::abs(coefs[vars[0]])==1) return false; // already cardinality
-		const LARGE w = getDegree();
-		if(w<=0) return false;
-
-		int largeCoefsNeeded=0;
-		LARGE largeCoefSum=0;
-		while(largeCoefsNeeded<(int)vars.size() && largeCoefSum<w){
-			largeCoefSum+=std::abs(coefs[vars[largeCoefsNeeded]]);
-			++largeCoefsNeeded;
-		}
-		assert(largeCoefsNeeded>0);
-		if(largeCoefSum<w){
-			for(Var v: vars) weaken(-coefs[v],v);
-			return true; // trivial inconsistency
-		}
-
-		int skippable=vars.size(); // counting backwards
-		if(equivalencePreserving){
-			LARGE smallCoefSum=0;
-			for(int i=1; i<=largeCoefsNeeded; ++i) smallCoefSum+=std::abs(coefs[vars[vars.size()-i]]);
-			if(smallCoefSum<w) return false;
-			// else, we have an equivalent cardinality constraint
-		}else{
-			LARGE wiggleroom=w-largeCoefSum+std::abs(coefs[vars[largeCoefsNeeded-1]]);
-			assert(wiggleroom>0);
-			while(skippable>0 && wiggleroom>std::abs(coefs[vars[skippable-1]])){
-				--skippable;
-				wiggleroom-=std::abs(coefs[vars[skippable]]);
-			}
-		}
-		assert(skippable>=largeCoefsNeeded);
-
-		if(plogger){
-			SMALL div_coef = std::abs(coefs[vars[largeCoefsNeeded-1]]);
-			for(int i=0; i<largeCoefsNeeded; ++i){ // partially weaken large vars
-				Lit l = getLit(vars[i]);
-				SMALL d = getCoef(l)-div_coef;
-				proofBuffer << (l>0?"~x":"x") << std::abs(l) << " " << proofMult(d) << "+ ";
-			}
-			for(int i=skippable; i<(int)vars.size(); ++i){ // weaken small vars
-				Lit l = getLit(vars[i]);
-				SMALL d = getCoef(l);
-				proofBuffer << (l>0?"~x":"x") << std::abs(l) << " " << proofMult(d) << "+ ";
-			}
-			if(div_coef>1) proofBuffer << div_coef << " d ";
-		}
-		rhs=largeCoefsNeeded;
-		degree=largeCoefsNeeded;
-		vars.resize(skippable);
-		for(int i=0; i<(int)vars.size(); ++i){
-			SMALL& c = coefs[vars[i]];
-			if(c<0){ c=-1; --rhs; }
-			else c=1;
-		}
-		return true;
-	}
-	bool isCardinality() const {
-		for(Var v: vars) if(std::abs(coefs[v])>1) return false;
-		return true;
-	}
-
-	// @pre: reducible to unit over v
-	void logUnit(Var v_unit){
-		assert(plogger);
-		// reduce to unit over v
-		removeUnitsAndZeroes();
-		assert(getLit(v_unit)!=0);
-		for(Var v: vars) if(v!=v_unit) weaken(-coefs[v],v);
-		assert(getDegree()>0);
-		LARGE d = std::max<LARGE>(std::abs(coefs[v_unit]),getDegree());
-		if(d>1) proofBuffer << d << " d ";
-		if(coefs[v_unit]>0){ coefs[v_unit]=1; rhs=1;}
-		else{ coefs[v_unit]=-1; rhs=0; }
-		degree=1;
-		logProofLine("u", stats);
-		plogger->unitIDs.push_back(plogger->last_proofID);
-	}
-
-	void sortInDecreasingCoefOrder() {
-		std::sort(vars.begin(),vars.end(),[&](Var v1,Var v2){ return std::abs(coefs[v1])>std::abs(coefs[v2]); });
-	}
-	bool isSortedInDecreasingCoefOrder() const {
-		for(int i=1; i<(int)vars.size(); ++i) if(std::abs(coefs[vars[i-1]])<std::abs(coefs[vars[i]])) return false;
-		return true;
-	}
-
-	void logAsInput(){
-		assert(plogger);
-		toStreamAsOPB(plogger->formula_out);
-		plogger->proof_out << "l " << ++plogger->last_formID << "\n";
-		resetBuffer(++plogger->last_proofID); // ensure consistent proofBuffer
-	}
-
-	void logProofLine(std::string info, Stats& sts){
-		assert(plogger);
-		_unused(info); _unused(sts);
-		plogger->proof_out << "p " << proofBuffer.str() << "0\n";
-		resetBuffer(++plogger->last_proofID); // ensure consistent proofBuffer
-		#if !NDEBUG
-		plogger->proof_out << "* " << sts.getDetTime() << " " << info << "\n";
-		plogger->proof_out << "e " << plogger->last_proofID << " ";
-		toStreamAsOPB(plogger->proof_out);
-		#endif
-	}
-
-	void logInconsistency(Stats& sts){
-		assert(plogger);
-		removeUnitsAndZeroes();
-		logProofLine("i", sts);
-		assert(getSlack()<0);
-		plogger->proof_out << "c " << plogger->last_proofID << " 0" << std::endl;
-	}
-
-	void toStreamAsOPB(std::ofstream& o) {
-		for(Var v: vars){
-			Lit l = getLit(v);
-			if(l==0) continue;
-			SMALL c=getCoef(l);
-			assert(c>0);
-			o << "+" << c << (l<0?" ~x":" x") << v << " ";
-		}
-		o << ">= " << getDegree() << " ;\n";
-	}
-};
-
-template<class S, class L>
-std::ostream & operator<<(std::ostream & o, Constraint<S,L>& C) {
-	std::vector<Var> vars = C.vars;
-	std::sort(vars.begin(),vars.end(), [](Var v1, Var v2) { return v1<v2; });
-	for(Var v: vars){
-		Lit l = C.getLit(v);
-		if(l==0) continue;
-		o << C.getCoef(l) << "x" << l << ":" << (isTrue(l)?"t":(isFalse(l)?"f":"u")) << "@" << std::max(Level[l],Level[-l]) << "," << Pos[std::abs(l)] << " ";
-	}
-	o << ">= " << C.getDegree();
-	return o;
-}
-
-using intConstr = Constraint<int,long long>; // TODO: move to typedefs
-using longConstr = Constraint<long long,__int128>;
-
-intConstr tmpConstraint;
-longConstr confl_data;
-intConstr logConstraint;
-
-// ---------------------------------------------------------------------
-// ---------------------------------------------------------------------
-
 void propagate(Lit p, CRef from);
-struct Constr;
-std::ostream & operator<<(std::ostream & o, const Constr& C);
 int sz_constr(int length);
-struct Constr {
+struct Constr { // internal constraint optimized for fast propagation
 	ID id;
 	Val degree;
 	// NOTE: above attributes not strictly needed in cache-sensitive Constr, but it did not matter after testing
@@ -744,12 +183,12 @@ struct Constr {
 	inline void undoFalsified(int i) {
 		assert(!isSimple());
 		assert(isCounting() || isWatched(i));
-		assert(isFalse(data[i+1]));
+		assert(isFalse(Level,data[i+1]));
 		++stats.NWATCHLOOKUPSBJ;
 		slack += abs(data[i]); // TODO: slack -= data[i] when only watched propagation
 	}
 	inline WatchStatus propagateWatch(CRef cr, int& idx, Lit p){
-		assert(isFalse(p));
+		assert(isFalse(Level,p));
 		++stats.NWATCHLOOKUPS;
 
 		if(isClause()){
@@ -766,14 +205,14 @@ struct Constr {
 			}
 			assert(p==watch);
 			assert(p!=otherwatch);
-			if(isTrue(otherwatch)){
+			if(isTrue(Level,otherwatch)){
 				idx=otherwatch-INF; // set new blocked literal
 				return WatchStatus::FOUNDNONE; // constraint is satisfied
 			}
 			const unsigned int Csize=size();
 			for(unsigned int i=2; i<Csize; ++i){
 				Lit l = data[i];
-				if(!isFalse(l)){
+				if(!isFalse(Level,l)){
 					int mid = i/2+1;
 					data[i]=data[mid];
 					data[mid]=watch;
@@ -784,10 +223,10 @@ struct Constr {
 				}
 			}
 			stats.NWATCHCHECKS+=Csize-2;
-			assert(isFalse(watch));
-			for(unsigned int i=2; i<Csize; ++i) assert(isFalse(data[i]));
-			if(isFalse(otherwatch)) return WatchStatus::CONFLICTING;
-			else{ assert(!isTrue(otherwatch)); ++stats.NPROPCLAUSE; propagate(otherwatch,cr); }
+			assert(isFalse(Level,watch));
+			for(unsigned int i=2; i<Csize; ++i) assert(isFalse(Level,data[i]));
+			if(isFalse(Level,otherwatch)) return WatchStatus::CONFLICTING;
+			else{ assert(!isTrue(Level,otherwatch)); ++stats.NPROPCLAUSE; propagate(otherwatch,cr); }
 			++stats.NPROPCHECKS;
 			return WatchStatus::FOUNDNONE;
 		}
@@ -804,7 +243,7 @@ struct Constr {
 			stats.NWATCHCHECKS-=watchIdx;
 			for(; watchIdx<Csize; ++watchIdx){
 				Lit l = data[watchIdx];
-				if(!isFalse(l)){
+				if(!isFalse(Level,l)){
 					unsigned int mid = (watchIdx+degree+1)/2; assert(mid<=watchIdx); assert(mid>degree);
 					data[watchIdx]=data[mid];
 					data[mid]=data[widx];
@@ -815,12 +254,12 @@ struct Constr {
 				}
 			}
 			stats.NWATCHCHECKS+=watchIdx;
-			assert(isFalse(data[widx]));
-			for(unsigned int i=degree+1; i<Csize; ++i) assert(isFalse(data[i]));
-			for(unsigned int i=0; i<=degree; ++i) if(i!=widx && isFalse(data[i])) return WatchStatus::CONFLICTING;
+			assert(isFalse(Level,data[widx]));
+			for(unsigned int i=degree+1; i<Csize; ++i) assert(isFalse(Level,data[i]));
+			for(unsigned int i=0; i<=degree; ++i) if(i!=widx && isFalse(Level,data[i])) return WatchStatus::CONFLICTING;
 			for(unsigned int i=0; i<=degree; ++i){
 				Lit l = data[i];
-				if(i!=widx && !isTrue(l)){ ++stats.NPROPCARD; propagate(l,cr); }
+				if(i!=widx && !isTrue(Level,l)){ ++stats.NPROPCARD; propagate(l,cr); }
 			}
 			stats.NPROPCHECKS+=degree+1;
 			return WatchStatus::FOUNDNONE;
@@ -839,7 +278,7 @@ struct Constr {
 				stats.NPROPCHECKS-=watchIdx>>1;
 				for(; watchIdx<Csize2 && data[watchIdx]>slack; watchIdx+=2){
 					const Lit l = data[watchIdx+1];
-					if(isUnknown(l)){
+					if(isUnknown(Pos,l)){
 						stats.NPROPCLAUSE+=(degree==1); stats.NPROPCARD+=(degree!=1 && ClargestCoef==1); ++stats.NPROPCOUNTING;
 						propagate(l,cr);
 					}
@@ -858,7 +297,7 @@ struct Constr {
 			for(; watchIdx<Csize2 && slack<ClargestCoef; watchIdx+=2){ // NOTE: first innermost loop of RoundingSat
 				const Coef cf = data[watchIdx];
 				const Lit l = data[watchIdx+1];
-				if(cf>0 && !isFalse(l)){
+				if(cf>0 && !isFalse(Level,l)){
 					slack+=cf;
 					data[watchIdx]=-cf;
 					adj[l].emplace_back(cr,watchIdx);
@@ -874,7 +313,7 @@ struct Constr {
 		stats.NPROPCHECKS-=watchIdx>>1;
 		for(; watchIdx<Csize2 && std::abs(data[watchIdx])>slack; watchIdx+=2){ // NOTE: second innermost loop of RoundingSat
 			const Lit l = data[watchIdx+1];
-			if(isUnknown(l)){
+			if(isUnknown(Pos,l)){
 				stats.NPROPCLAUSE+=(degree==1); stats.NPROPCARD+=(degree!=1 && ClargestCoef==1); ++stats.NPROPWATCH;
 				propagate(l,cr);
 			}
@@ -894,13 +333,13 @@ struct Constr {
 };
 std::ostream & operator<<(std::ostream & o, const Constr& C) {
 	C.toConstraint(logConstraint);
-	o << C.id << ": " << logConstraint << " sl: " << logConstraint.getSlack();
+	o << C.id << ": " << logConstraint << " sl: " << logConstraint.getSlack(Level);
 	logConstraint.reset();
 	return o;
 }
 Val getSlack(Constr& C){
 	C.toConstraint(logConstraint);
-	Val slack = logConstraint.getSlack();
+	Val slack = logConstraint.getSlack(Level);
 	logConstraint.reset();
 	return slack;
 }
@@ -1049,9 +488,9 @@ void cBumpActivity (Constr& c) {
 // Search
 
 void uncheckedEnqueue(Lit p, CRef from){
-	assert(!isTrue(p));
-	assert(!isFalse(p));
-	assert(isUnknown(p));
+	assert(!isTrue(Level,p));
+	assert(!isFalse(Level,p));
+	assert(isUnknown(Pos,p));
 	Var v = std::abs(p);
 	Reason[v] = from;
 	if(decisionLevel()==0){
@@ -1059,7 +498,7 @@ void uncheckedEnqueue(Lit p, CRef from){
 		if(logger){
 			Constr& C = ca[from];
 			C.toConstraint(logConstraint);
-			logConstraint.logUnit(v);
+			logConstraint.logUnit(Level,Pos,v,stats);
 			logConstraint.reset();
 			assert(logger->unitIDs.size()==trail.size()+1);
 		}
@@ -1073,7 +512,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 	assert(constraint.isSortedInDecreasingCoefOrder());
 	assert(constraint.isSaturated());
 	assert(constraint.hasNoZeroes());
-	assert(constraint.hasNoUnits());
+	assert(constraint.hasNoUnits(Level));
 	assert(constraint.getDegree()>0);
 	assert(constraint.vars.size()>0);
 
@@ -1091,28 +530,28 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 	if(C.isSimple()){
 		if(C.degree>=C.size()){
 			assert(decisionLevel()==0);
-			for(unsigned int i=0; i<C.size(); ++i){ assert(isUnknown(data[i])); propagate(data[i],cr); }
+			for(unsigned int i=0; i<C.size(); ++i){ assert(isUnknown(Pos,data[i])); propagate(data[i],cr); }
 			return cr;
 		}
 
 		unsigned int watch=0;
 		for(unsigned int i=0; i<C.size(); ++i){
 			Lit l = data[i];
-			if(!isFalse(l)){
+			if(!isFalse(Level,l)){
 				data[i]=data[watch];
 				data[watch++]=l;
 				if(watch>C.degree+1) break;
 			}
 		}
 		assert(watch>=C.degree); // we found enough watches to satisfy the constraint
-		if(isFalse(data[C.degree])){
+		if(isFalse(Level,data[C.degree])){
 			for(unsigned int i=0; i<C.degree; ++i){
-				assert(!isFalse(data[i]));
-				if(!isTrue(data[i])) propagate(data[i],cr);
+				assert(!isFalse(Level,data[i]));
+				if(!isTrue(Level,data[i])) propagate(data[i],cr);
 			}
 			for(unsigned int i=C.degree+1; i<C.size(); ++i){ // ensure last watch is last falsified literal
 				Lit l = data[i];
-				assert(isFalse(l));
+				assert(isFalse(Level,l));
 				if(Level[-l]>Level[-data[C.degree]]){ data[i]=data[C.degree]; data[C.degree]=l; }
 			}
 		}
@@ -1134,11 +573,11 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 		for(unsigned int i=0; i<2*C.size(); i+=2){
 			Lit l = data[i+1];
 			adj[l].emplace_back(cr,i);
-			if(!isFalse(l) || Pos[std::abs(l)]>=qhead) C.slack+=data[i];
+			if(!isFalse(Level,l) || Pos[std::abs(l)]>=qhead) C.slack+=data[i];
 		}
 		assert(C.slack>=0);
 		if(C.slack<C.largestCoef()){ // propagate
-			for(unsigned int i=0; i<2*C.size() && data[i]>C.slack; i+=2) if(isUnknown(data[i+1])) {
+			for(unsigned int i=0; i<2*C.size() && data[i]>C.slack; i+=2) if(isUnknown(Pos,data[i+1])) {
 				propagate(data[i+1],cr);
 			}
 		}
@@ -1149,7 +588,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 	++stats.NWATCHED;
 	for(unsigned int i=0; i<2*C.size() && C.slack<C.largestCoef(); i+=2){
 		Lit l = data[i+1];
-		if(!isFalse(l) || Pos[std::abs(l)]>=qhead){
+		if(!isFalse(Level,l) || Pos[std::abs(l)]>=qhead){
 			assert(!C.isWatched(i));
 			C.slack+=data[i];
 			data[i]=-data[i];
@@ -1161,7 +600,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 		// set sufficient falsified watches
 		std::vector<unsigned int> falsifiedIdcs;
 		falsifiedIdcs.reserve(C.size());
-		for(unsigned int i=0; i<2*C.size(); i+=2) if(isFalse(data[i+1]) && Pos[std::abs(data[i+1])]<qhead) falsifiedIdcs.push_back(i);
+		for(unsigned int i=0; i<2*C.size(); i+=2) if(isFalse(Level,data[i+1]) && Pos[std::abs(data[i+1])]<qhead) falsifiedIdcs.push_back(i);
 		std::sort(falsifiedIdcs.begin(),falsifiedIdcs.end(),[&](unsigned i1,unsigned i2){
 			return Pos[std::abs(data[i1+1])]>Pos[std::abs(data[i2+1])]; });
 		Val diff = C.largestCoef()-C.slack;
@@ -1173,7 +612,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 			if(diff<=0) break;
 		}
 		// perform initial propagation
-		for(unsigned int i=0; i<2*C.size() && std::abs(data[i])>C.slack; i+=2) if(isUnknown(data[i+1])) {
+		for(unsigned int i=0; i<2*C.size() && std::abs(data[i])>C.slack; i+=2) if(isUnknown(Pos,data[i+1])) {
 			propagate(data[i+1],cr);
 		}
 	}
@@ -1204,7 +643,7 @@ inline void backjumpTo(int level){
 
 inline void decide(Lit l){
 	++stats.NDECIDE;
-	newDecisionLevel();
+	trail_lim.push_back(trail.size());
 	uncheckedEnqueue(l,CRef_Undef);
 }
 
@@ -1220,7 +659,7 @@ inline void propagate(Lit l, CRef reason){
 void recomputeLBD(Constr& C) {
 	if(C.lbd()<=2) return;
 	assert(tmpSet.size()==0);
-	for (int i=0; i<(int)C.size(); i++) if (isFalse(C.lit(i))) tmpSet.add(Level[-C.lit(i)]);
+	for (int i=0; i<(int)C.size(); i++) if (isFalse(Level,C.lit(i))) tmpSet.add(Level[-C.lit(i)]);
 	C.setLBD(1+tmpSet.size()); // +1 because, e.g., a binary learned clause contains 1 false literal but should have LBD 2
 	tmpSet.reset();
 }
@@ -1232,26 +671,26 @@ void analyze(CRef confl){
 		recomputeLBD(C);
 	}
 
-	C.toConstraint(confl_data);
-	stats.NADDEDLITERALS+=confl_data.vars.size();
-	confl_data.removeUnitsAndZeroes();
+	C.toConstraint(conflConstraint);
+	stats.NADDEDLITERALS+=conflConstraint.vars.size();
+	conflConstraint.removeUnitsAndZeroes(Level,Pos);
 	assert(actSet.size()==0); // will hold the literals that need their activity bumped
-	for(Var v: confl_data.vars) actSet.add(confl_data.getLit(v));
+	for(Var v: conflConstraint.vars) actSet.add(conflConstraint.getLit(v));
 	while(true){
 		if(asynch_interrupt)exit_INDETERMINATE();
 		if (decisionLevel() == 0) {
-			if(logger) confl_data.logInconsistency(stats);
-			assert(confl_data.getSlack()<0);
+			if(logger) conflConstraint.logInconsistency(Level,Pos,stats);
+			assert(conflConstraint.getSlack(Level)<0);
 			exit_UNSAT();
 		}
 		Lit l = trail.back();
-		assert(std::abs(confl_data.getCoef(-l))<INF);
-		Coef confl_coef_l = confl_data.getCoef(-l);
+		assert(std::abs(conflConstraint.getCoef(-l))<INF);
+		Coef confl_coef_l = conflConstraint.getCoef(-l);
 		if(confl_coef_l>0) {
-			if (confl_data.falsifiedAtLvlIsOne(decisionLevel())) break;
+			if (conflConstraint.falsifiedAtLvlisOne(Level,decisionLevel())) break;
 			assert(Reason[std::abs(l)] != CRef_Undef);
 			if(originalRoundToOne){
-				confl_data.roundToOne(confl_coef_l,false);
+				conflConstraint.roundToOne(Level,confl_coef_l,false);
 				confl_coef_l=1;
 			}
 			Constr& reasonC = ca[Reason[std::abs(l)]];
@@ -1261,27 +700,27 @@ void analyze(CRef confl){
 			}
 			reasonC.toConstraint(tmpConstraint);
 			stats.NADDEDLITERALS+=tmpConstraint.vars.size();
-			tmpConstraint.removeUnitsAndZeroes(); // NOTE: also saturates
-			tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack(),stats); // NOTE: also saturates
-			assert(tmpConstraint.getCoef(l)>tmpConstraint.getSlack());
-			Coef slk = tmpConstraint.getSlack();
+			tmpConstraint.removeUnitsAndZeroes(Level,Pos); // NOTE: also saturates
+			tmpConstraint.weakenNonImplying(Level,tmpConstraint.getCoef(l),tmpConstraint.getSlack(Level),stats); // NOTE: also saturates
+			assert(tmpConstraint.getCoef(l)>tmpConstraint.getSlack(Level));
+			Coef slk = tmpConstraint.getSlack(Level);
 			if(slk>0){
 				Coef div = slk+1;
 				if(originalRoundToOne){ tmpConstraint.weaken(-(tmpConstraint.getCoef(l)%div),l); tmpConstraint.saturate(); }
-				tmpConstraint.roundToOne(div,!originalRoundToOne);
+				tmpConstraint.roundToOne(Level,div,!originalRoundToOne);
 			}
-			assert(tmpConstraint.getSlack()<=0);
+			assert(tmpConstraint.getSlack(Level)<=0);
 			for(Var v: tmpConstraint.vars) actSet.add(tmpConstraint.getLit(v));
 			Coef reason_coef_l = tmpConstraint.getCoef(l);
 			Coef gcd_coef_l = aux::gcd(reason_coef_l,confl_coef_l);
-			confl_data.add(tmpConstraint,confl_coef_l/gcd_coef_l,reason_coef_l/gcd_coef_l);
+			conflConstraint.addUp(Level,tmpConstraint,confl_coef_l/gcd_coef_l,reason_coef_l/gcd_coef_l);
 			tmpConstraint.reset();
-			assert(confl_data.getCoef(-l)==0);
-			assert(confl_data.getSlack()<0);
+			assert(conflConstraint.getCoef(-l)==0);
+			assert(conflConstraint.getSlack(Level)<0);
 		}
 		undoOne();
 	}
-	assert(confl_data.getSlack()<0);
+	assert(conflConstraint.getSlack(Level)<0);
 	for(Lit l: actSet.keys) if(l!=0) vBumpActivity(std::abs(l));
 	actSet.reset();
 }
@@ -1297,7 +736,7 @@ CRef runPropagation() {
 		std::vector<Watch> & ws = adj[-p];
 		for(int it_ws=0; it_ws<(int)ws.size(); ++it_ws){
 			int idx = ws[it_ws].idx;
-			if(idx<0 && isTrue(idx+INF)){ assert(ca[ws[it_ws].cref].isClause()); continue; } // blocked literal check
+			if(idx<0 && isTrue(Level,idx+INF)){ assert(ca[ws[it_ws].cref].isClause()); continue; } // blocked literal check
 			CRef cr = ws[it_ws].cref;
 			Constr& C = ca[cr];
 			if(C.getStatus()>=FORCEDELETE){ aux::swapErase(ws,it_ws--); continue; }
@@ -1320,7 +759,7 @@ CRef runPropagation() {
 Lit pickBranchLit(){
 	Var next = 0;
 	// Activity based decision:
-	while (next == 0 || !isUnknown(next)){
+	while (next == 0 || !isUnknown(Pos,next)){
 		if (order_heap.empty()) return 0;
 		else next = order_heap.removeMax();
 	}
@@ -1352,7 +791,7 @@ void setNbVariables(long long nvars){
 	phase.resize(nvars+1);
 	last_sol.resize(nvars+1,false);
 	tmpConstraint.resize(nvars+1);
-	confl_data.resize(nvars+1);
+	conflConstraint.resize(nvars+1);
 	logConstraint.resize(nvars+1);
 	order_heap.resize(nvars+1);
 	for(Var v=n+1;v<=nvars;++v) phase[v] = -v, order_heap.insert(v);
@@ -1367,19 +806,21 @@ void learnConstraint(longConstr& confl){
 	assert(confl.getDegree()<INF);
 	assert(confl.isSaturated());
 	confl.copyTo(tmpConstraint);
-	assert(tmpConstraint.hasNoUnits());
+	assert(tmpConstraint.hasNoUnits(Level));
 	tmpConstraint.removeZeroes();
 	tmpConstraint.sortInDecreasingCoefOrder();
-	backjumpTo(tmpConstraint.getAssertionLevel());
+	int assertionLevel = tmpConstraint.getAssertionLevel(Level,Pos);
+	assert(assertionLevel==0 || assertionLevel<decisionLevel());
+	backjumpTo(assertionLevel);
 	assert(qhead==(int)trail.size()); // jumped back sufficiently far to catch up with qhead
-	Val slk = tmpConstraint.getSlack();
+	Val slk = tmpConstraint.getSlack(Level);
 	if(slk<0){
-		if(logger) tmpConstraint.logInconsistency(stats);
+		if(logger) tmpConstraint.logInconsistency(Level,Pos,stats);
 		assert(decisionLevel()==0);
 		exit_UNSAT();
 	}
-	tmpConstraint.heuristicWeakening(slk,stats);
-	tmpConstraint.postProcess(false,stats);
+	tmpConstraint.heuristicWeakening(Level,Pos,slk,stats);
+	tmpConstraint.postProcess(Level,Pos,false,stats);
 	assert(tmpConstraint.isSaturated());
 
 	CRef cr = attachConstraint(tmpConstraint,false,true,false);
@@ -1391,13 +832,13 @@ void learnConstraint(longConstr& confl){
 CRef addInputConstraint(intConstr& c, bool original, bool locked){
 	assert(decisionLevel()==0);
 	if(logger) c.logAsInput();
-	c.postProcess(true,stats);
+	c.postProcess(Level,Pos,true,stats);
 	if(c.getDegree()>=(Val) INF) exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
 	if(c.getDegree()<=0) return CRef_Undef; // already satisfied.
 
-	if(c.getSlack()<0){
+	if(c.getSlack(Level)<0){
 		puts("c Inconsistent input constraint");
-		if(logger) c.logInconsistency(stats);
+		if(logger) c.logInconsistency(Level,Pos,stats);
 		assert(decisionLevel()==0);
 		exit_UNSAT();
 	}
@@ -1408,7 +849,7 @@ CRef addInputConstraint(intConstr& c, bool original, bool locked){
 		puts("c Input conflict");
 		if(logger){
 			ca[confl].toConstraint(logConstraint);
-			logConstraint.logInconsistency(stats);
+			logConstraint.logInconsistency(Level,Pos,stats);
 			logConstraint.reset();
 		}
 		assert(decisionLevel()==0);
@@ -1623,7 +1064,7 @@ void reduceDB(){
 		if(C.getStatus()==FORCEDELETE) removeConstraint(C);
 		else if(C.getStatus()==UNLOCKED){
 			Val eval = -C.degree;
-			for(int j=0; j<(int)C.size() && eval<0; ++j) if(isUnit(C.lit(j))) eval+=C.coef(j);
+			for(int j=0; j<(int)C.size() && eval<0; ++j) if(isUnit(Level,C.lit(j))) eval+=C.coef(j);
 			if(eval>=0) removeConstraint(C); // remove constraints satisfied at level 0
 		}
 		if(C.learnt() && C.getStatus()==UNLOCKED){
@@ -1857,10 +1298,10 @@ void extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit 
 
 	if(l_assump!=0){ // l_assump is an assumption propagated to the opposite value
 		assert(assumptions.has(l_assump));
-		assert(isFalse(l_assump));
+		assert(isFalse(Level,l_assump));
 		int pos = Pos[std::abs(l_assump)];
 		while((int)trail.size()>pos) undoOne();
-		assert(isUnknown(l_assump));
+		assert(isUnknown(Pos,l_assump));
 		decide(l_assump);
 	}
 
@@ -1882,50 +1323,50 @@ void extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit 
 	for(Lit l: decisions) decide(l);
 	for(Lit l: props) propagate(l,Reason[std::abs(l)]);
 
-	ca[confl].toConstraint(confl_data);
-	stats.NADDEDLITERALS+=confl_data.vars.size();
-	confl_data.removeUnitsAndZeroes();
-	assert(confl_data.getSlack()<0);
+	ca[confl].toConstraint(conflConstraint);
+	stats.NADDEDLITERALS+=conflConstraint.vars.size();
+	conflConstraint.removeUnitsAndZeroes(Level,Pos);
+	assert(conflConstraint.getSlack(Level)<0);
 
 	// analyze conflict
-	Val assumpslk = assumpSlack(assumptions,confl_data);
+	Val assumpslk = assumpSlack(assumptions,conflConstraint);
 	while(assumpslk>=0){
 		Lit l = trail.back();
-		assert(std::abs(confl_data.getCoef(-l))<INF);
-		Coef confl_coef_l = confl_data.getCoef(-l);
+		assert(std::abs(conflConstraint.getCoef(-l))<INF);
+		Coef confl_coef_l = conflConstraint.getCoef(-l);
 		if(confl_coef_l>0) {
 			ca[Reason[std::abs(l)]].toConstraint(tmpConstraint);
 			stats.NADDEDLITERALS+=tmpConstraint.vars.size();
-			tmpConstraint.removeUnitsAndZeroes();
-			tmpConstraint.weakenNonImplying(tmpConstraint.getCoef(l),tmpConstraint.getSlack(),stats); // NOTE: also saturates
-			assert(tmpConstraint.getCoef(l)>tmpConstraint.getSlack());
-			Coef slk = tmpConstraint.getSlack();
+			tmpConstraint.removeUnitsAndZeroes(Level,Pos);
+			tmpConstraint.weakenNonImplying(Level,tmpConstraint.getCoef(l),tmpConstraint.getSlack(Level),stats); // NOTE: also saturates
+			assert(tmpConstraint.getCoef(l)>tmpConstraint.getSlack(Level));
+			Coef slk = tmpConstraint.getSlack(Level);
 			if(slk>0){
 				Coef div = slk+1;
 				if(originalRoundToOne){ tmpConstraint.weaken(-(tmpConstraint.getCoef(l)%div),l); tmpConstraint.saturate(); }
-				tmpConstraint.roundToOne(div,!originalRoundToOne);
+				tmpConstraint.roundToOne(Level,div,!originalRoundToOne);
 			}
-			assert(tmpConstraint.getSlack()<=0);
+			assert(tmpConstraint.getSlack(Level)<=0);
 			Coef reason_coef_l = tmpConstraint.getCoef(l);
 			Coef gcd_coef_l = aux::gcd(reason_coef_l,confl_coef_l);
-			confl_data.add(tmpConstraint,confl_coef_l/gcd_coef_l,reason_coef_l/gcd_coef_l);
+			conflConstraint.addUp(Level,tmpConstraint,confl_coef_l/gcd_coef_l,reason_coef_l/gcd_coef_l);
 			tmpConstraint.reset();
-			assert(confl_data.getCoef(-l)==0);
-			assert(confl_data.getSlack()<0);
-			assumpslk = assumpSlack(assumptions,confl_data);
+			assert(conflConstraint.getCoef(-l)==0);
+			assert(conflConstraint.getSlack(Level)<0);
+			assumpslk = assumpSlack(assumptions,conflConstraint);
 		}
 		assert(decisionLevel()==(int)decisions.size());
 		undoOne();
 	}
-	assert(confl_data.getDegree()>0);
-	assert(confl_data.getDegree()<INF);
-	assert(confl_data.isSaturated());
-	confl_data.copyTo(outCore);
-	confl_data.reset();
+	assert(conflConstraint.getDegree()>0);
+	assert(conflConstraint.getDegree()<INF);
+	assert(conflConstraint.isSaturated());
+	conflConstraint.copyTo(outCore);
+	conflConstraint.reset();
 
 	// weaken non-falsifieds
 	for(Var v: outCore.vars) if(!assumptions.has(-outCore.getLit(v))) outCore.weaken(-outCore.coefs[v],v);
-	outCore.postProcess(true,stats);
+	outCore.postProcess(Level,Pos,true,stats);
 	assert(assumpSlack(assumptions,outCore)<0);
 	backjumpTo(0);
 }
@@ -1941,7 +1382,7 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 			if(decisionLevel() == 0){
 				if(logger){
 					ca[confl].toConstraint(logConstraint);
-					logConstraint.logInconsistency(stats);
+					logConstraint.logInconsistency(Level,Pos,stats);
 					logConstraint.reset();
 				}
 				assert(getSlack(ca[confl])<0);
@@ -1964,8 +1405,8 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 
 			if(decisionLevel()>=(int)assumptions_lim.size()){
 				analyze(confl);
-				learnConstraint(confl_data);
-				confl_data.reset();
+				learnConstraint(conflConstraint);
+				conflConstraint.reset();
 			}else{
 				extractCore(assumptions,confl,out);
 				return SolveState::UNSAT;
@@ -1989,7 +1430,7 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 				for(int i=(decisionLevel()==0?0:trail_lim.back()); i<(int)trail.size(); ++i){
 					Lit l = trail[i];
 					if(assumptions.has(-l)){ // found conflicting assumption
-						if(isUnit(l)) backjumpTo(0), out.reset(); // negated assumption is unit
+						if(isUnit(Level,l)) backjumpTo(0), out.reset(); // negated assumption is unit
 						else extractCore(assumptions,Reason[std::abs(l)],out,-l);
 						return SolveState::UNSAT;
 					}
@@ -1998,8 +1439,8 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 			while(assumptions_lim.back()<(int)assumptions.size()){
 				assert(decisionLevel()==(int)assumptions_lim.size()-1);
 				Lit l_assump = assumptions.keys[assumptions_lim.back()];
-				assert(!isFalse(l_assump)); // otherwise above check should have caught this
-				if (isTrue(l_assump)){ // assumption already propagated
+				assert(!isFalse(Level,l_assump)); // otherwise above check should have caught this
+				if (isTrue(Level,l_assump)){ // assumption already propagated
 					++assumptions_lim.back();
 				}else{ // unassigned assumption
 					next = l_assump;
@@ -2010,7 +1451,7 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 			if(next==0) next = pickBranchLit();
 			if(next==0){
 				assert(order_heap.empty());
-				for (Var v=1; v<=n; ++v) last_sol[v]=isTrue(v);
+				for (Var v=1; v<=n; ++v) last_sol[v]=isTrue(Level,v);
 				backjumpTo(0);
 				return SolveState::SAT;
 			}
@@ -2149,7 +1590,7 @@ ID addLowerBound(const intConstr& origObj, Val lowerBound, ID& lastLowerBound){
 ID handleInconsistency(longConstr& reformObj, intConstr& core, Val& lower_bound,
                          std::vector<LazyVar*>& lazyVars, const intConstr& origObj, ID& lastLowerBound){
 	// take care of derived unit lits and remove zeroes
-	reformObj.removeUnitsAndZeroes(false);
+	reformObj.removeUnitsAndZeroes(Level,Pos,false);
 	Val prev_lower = lower_bound; _unused(prev_lower);
 	lower_bound = -reformObj.getDegree();
 	if(core.getDegree()==0){ // apparently only unit assumptions were derived
@@ -2178,7 +1619,7 @@ ID handleInconsistency(longConstr& reformObj, intConstr& core, Val& lower_bound,
 		reformObj.resize(newN+1);
 		// reformulate the objective
 		core.copyTo(tmpConstraint,true);
-		reformObj.add(tmpConstraint,mult,1,false);
+		reformObj.addUp(Level,tmpConstraint,mult,1,false);
 		tmpConstraint.reset();
 		reformObj.addLhs(mult,newN); // add only one variable for now
 		assert(lower_bound==-reformObj.getDegree());
@@ -2197,7 +1638,7 @@ ID handleInconsistency(longConstr& reformObj, intConstr& core, Val& lower_bound,
 		// reformulate the objective
 		for(Var v=oldN+1; v<=newN; ++v) core.addLhs(-1,v);
 		core.copyTo(tmpConstraint,true);
-		reformObj.add(tmpConstraint,mult,1,false);
+		reformObj.addUp(Level,tmpConstraint,mult,1,false);
 		assert(lower_bound==-reformObj.getDegree());
 		// add channeling constraints
 		addInputConstraint(tmpConstraint,false,true);
@@ -2221,7 +1662,7 @@ ID handleInconsistency(longConstr& reformObj, intConstr& core, Val& lower_bound,
 void optimize(intConstr& origObj, intConstr& core){
 	assert(origObj.vars.size() > 0);
 	// NOTE: -origObj.getDegree() keeps track of the offset of the reformulated objective (or after removing unit lits)
-	origObj.removeUnitsAndZeroes(false);
+	origObj.removeUnitsAndZeroes(Level,Pos,false);
 	Val lower_bound = -origObj.getDegree();
 
 	Val opt_coef_sum = 0;
@@ -2262,8 +1703,8 @@ void optimize(intConstr& origObj, intConstr& core){
 			assert((opt_mode!=1 && opt_mode!=2) || lower_bound==last_sol_obj_val);
 		}	else if(reply==SolveState::UNSAT) {
 			++stats.NCORES;
-			if(core.getSlack()<0){
-				if(logger) core.logInconsistency(stats);
+			if(core.getSlack(Level)<0){
+				if(logger) core.logInconsistency(Level,Pos,stats);
 				assert(decisionLevel()==0);
 				exit_UNSAT();
 			}
@@ -2280,16 +1721,16 @@ void optimize(intConstr& origObj, intConstr& core){
 				origObj.copyTo(tmpConstraint,true);
 				tmpConstraint.addRhs(1-last_sol_obj_val);
 				tmpConstraint.resetBuffer(origUpperBound-1); // -1 to get the unprocessed formula line
-				coreAggregate.add(tmpConstraint,1,1,false);
+				coreAggregate.addUp(Level,tmpConstraint,1,1,false);
 				tmpConstraint.reset();
 				origObj.copyTo(tmpConstraint);
 				tmpConstraint.addRhs(lower_bound);
 				tmpConstraint.resetBuffer(origLowerBound-1); // -1 to get the unprocessed formula line
-				coreAggregate.add(tmpConstraint,1,1,false);
+				coreAggregate.addUp(Level,tmpConstraint,1,1,false);
 				tmpConstraint.reset();
-				assert(coreAggregate.getSlack()<0);
+				assert(coreAggregate.getSlack(Level)<0);
 				assert(decisionLevel()==0);
-				coreAggregate.logInconsistency(stats);
+				coreAggregate.logInconsistency(Level,Pos,stats);
 			}
 			exit_UNSAT();
 		}
@@ -2308,7 +1749,7 @@ int main(int argc, char**argv){
 
 	std::string filename = read_options(argc, argv);
 	tmpConstraint.initializeLogging(logger);
-	confl_data.initializeLogging(logger);
+	conflConstraint.initializeLogging(logger);
 	logConstraint.initializeLogging(logger);
 	inconsistency.initializeLogging(logger);
 
@@ -2332,9 +1773,9 @@ int main(int argc, char**argv){
 		SolveState reply = solve({},inconsistency);
 		if(reply==SolveState::SAT) exit_SAT();
 		else if(reply==SolveState::UNSAT){
-			if(logger) inconsistency.logInconsistency(stats);
+			if(logger) inconsistency.logInconsistency(Level,Pos,stats);
 			assert(decisionLevel()==0);
-			assert(inconsistency.getSlack()<0);
+			assert(inconsistency.getSlack(Level)<0);
 			exit_UNSAT();
 		}
 	}
