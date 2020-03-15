@@ -65,6 +65,15 @@ static void SIGINT_exit(int signum){
 // ---------------------------------------------------------------------
 // Internal datastructures
 
+struct CRef {
+	uint32_t ofs;
+	bool operator==(CRef const&o)const{return ofs==o.ofs;}
+	bool operator!=(CRef const&o)const{return ofs!=o.ofs;}
+	bool operator< (CRef const&o)const{return ofs< o.ofs;}
+};
+const CRef CRef_Undef = { UINT32_MAX };
+std::ostream& operator<<(std::ostream& os, CRef cr) { return os << cr.ofs; }
+
 struct Watch {
 	CRef cref;
 	int idx; // >=0: index of watched literal (counting/watched propagation). <0: blocked literal (clausal propagation).
@@ -361,7 +370,7 @@ struct {
 	}
 
 	// TODO: allow constraints with 10^18 bit degree
-	CRef alloc(intConstr& constraint, bool formula, bool learnt, bool locked){
+	CRef alloc(intConstr& constraint, ConstraintType type){
 		assert(constraint.getDegree()>0);
 		assert(constraint.getDegree()<INF);
 		assert(constraint.isSaturated());
@@ -381,7 +390,8 @@ struct {
 		constr->id = logger?logger->last_proofID:++crefID; assert(constr->id>0);
 		constr->act = 0;
 		constr->degree = constraint.getDegree();
-		constr->header = {formula,learnt,0,0x1FFFFFFF,(unsigned int)(locked?LOCKED:UNLOCKED),length};
+		constr->header = {type==ConstraintType::FORMULA,type==ConstraintType::LEARNT,0,0x1FFFFFFF,
+										(unsigned int) DeletionStatus::UNLOCKED,length};
 		constr->ntrailpops = -1;
 		constr->slack = asClause?std::numeric_limits<Val>::min():(asCard?std::numeric_limits<Val>::min()+1:-constr->degree);
 		constr->watchIdx = 0;
@@ -492,7 +502,7 @@ void uncheckedEnqueue(Lit p, CRef from){
 	trail.push_back(p);
 }
 
-CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool locked){
+CRef attachConstraint(intConstr& constraint, ConstraintType type){
 	assert(constraint.isSortedInDecreasingCoefOrder());
 	assert(constraint.isSaturated());
 	assert(constraint.hasNoZeroes());
@@ -501,7 +511,7 @@ CRef attachConstraint(intConstr& constraint, bool formula, bool learnt, bool loc
 	assert(constraint.vars.size()>0);
 
 	if(logger) constraint.logProofLine("a", stats);
-	CRef cr = ca.alloc(constraint,formula,learnt,locked);
+	CRef cr = ca.alloc(constraint,type);
 	constraints.push_back(cr);
 	Constr& C = ca[cr]; int* data = C.data;
 
@@ -719,7 +729,7 @@ CRef runPropagation() {
 			if(idx<0 && isTrue(Level,idx+INF)){ assert(ca[ws[it_ws].cref].isClause()); continue; } // blocked literal check
 			CRef cr = ws[it_ws].cref;
 			Constr& C = ca[cr];
-			if(C.getStatus()>=FORCEDELETE){ aux::swapErase(ws,it_ws--); continue; }
+			if(C.getStatus()>=DeletionStatus::FORCEDELETE){ aux::swapErase(ws,it_ws--); continue; }
 			WatchStatus wstat = C.propagateWatch(cr,ws[it_ws].idx,-p);
 			if(wstat==WatchStatus::FOUNDNEW) aux::swapErase(ws,it_ws--);
 			else if(wstat==WatchStatus::CONFLICTING){ // clean up current level and stop propagation
@@ -803,28 +813,28 @@ bool learnConstraint(longConstr& confl){
 	tmpConstraint.postProcess(Level,Pos,false,stats);
 	assert(tmpConstraint.isSaturated());
 
-	CRef cr = attachConstraint(tmpConstraint,false,true,false);
+	CRef cr = attachConstraint(tmpConstraint,ConstraintType::LEARNT);
 	tmpConstraint.reset();
 	Constr& C = ca[cr];
 	recomputeLBD(C);
 	return true;
 }
 
-CRef addInputConstraint(intConstr& c, bool original, bool locked){
+ID addInputConstraint(intConstr& c, ConstraintType type){
 	assert(decisionLevel()==0);
 	if(logger) c.logAsInput();
 	c.postProcess(Level,Pos,true,stats);
 	assert(c.getDegree()<INF);
-	if(c.getDegree()<=0) return CRef_Undef; // already satisfied.
+	if(c.getDegree()<=0) return ID_Undef; // already satisfied.
 
 	if(c.getSlack(Level)<0){
 		puts("c Inconsistent input constraint");
 		if(logger) c.logInconsistency(Level,Pos,stats);
 		assert(decisionLevel()==0);
-		return CRef_Unsat;
+		return ID_Unsat;
 	}
 
-	CRef cr = attachConstraint(c,original,false,locked);
+	CRef cr = attachConstraint(c,type);
 	CRef confl = runPropagation();
 	if (confl != CRef_Undef){
 		puts("c Input conflict");
@@ -834,9 +844,14 @@ CRef addInputConstraint(intConstr& c, bool original, bool locked){
 			logConstraint.reset();
 		}
 		assert(decisionLevel()==0);
-		return CRef_Unsat;
+		return ID_Unsat;
 	}
-	return cr;
+	Constr& constr = ca[cr];
+	if(type==ConstraintType::EXTERNAL){
+		external[constr.id]=cr;
+		constr.setStatus(DeletionStatus::LOCKED);
+	}
+	return constr.id;
 }
 
 // ---------------------------------------------------------------------
@@ -910,10 +925,10 @@ void opb_read(std::istream & in, intConstr& objective) {
 				if(tmpConstraint.getDegree()>=(Val) INF || inverted.getDegree()>=(Val) INF)
 					exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
 				// NOTE: addInputConstraint modifies tmpConstraint, so the inverted version is stored first
-				if(addInputConstraint(tmpConstraint,true,false)==CRef_Unsat) exit_UNSAT();
+				if(addInputConstraint(tmpConstraint,ConstraintType::FORMULA)==ID_Unsat) exit_UNSAT();
 				tmpConstraint.reset();
 				if(equality){
-					if(addInputConstraint(inverted,true,false)==CRef_Unsat) exit_UNSAT();
+					if(addInputConstraint(inverted,ConstraintType::FORMULA)==ID_Unsat) exit_UNSAT();
 					inverted.reset();
 				}
 			}
@@ -944,7 +959,7 @@ void wcnf_read(std::istream & in, long long top, intConstr& objective) {
 			} // else hard clause
 			if(tmpConstraint.getDegree()>=(Val) INF)
 				exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
-			if(addInputConstraint(tmpConstraint,true,false)==CRef_Unsat) exit_UNSAT();
+			if(addInputConstraint(tmpConstraint,ConstraintType::FORMULA)==ID_Unsat) exit_UNSAT();
 			tmpConstraint.reset();
 		}
 	}
@@ -960,7 +975,7 @@ void cnf_read(std::istream & in) {
 			tmpConstraint.addRhs(1);
 			Lit l;
 			while (is >> l, l) tmpConstraint.addLhs(1,l);
-			if(addInputConstraint(tmpConstraint,true,false)==CRef_Unsat) exit_UNSAT();
+			if(addInputConstraint(tmpConstraint,ConstraintType::FORMULA)==ID_Unsat) exit_UNSAT();
 			tmpConstraint.reset();
 		}
 	}
@@ -1005,7 +1020,7 @@ void garbage_collect(){
 	assert(decisionLevel()==0); // so we don't need to update the pointer of Reason<CRef>
 	if (verbosity > 0) puts("c GARBAGE COLLECT");
 	for(Lit l=-n; l<=n; ++l) for(int i=0; i<(int)adj[l].size(); ++i){
-		if(ca[adj[l][i].cref].getStatus()==MARKEDFORDELETE) aux::swapErase(adj[l],i--);
+		if(ca[adj[l][i].cref].getStatus()==DeletionStatus::MARKEDFORDELETE) aux::swapErase(adj[l],i--);
 	}
 
 	ca.wasted=0;
@@ -1028,9 +1043,9 @@ void garbage_collect(){
 
 void removeConstraint(Constr& C){
 	assert(decisionLevel()==0);
-	assert(C.getStatus()!=MARKEDFORDELETE);
-	assert(C.getStatus()!=LOCKED);
-	C.setStatus(MARKEDFORDELETE);
+	assert(C.getStatus()!=DeletionStatus::MARKEDFORDELETE);
+	assert(C.getStatus()!=DeletionStatus::LOCKED);
+	C.setStatus(DeletionStatus::MARKEDFORDELETE);
 	ca.wasted += C.getMemSize();
 }
 
@@ -1045,13 +1060,13 @@ void reduceDB(){
 	size_t promisingLearnts=0;
 	for(CRef& cr: constraints){
 		Constr& C = ca[cr];
-		if(C.getStatus()==FORCEDELETE) removeConstraint(C);
-		else if(C.getStatus()==UNLOCKED){
+		if(C.getStatus()==DeletionStatus::FORCEDELETE) removeConstraint(C);
+		else if(C.getStatus()==DeletionStatus::UNLOCKED){
 			Val eval = -C.degree;
 			for(int j=0; j<(int)C.size() && eval<0; ++j) if(isUnit(Level,C.lit(j))) eval+=C.coef(j);
-			if(eval>=0) removeConstraint(C); // remove constraints satisfied at level 0
+			if(eval>=0) removeConstraint(C); // remove constraints satisfied at root
 		}
-		if(C.learnt() && C.getStatus()==UNLOCKED){
+		if(C.learnt() && C.getStatus()==DeletionStatus::UNLOCKED){
 			if(C.size()>2 && C.lbd()>2) learnts.push_back(cr); // Keep all binary clauses and short LBDs
 			if(C.size()<=2 || C.lbd()<=3) ++promisingLearnts;
 			++totalLearnts;
@@ -1441,18 +1456,12 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 	}
 }
 
-ID replaceExternal(CRef cr, ID old=0){
-	if(old!=0){
-		auto old_cr=external.find(old);
-		assert(old_cr!=external.end());
-		ca[old_cr->second].setStatus(FORCEDELETE);
-		external.erase(old_cr);
-	}
-	if(cr==CRef_Undef) return 0;
-	ID result = ca[cr].id;
-	external[result]=cr;
-	assert(ca[cr].getStatus()==LOCKED);
-	return result;
+void dropExternal(ID id, bool forceDelete){
+	if(id==ID_Undef) return;
+	auto old_it=external.find(id);
+	assert(old_it!=external.end());
+	ca[old_it->second].setStatus(forceDelete?DeletionStatus::FORCEDELETE:DeletionStatus::UNLOCKED);
+	external.erase(old_it);
 }
 
 inline void printObjBounds(Val lower, Val upper){
@@ -1460,7 +1469,7 @@ inline void printObjBounds(Val lower, Val upper){
 	else printf("c bounds          - >= %10lld\n",lower);
 }
 
-ID handleNewSolution(const intConstr& origObj, ID& lastUpperBound){
+void handleNewSolution(const intConstr& origObj, ID& lastUpperBound){
 	Val prev_val = last_sol_obj_val; _unused(prev_val);
 	last_sol_obj_val = -origObj.getRhs();
 	for(Var v: origObj.vars) last_sol_obj_val+=origObj.coefs[v]*last_sol[v];
@@ -1468,11 +1477,10 @@ ID handleNewSolution(const intConstr& origObj, ID& lastUpperBound){
 
 	origObj.copyTo(tmpConstraint,true);
 	tmpConstraint.addRhs(-last_sol_obj_val+1);
-	CRef cr = addInputConstraint(tmpConstraint,false,true);
-	if(cr==CRef_Unsat) exit_UNSAT();
+	dropExternal(lastUpperBound,true);
+	lastUpperBound = addInputConstraint(tmpConstraint,ConstraintType::EXTERNAL);
 	tmpConstraint.reset();
-	lastUpperBound = replaceExternal(cr,lastUpperBound);
-	return ca[cr].id;
+	if(lastUpperBound==ID_Unsat) exit_UNSAT();
 }
 
 struct LazyVar{
@@ -1480,8 +1488,8 @@ struct LazyVar{
 	Val rhs;
 	std::vector<Lit> lhs;
 	std::vector<Var> introducedVars;
-	ID atLeastID=0;
-	ID atMostID=0;
+	ID atLeastID=ID_Undef;
+	ID atMostID=ID_Undef;
 
 	LazyVar(intConstr& core, Var startvar, int m):
 			mult(m),rhs(core.getDegree()),introducedVars{startvar}{
@@ -1490,36 +1498,36 @@ struct LazyVar{
 		for(Var v: core.vars) lhs.push_back(core.getLit(v));
 	}
 	~LazyVar(){
-		replaceExternal(CRef_Undef,atLeastID);
-		replaceExternal(CRef_Undef,atMostID);
+		dropExternal(atLeastID,false);
+		dropExternal(atMostID,false);
 	}
 
 	Var getCurrentVar() const { return introducedVars.back(); }
 	void addVar(Var v) { introducedVars.push_back(v); }
 
-	void addAtLeastConstraint(intConstr& out) const {
+	void addAtLeastConstraint(intConstr& out) {
 		// X >= k + y1 + ... + yi
 		assert(out.isReset());
 		out.addRhs(rhs);
 		for(Lit l: lhs) out.addLhs(1,l);
 		for(Var v: introducedVars) out.addLhs(-1,v);
-		CRef cr = addInputConstraint(out,false,true);
-		if(cr==CRef_Unsat) exit_UNSAT();
+		dropExternal(atLeastID,false); // TODO: dropExternal(atLeastID,true)? Or treat them as learned/implied constraints?
+		atLeastID = addInputConstraint(out,ConstraintType::EXTERNAL);
 		out.reset();
-		replaceExternal(cr,atLeastID);
+		if(atLeastID==ID_Unsat) exit_UNSAT();
 	}
 
-	void addAtMostConstraint(intConstr& out) const {
+	void addAtMostConstraint(intConstr& out) {
 		// X =< k + y1 + ... + yi-1 + (n-k-(i-1))yi
 		assert(out.isReset());
 		out.addRhs(-rhs);
 		for(Lit l: lhs) out.addLhs(-1,l);
 		for(Var v: introducedVars) out.addLhs(1,v);
 		out.addLhs(lhs.size()-rhs-introducedVars.size(), getCurrentVar());
-		CRef cr = addInputConstraint(out,false,true);
-		if(cr==CRef_Unsat) exit_UNSAT();
+		dropExternal(atMostID,false); // TODO: dropExternal(atMostID,true)? Or treat them as learned/implied constraints?
+		atMostID = addInputConstraint(out,ConstraintType::EXTERNAL);
 		out.reset();
-		replaceExternal(cr,atMostID);
+		if(atMostID==ID_Unsat) exit_UNSAT();
 	}
 
 	void addSymBreakingConstraint(intConstr& out, Var prevvar) const {
@@ -1529,7 +1537,7 @@ struct LazyVar{
 		out.addRhs(1);
 		out.addLhs(1,prevvar);
 		out.addLhs(1,-getCurrentVar());
-		if(addInputConstraint(out,false,true)==CRef_Unsat) exit_UNSAT();
+		if(addInputConstraint(out,ConstraintType::AUXILIARY)==ID_Unsat) exit_UNSAT();
 		out.reset();
 	}
 };
@@ -1562,16 +1570,15 @@ void checkLazyVariables(longConstr& reformObj, intConstr& core, std::vector<Lazy
 	}
 	core.resize(n+1);
 }
-ID addLowerBound(const intConstr& origObj, Val lowerBound, ID& lastLowerBound){
+void addLowerBound(const intConstr& origObj, Val lowerBound, ID& lastLowerBound){
 	origObj.copyTo(tmpConstraint);
 	tmpConstraint.addRhs(lowerBound);
-	CRef cr = addInputConstraint(tmpConstraint,false,true);
-	if(cr==CRef_Unsat) exit_UNSAT();
+	dropExternal(lastLowerBound,true);
+	lastLowerBound = addInputConstraint(tmpConstraint,ConstraintType::EXTERNAL);
 	tmpConstraint.reset();
-	lastLowerBound = replaceExternal(cr,lastLowerBound);
-	return ca[cr].id;
+	if(lastLowerBound==ID_Unsat) exit_UNSAT();
 }
-ID handleInconsistency(longConstr& reformObj, intConstr& core, Val& lower_bound,
+void handleInconsistency(longConstr& reformObj, intConstr& core, Val& lower_bound,
                          std::vector<LazyVar*>& lazyVars, const intConstr& origObj, ID& lastLowerBound){
 	// take care of derived unit lits and remove zeroes
 	reformObj.removeUnitsAndZeroes(Level,Pos,false);
@@ -1580,7 +1587,8 @@ ID handleInconsistency(longConstr& reformObj, intConstr& core, Val& lower_bound,
 	if(core.getDegree()==0){ // apparently only unit assumptions were derived
 		assert(lower_bound>prev_lower);
 		checkLazyVariables(reformObj,core,lazyVars);
-		return addLowerBound(origObj,lower_bound,lastLowerBound);
+		addLowerBound(origObj,lower_bound,lastLowerBound);
+		return;
 	}
 	// figure out an appropriate core
 	core.simplifyToCardinality(false);
@@ -1625,22 +1633,22 @@ ID handleInconsistency(longConstr& reformObj, intConstr& core, Val& lower_bound,
 		reformObj.addUp(Level,tmpConstraint,mult,1,false);
 		assert(lower_bound==-reformObj.getDegree());
 		// add channeling constraints
-		if(addInputConstraint(tmpConstraint,false,true)==CRef_Unsat) exit_UNSAT();
+		if(addInputConstraint(tmpConstraint,ConstraintType::AUXILIARY)==ID_Unsat) exit_UNSAT();
 		tmpConstraint.reset();
 		core.copyTo(tmpConstraint);
-		if(addInputConstraint(tmpConstraint,false,true)==CRef_Unsat) exit_UNSAT();
+		if(addInputConstraint(tmpConstraint,ConstraintType::AUXILIARY)==ID_Unsat) exit_UNSAT();
 		tmpConstraint.reset();
 		for(Var v=oldN+1; v<newN; ++v){ // add symmetry breaking constraints
 			assert(tmpConstraint.isReset());
 			tmpConstraint.addRhs(1);
 			tmpConstraint.addLhs(1,v);
 			tmpConstraint.addLhs(1,-v-1);
-			if(addInputConstraint(tmpConstraint,false,true)==CRef_Unsat) exit_UNSAT();
+			if(addInputConstraint(tmpConstraint,ConstraintType::AUXILIARY)==ID_Unsat) exit_UNSAT();
 			tmpConstraint.reset();
 		}
 	}
 	checkLazyVariables(reformObj,core,lazyVars);
-	return addLowerBound(origObj,lower_bound,lastLowerBound);
+	addLowerBound(origObj,lower_bound,lastLowerBound);
 }
 
 void optimize(intConstr& origObj, intConstr& core){
@@ -1655,10 +1663,8 @@ void optimize(intConstr& origObj, intConstr& core){
 
 	longConstr reformObj;
 	origObj.copyTo(reformObj);
-	ID origUpperBound = 0;
-	ID origLowerBound = 0;
-	ID lastUpperBound = 0;
-	ID lastLowerBound = 0;
+	ID lastUpperBound = ID_Undef;
+	ID lastLowerBound = ID_Undef;
 
 	IntSet assumps;
 	std::vector<LazyVar*> lazyVars;
@@ -1685,7 +1691,7 @@ void optimize(intConstr& origObj, intConstr& core){
 		else lower_time+=stats.getDetTime()-current_time;
 		if(reply==SolveState::SAT){
 			++stats.NSOLS;
-			origUpperBound = handleNewSolution(origObj,lastUpperBound);
+			handleNewSolution(origObj,lastUpperBound);
 			assert((opt_mode!=1 && opt_mode!=2) || lower_bound==last_sol_obj_val);
 		} else if(reply==SolveState::INCONSISTENT) {
 			++stats.NCORES;
@@ -1694,24 +1700,26 @@ void optimize(intConstr& origObj, intConstr& core){
 				assert(decisionLevel()==0);
 				exit_UNSAT();
 			}
-			origLowerBound = handleInconsistency(reformObj,core,lower_bound,lazyVars,origObj,lastLowerBound);
+			handleInconsistency(reformObj,core,lower_bound,lazyVars,origObj,lastLowerBound);
 		} // else reply==SolveState::INPROCESSING, keep looping
 		if(lower_bound>=last_sol_obj_val){
 			printObjBounds(lower_bound,last_sol_obj_val);
-			assert(lastUpperBound>0);
-			assert(lastLowerBound>0);
 			if(logger){
+				assert(lastUpperBound!=ID_Undef);
+				assert(lastUpperBound!=ID_Unsat);
+				assert(lastLowerBound!=ID_Undef);
+				assert(lastLowerBound!=ID_Unsat);
 				longConstr coreAggregate;
 				coreAggregate.initializeLogging(logger);
 				coreAggregate.resize(n+1);
 				origObj.copyTo(tmpConstraint,true);
 				tmpConstraint.addRhs(1-last_sol_obj_val);
-				tmpConstraint.resetBuffer(origUpperBound-1); // -1 to get the unprocessed formula line
+				tmpConstraint.resetBuffer(lastUpperBound-1); // -1 to get the unprocessed formula line
 				coreAggregate.addUp(Level,tmpConstraint,1,1,false);
 				tmpConstraint.reset();
 				origObj.copyTo(tmpConstraint);
 				tmpConstraint.addRhs(lower_bound);
-				tmpConstraint.resetBuffer(origLowerBound-1); // -1 to get the unprocessed formula line
+				tmpConstraint.resetBuffer(lastLowerBound-1); // -1 to get the unprocessed formula line
 				coreAggregate.addUp(Level,tmpConstraint,1,1,false);
 				tmpConstraint.reset();
 				assert(coreAggregate.getSlack(Level)<0);

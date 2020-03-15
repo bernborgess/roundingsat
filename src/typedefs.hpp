@@ -30,6 +30,9 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #pragma once
 
 using ID=uint64_t;
+const ID ID_Undef = UINT64_MAX;
+const ID ID_Unsat = UINT64_MAX-1;
+
 using Var=int;
 using Lit=int;
 using Coef=int;
@@ -39,14 +42,11 @@ const Coef INF = 1e9+1;
 bool asynch_interrupt = false;
 
 // TODO: below is part of Solver.hpp
-struct CRef {
-	uint32_t ofs;
-	bool operator==(CRef const&o)const{return ofs==o.ofs;}
-	bool operator!=(CRef const&o)const{return ofs!=o.ofs;}
-	bool operator< (CRef const&o)const{return ofs< o.ofs;}
-};
-const CRef CRef_Undef = { UINT32_MAX };
-const CRef CRef_Unsat = { UINT32_MAX-1 };
-std::ostream& operator<<(std::ostream& os, CRef cr) { return os << cr.ofs; }
-
-enum SolveState { SAT, UNSAT, INCONSISTENT, INTERRUPTED, INPROCESSING}; // TODO: add RESTARTING?
+enum SolveState { SAT, UNSAT, INCONSISTENT, INTERRUPTED, INPROCESSING }; // TODO: add RESTARTING?
+enum ConstraintType { FORMULA, AUXILIARY, EXTERNAL, LEARNT };
+/*
+ * FORMULA constraints are original input formula constraints that are only deleted when satisfied at root.
+ * AUXILIARY constraints are non-formula constraints that are only deleted when satisfied at root.
+ * EXTERNAL constraints are non-formula constraints that are never deleted.
+ * LEARNT constraints are implied by any combination of the above, and may be deleted heuristically.
+ */
