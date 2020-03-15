@@ -82,7 +82,6 @@ struct Watch {
 };
 
 enum WatchStatus { FOUNDNEW, FOUNDNONE, CONFLICTING };
-enum DeletionStatus { LOCKED, UNLOCKED, FORCEDELETE, MARKEDFORDELETE };
 
 // ---------------------------------------------------------------------
 // Globals
@@ -149,11 +148,11 @@ struct Constr { // internal constraint optimized for fast propagation
 	Val degree;
 	// NOTE: above attributes not strictly needed in cache-sensitive Constr, but it did not matter after testing
 	struct {
-		unsigned original     : 1;
-		unsigned learnt       : 1;
-		unsigned counting     : 1;
+		unsigned unused       : 1;
+		unsigned type         : 2;
 		unsigned lbd          : 29;
-		unsigned status       : 2;
+		unsigned markedfordel : 1;
+		unsigned counting     : 1;
 		unsigned size         : 30;
 	} header;
 	long long ntrailpops;
@@ -167,12 +166,12 @@ struct Constr { // internal constraint optimized for fast propagation
 	inline bool isSimple() const { return slack<std::numeric_limits<Val>::min()+2; }
 	inline int getMemSize() const { return sz_constr(size()+(isSimple()?0:size())); }
 	inline unsigned int size() const { return header.size; }
-	inline void setStatus(DeletionStatus ds){ header.status=(unsigned int) ds; }
-	inline DeletionStatus getStatus() const { return (DeletionStatus) header.status; }
+	inline void setType(ConstraintType t){ header.type=(unsigned int) t; }
+	inline ConstraintType getType() const { return (ConstraintType) header.type; }
 	inline void setLBD(unsigned int lbd){ header.lbd=std::min(header.lbd,lbd); }
 	inline unsigned int lbd() const { return header.lbd; }
-	inline bool original() const { return header.original; }
-	inline bool learnt() const { return header.learnt; }
+	inline bool isMarkedForDelete() const { return header.markedfordel; }
+	inline void markForDel(){ header.markedfordel=1; }
 	inline bool isCounting() const { return header.counting; }
 	inline void setCounting(bool c){ header.counting=(unsigned int) c; }
 	inline Coef largestCoef() const { assert(!isSimple()); return std::abs(data[0]); }
@@ -390,8 +389,7 @@ struct {
 		constr->id = logger?logger->last_proofID:++crefID; assert(constr->id>0);
 		constr->act = 0;
 		constr->degree = constraint.getDegree();
-		constr->header = {type==ConstraintType::FORMULA,type==ConstraintType::LEARNT,0,0x1FFFFFFF,
-										(unsigned int) DeletionStatus::UNLOCKED,length};
+		constr->header = {0,(unsigned int)type,0x1FFFFFFF,0,0,length};
 		constr->ntrailpops = -1;
 		constr->slack = asClause?std::numeric_limits<Val>::min():(asCard?std::numeric_limits<Val>::min()+1:-constr->degree);
 		constr->watchIdx = 0;
@@ -660,7 +658,7 @@ void recomputeLBD(Constr& C) {
 
 bool analyze(CRef confl){
 	Constr& C = ca[confl];
-	if (C.learnt()) {
+	if (C.getType()==ConstraintType::LEARNT) {
 		cBumpActivity(C);
 		recomputeLBD(C);
 	}
@@ -683,7 +681,7 @@ bool analyze(CRef confl){
 				confl_coef_l=1;
 			}
 			Constr& reasonC = ca[Reason[std::abs(l)]];
-			if (reasonC.learnt()) {
+			if (reasonC.getType()==ConstraintType::LEARNT) {
 				cBumpActivity(reasonC);
 				recomputeLBD(reasonC);
 			}
@@ -729,7 +727,7 @@ CRef runPropagation() {
 			if(idx<0 && isTrue(Level,idx+INF)){ assert(ca[ws[it_ws].cref].isClause()); continue; } // blocked literal check
 			CRef cr = ws[it_ws].cref;
 			Constr& C = ca[cr];
-			if(C.getStatus()>=DeletionStatus::FORCEDELETE){ aux::swapErase(ws,it_ws--); continue; }
+			if(C.isMarkedForDelete()){ aux::swapErase(ws,it_ws--); continue; }
 			WatchStatus wstat = C.propagateWatch(cr,ws[it_ws].idx,-p);
 			if(wstat==WatchStatus::FOUNDNEW) aux::swapErase(ws,it_ws--);
 			else if(wstat==WatchStatus::CONFLICTING){ // clean up current level and stop propagation
@@ -846,12 +844,9 @@ ID addInputConstraint(intConstr& c, ConstraintType type){
 		assert(decisionLevel()==0);
 		return ID_Unsat;
 	}
-	Constr& constr = ca[cr];
-	if(type==ConstraintType::EXTERNAL){
-		external[constr.id]=cr;
-		constr.setStatus(DeletionStatus::LOCKED);
-	}
-	return constr.id;
+	ID id = ca[cr].id;
+	if(type==ConstraintType::EXTERNAL) external[id]=cr;
+	return id;
 }
 
 // ---------------------------------------------------------------------
@@ -1020,7 +1015,7 @@ void garbage_collect(){
 	assert(decisionLevel()==0); // so we don't need to update the pointer of Reason<CRef>
 	if (verbosity > 0) puts("c GARBAGE COLLECT");
 	for(Lit l=-n; l<=n; ++l) for(int i=0; i<(int)adj[l].size(); ++i){
-		if(ca[adj[l][i].cref].getStatus()==DeletionStatus::MARKEDFORDELETE) aux::swapErase(adj[l],i--);
+		if(ca[adj[l][i].cref].isMarkedForDelete()) aux::swapErase(adj[l],i--);
 	}
 
 	ca.wasted=0;
@@ -1043,9 +1038,9 @@ void garbage_collect(){
 
 void removeConstraint(Constr& C){
 	assert(decisionLevel()==0);
-	assert(C.getStatus()!=DeletionStatus::MARKEDFORDELETE);
-	assert(C.getStatus()!=DeletionStatus::LOCKED);
-	C.setStatus(DeletionStatus::MARKEDFORDELETE);
+	assert(C.getType()!=ConstraintType::EXTERNAL);
+	assert(!C.isMarkedForDelete());
+	C.markForDel();
 	ca.wasted += C.getMemSize();
 }
 
@@ -1060,13 +1055,11 @@ void reduceDB(){
 	size_t promisingLearnts=0;
 	for(CRef& cr: constraints){
 		Constr& C = ca[cr];
-		if(C.getStatus()==DeletionStatus::FORCEDELETE) removeConstraint(C);
-		else if(C.getStatus()==DeletionStatus::UNLOCKED){
-			Val eval = -C.degree;
-			for(int j=0; j<(int)C.size() && eval<0; ++j) if(isUnit(Level,C.lit(j))) eval+=C.coef(j);
-			if(eval>=0) removeConstraint(C); // remove constraints satisfied at root
-		}
-		if(C.learnt() && C.getStatus()==DeletionStatus::UNLOCKED){
+		if(C.isMarkedForDelete() || C.getType()==ConstraintType::EXTERNAL) continue;
+		Val eval = -C.degree;
+		for(int j=0; j<(int)C.size() && eval<0; ++j) if(isUnit(Level,C.lit(j))) eval+=C.coef(j);
+		if(eval>=0) removeConstraint(C); // remove constraints satisfied at root
+		else if(C.getType()==ConstraintType::LEARNT){
 			if(C.size()>2 && C.lbd()>2) learnts.push_back(cr); // Keep all binary clauses and short LBDs
 			if(C.size()<=2 || C.lbd()<=3) ++promisingLearnts;
 			++totalLearnts;
@@ -1081,7 +1074,7 @@ void reduceDB(){
 	for (size_t i=0; i<std::min(totalLearnts/2,learnts.size()); ++i) removeConstraint(ca[learnts[i]]);
 
 	size_t i=0; size_t j=0;
-	for(; i<constraints.size(); ++i) if(ca[constraints[i]].getStatus()!=MARKEDFORDELETE) constraints[j++]=constraints[i];
+	for(; i<constraints.size(); ++i) if(!ca[constraints[i]].isMarkedForDelete()) constraints[j++]=constraints[i];
 	constraints.resize(j);
 	if ((double) ca.wasted / (double) ca.at > 0.2) garbage_collect();
 }
@@ -1152,7 +1145,7 @@ Val lhs(Constr& C, const std::vector<bool>& sol){
 bool checksol() {
 	for(CRef cr: constraints){
 		Constr& C = ca[cr];
-		if(C.original() && lhs(C,last_sol)<C.degree) return false;
+		if(C.getType()==ConstraintType::FORMULA && lhs(C,last_sol)<C.degree) return false;
 	}
 	puts("c SATISFIABLE (checked)");
 	return true;
@@ -1460,7 +1453,9 @@ void dropExternal(ID id, bool forceDelete){
 	if(id==ID_Undef) return;
 	auto old_it=external.find(id);
 	assert(old_it!=external.end());
-	ca[old_it->second].setStatus(forceDelete?DeletionStatus::FORCEDELETE:DeletionStatus::UNLOCKED);
+	Constr& constr = ca[old_it->second];
+	constr.setType(ConstraintType::AUXILIARY);
+	if(forceDelete) removeConstraint(constr);
 	external.erase(old_it);
 }
 
