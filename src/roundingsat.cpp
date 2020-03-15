@@ -130,9 +130,6 @@ std::vector<Lit> trail;
 std::vector<int> trail_lim, Pos;
 std::vector<CRef> Reason;
 int qhead; // for unit propagation
-Val last_sol_obj_val = std::numeric_limits<Val>::max();
-inline bool foundSolution(){ return last_sol_obj_val<std::numeric_limits<Val>::max(); }
-std::vector<bool> last_sol;
 std::vector<Lit> phase;
 std::vector<double> activity;
 inline int decisionLevel() { return trail_lim.size(); }
@@ -777,7 +774,6 @@ void setNbVariables(long long nvars){
 	Reason.resize(nvars+1,CRef_Undef);
 	activity.resize(nvars+1,0);
 	phase.resize(nvars+1);
-	last_sol.resize(nvars+1,false);
 	tmpConstraint.resize(nvars+1);
 	conflConstraint.resize(nvars+1);
 	logConstraint.resize(nvars+1);
@@ -1156,39 +1152,40 @@ Val lhs(Constr& C, const std::vector<bool>& sol){
 	return result;
 }
 
-bool checksol() {
+bool checksol(const std::vector<bool>& sol) {
 	for(CRef cr: constraints){
 		Constr& C = ca[cr];
-		if(C.getType()==ConstraintType::FORMULA && lhs(C,last_sol)<C.degree) return false;
+		if(C.getType()==ConstraintType::FORMULA && lhs(C,sol)<C.degree) return false;
 	}
 	puts("c SATISFIABLE (checked)");
 	return true;
 }
 
-void printSol(){
-	assert(checksol());
+void printSol(const std::vector<bool>& sol){
+	assert(checksol(sol));
 	if(!print_sol) return;
 	printf("v");
-	for(Var v=1; v<=orig_n; ++v) printf(last_sol[v]?" x%d":" -x%d",v);
+	for(Var v=1; v<=orig_n; ++v) printf(sol[v]?" x%d":" -x%d",v);
 	printf("\n");
 }
 
 void exit_SAT() {
 	if(logger) logger->flush();
 	print_stats(stats);
-	if(foundSolution()) std::cout << "o " << last_sol_obj_val << std::endl;
+	//if(foundSolution()) std::cout << "o " << last_sol_obj_val << std::endl;
 	puts("s SATISFIABLE");
-	printSol();
+	//printSol();
 	exit(10);
 }
 
 void exit_UNSAT() {
 	if(logger) logger->flush();
 	print_stats(stats);
-	if(foundSolution()){
-		std::cout << "o " << last_sol_obj_val << std::endl;
+	//if(sol.foundSolution()){ //TODO: fix
+	if(true){
+		//std::cout << "o " << last_sol_obj_val << std::endl;
 		std::cout << "s OPTIMUM FOUND" << std::endl;
-		printSol();
+		//printSol();
 		exit(30);
 	}else{
 		puts("s UNSATISFIABLE");
@@ -1197,7 +1194,7 @@ void exit_UNSAT() {
 }
 
 void exit_INDETERMINATE() {
-	if(foundSolution()) exit_SAT();
+	//if(foundSolution()) exit_SAT();
 	if(logger) logger->flush();
 	print_stats(stats);
 	puts("s UNKNOWN");
@@ -1298,6 +1295,7 @@ LARGE assumpSlack(const IntSet& assumptions, const Constraint<SMALL, LARGE>& cor
 
 bool extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit l_assump=0){
 	assert(confl!=CRef_Undef);
+	outCore.reset();
 
 	if(l_assump!=0){ // l_assump is an assumption propagated to the opposite value
 		assert(assumptions.has(l_assump));
@@ -1376,8 +1374,19 @@ bool extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit 
 	return true;
 }
 
-SolveState solve(const IntSet& assumptions, intConstr& out) {
-	out.reset();
+/**
+ * @return:
+ * 	UNSAT if root inconsistency detected
+ * 	SAT if satisfying assignment found
+ * 	INCONSISTENT if no solution extending assumptions exists
+ * 	INTERRUPTED if interrupted by external signal
+ * 	INPROCESSING if solver just finished a cleanup phase
+ * @param assumptions: set of assumptions
+ * @param core: if INCONSISTENT, implied constraint falsified by assumptions, otherwise untouched
+ * 	if core is the empty constraint, at least one assumption is falsified at root
+ * @param solution: if SAT, full variable assignment satisfying all constraints, otherwise untouched
+ */
+SolveState solve(const IntSet& assumptions, intConstr& core, std::vector<bool>& solution) {
 	backjumpTo(0); // ensures assumptions are reset
 	std::vector<int> assumptions_lim={0};
 	assumptions_lim.reserve((int)assumptions.size()+1);
@@ -1412,7 +1421,7 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 				if(!learnConstraint(conflConstraint)) return SolveState::UNSAT;
 				conflConstraint.reset();
 			}else{
-				if(!extractCore(assumptions,confl,out)) return SolveState::INTERRUPTED;
+				if(!extractCore(assumptions,confl,core)) return SolveState::INTERRUPTED;
 				return SolveState::INCONSISTENT;
 			}
 		} else {
@@ -1433,8 +1442,8 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 				for(int i=(decisionLevel()==0?0:trail_lim.back()); i<(int)trail.size(); ++i){
 					Lit l = trail[i];
 					if(assumptions.has(-l)){ // found conflicting assumption
-						if(isUnit(Level,l)) backjumpTo(0), out.reset(); // negated assumption is unit
-						else if(!extractCore(assumptions,Reason[std::abs(l)],out,-l)) return SolveState::INTERRUPTED;
+						if(isUnit(Level,l)) backjumpTo(0), core.reset(); // negated assumption is unit
+						else if(!extractCore(assumptions,Reason[std::abs(l)],core,-l)) return SolveState::INTERRUPTED;
 						return SolveState::INCONSISTENT;
 					}
 				}
@@ -1454,7 +1463,11 @@ SolveState solve(const IntSet& assumptions, intConstr& out) {
 			if(next==0) next = pickBranchLit();
 			if(next==0){
 				assert(order_heap.empty());
-				for (Var v=1; v<=n; ++v) last_sol[v]=isTrue(Level,v);
+				assert((int)trail.size()==n);
+				solution.clear();
+				solution.resize(n+1);
+				solution[0]=false;
+				for (Var v=1; v<=n; ++v) solution[v]=isTrue(Level,v);
 				backjumpTo(0);
 				return SolveState::SAT;
 			}
@@ -1474,19 +1487,19 @@ void dropExternal(ID id, bool forceDelete){
 }
 
 inline void printObjBounds(Val lower, Val upper){
-	if(foundSolution()) printf("c bounds %10lld >= %10lld\n",upper,lower);
+	if(upper<std::numeric_limits<Val>::max()) printf("c bounds %10lld >= %10lld\n",upper,lower);
 	else printf("c bounds          - >= %10lld\n",lower);
 }
 
-void handleNewSolution(const intConstr& origObj, intConstr& aux, ID& lastUpperBound){
-	Val prev_val = last_sol_obj_val; _unused(prev_val);
-	last_sol_obj_val = -origObj.getRhs();
-	for(Var v: origObj.vars) last_sol_obj_val+=origObj.coefs[v]*last_sol[v];
-	assert(last_sol_obj_val<prev_val);
+void handleNewSolution(const intConstr& origObj, intConstr& aux, ID& lastUpperBound, std::vector<bool>& sol, Val& bestObjVal){
+	Val prev_val = bestObjVal; _unused(prev_val);
+	bestObjVal = -origObj.getRhs();
+	for(Var v: origObj.vars) bestObjVal+=origObj.coefs[v]*sol[v];
+	assert(bestObjVal<prev_val);
 
 	origObj.copyTo(aux);
 	aux.invert();
-	aux.addRhs(-last_sol_obj_val+1);
+	aux.addRhs(-bestObjVal+1);
 	dropExternal(lastUpperBound,true);
 	lastUpperBound = addConstraint(aux,ConstraintType::EXTERNAL);
 	aux.reset();
@@ -1654,6 +1667,8 @@ void optimize(intConstr& origObj){
 	origObj.removeUnitsAndZeroes(Level,Pos,false);
 	Val lower_bound = -origObj.getDegree();
 
+	std::vector<bool> solution;
+	Val bestObjVal = std::numeric_limits<Val>::max();
 	intConstr core;
 	core.initializeLogging(logger);
 	intConstr aux;
@@ -1673,7 +1688,7 @@ void optimize(intConstr& origObj){
 	SolveState reply = SolveState::SAT;
 	while(true){
 		size_t current_time=stats.getDetTime();
-		if(reply!=SolveState::INPROCESSING) printObjBounds(lower_bound,last_sol_obj_val);
+		if(reply!=SolveState::INPROCESSING) printObjBounds(lower_bound,bestObjVal);
 		assumps.reset();
 		if(opt_mode==1 || opt_mode==2 || (opt_mode>2 && lower_time<upper_time)){ // use core-guided step
 			reformObj.removeZeroes();
@@ -1683,17 +1698,18 @@ void optimize(intConstr& origObj){
 				       (reformObj.getCoef(-l1)==reformObj.getCoef(-l2) && std::abs(l1)<std::abs(l2));
 			});
 		}
-		assert(last_sol_obj_val>lower_bound);
-		reply = solve(assumps,core);
+		assert(bestObjVal>lower_bound);
+		reply = solve(assumps,core,solution);
 		if(reply==SolveState::INTERRUPTED) exit_INDETERMINATE();
 		else if(reply==SolveState::UNSAT) exit_UNSAT();
 		assert(decisionLevel()==0);
 		if(assumps.size()==0) upper_time+=stats.getDetTime()-current_time;
 		else lower_time+=stats.getDetTime()-current_time;
 		if(reply==SolveState::SAT){
+			assert(solution.size()>0);
 			++stats.NSOLS;
-			handleNewSolution(origObj,aux,lastUpperBound);
-			assert((opt_mode!=1 && opt_mode!=2) || lower_bound==last_sol_obj_val);
+			handleNewSolution(origObj,aux,lastUpperBound,solution,bestObjVal);
+			assert((opt_mode!=1 && opt_mode!=2) || lower_bound==bestObjVal);
 		} else if(reply==SolveState::INCONSISTENT) {
 			++stats.NCORES;
 			if(core.getSlack(Level)<0){
@@ -1703,8 +1719,8 @@ void optimize(intConstr& origObj){
 			}
 			handleInconsistency(reformObj,origObj,core,aux,lower_bound,lazyVars,lastLowerBound);
 		} // else reply==SolveState::INPROCESSING, keep looping
-		if(lower_bound>=last_sol_obj_val){
-			printObjBounds(lower_bound,last_sol_obj_val);
+		if(lower_bound>=bestObjVal){
+			printObjBounds(lower_bound,bestObjVal);
 			if(logger){
 				assert(lastUpperBound!=ID_Undef);
 				assert(lastUpperBound!=ID_Unsat);
@@ -1716,7 +1732,7 @@ void optimize(intConstr& origObj){
 				coreAggregate.resize(n+1);
 				origObj.copyTo(aux);
 				aux.invert();
-				aux.addRhs(1-last_sol_obj_val);
+				aux.addRhs(1-bestObjVal);
 				aux.resetBuffer(lastUpperBound-1); // -1 to get the unprocessed formula line
 				coreAggregate.addUp(Level,aux,1,1,false);
 				aux.reset();
@@ -1736,8 +1752,9 @@ void optimize(intConstr& origObj){
 
 void decide(){
 	intConstr core;
+	std::vector<bool> solution;
 	while(true){
-		SolveState reply = solve({},core);
+		SolveState reply = solve({},core,solution);
 		assert(reply!=SolveState::INCONSISTENT);
 		if(reply==SolveState::INTERRUPTED) exit_INDETERMINATE();
 		if(reply==SolveState::SAT) exit_SAT();
