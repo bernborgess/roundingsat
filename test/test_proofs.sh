@@ -108,6 +108,16 @@ wc -l $i.proof
 veripb $i.formula $i.proof -d $1
 echo ""
 
+i="maxsat"
+echo "running $i"
+rm $i.proof
+rm $i.formula
+bzcat /home/jodv/workspace/instances/maxsat/mse19-complete-weighted-benchmarks/planning/driverlog01c.wcsp.dir.wcnf.bz2 | ../roundingsat_debug --proof-log=$i > /dev/null
+echo "verifying $i"
+wc -l $i.proof
+veripb $i.formula $i.proof -d $1
+echo ""
+
 echo "*** HYBRID COREGUIDED OPTIMIZATION ***"
 for i in "${arr_opt_cg[@]}"
 do
@@ -160,12 +170,4 @@ do
     echo ""
 done
 
-i="maxsat"
-echo "running $i"
-rm $i.proof
-rm $i.formula
-bzcat /home/jodv/workspace/instances/maxsat/mse19-complete-weighted-benchmarks/haplotyping-pedigrees/ped3.D.recomb10-0.20-15.wcnf.bz2 | ../roundingsat_debug --proof-log=$i > /dev/null
-echo "verifying $i"
-wc -l $i.proof
-veripb $i.formula $i.proof -d $1
-echo ""
+
