@@ -202,19 +202,31 @@ struct Constraint{
 	}
 
 	template<class S, class L>
-	void copyTo(Constraint<S,L>& out, bool inverted=false) const {
+	void copyTo(Constraint<S,L>& out) const {
 		assert(out.isReset());
-		int mult=(inverted?-1:1);
-		out.rhs=mult*rhs;
+		out.rhs=rhs;
 		out.vars=vars;
 		out.resize(coefs.size());
-		for(Var v: vars) out.coefs[v]=mult*coefs[v];
-		if(inverted || degree==_invalid_()) out.degree=out._invalid_();
+		for(Var v: vars) out.coefs[v]=coefs[v];
+		if(degree==_invalid_()) out.degree=out._invalid_();
 		else out.degree=degree;
 		if(plogger){
 			out.proofBuffer.str(std::string());
-			out.proofBuffer << proofBuffer.str() << proofMult(mult);
+			out.proofBuffer << proofBuffer.str();
 		}
+	}
+
+	void construct(const std::vector<Coef>& cfs, const std::vector<Lit>& lts, const Val r) {
+		assert(cfs.size()==lts.size());
+		assert(isReset());
+		addRhs(r);
+		for(unsigned int i=0; i<lts.size(); ++i) addLhs(cfs[i],lts[i]);
+	}
+
+	void invert(){
+		rhs=-rhs;
+		for(Var v: vars) coefs[v]=-coefs[v];
+		degree=_invalid_();
 	}
 
 	template<class S, class L>
