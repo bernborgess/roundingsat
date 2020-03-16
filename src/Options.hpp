@@ -29,18 +29,24 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-struct Stats {
-	long long NTRAILPOPS=0, NWATCHLOOKUPS=0, NWATCHLOOKUPSBJ=0, NWATCHCHECKS=0, NPROPCHECKS=0, NADDEDLITERALS=0;
-	long long NCONFL=0, NDECIDE=0, NPROP=0, NPROPCLAUSE=0, NPROPCARD=0, NPROPWATCH=0, NPROPCOUNTING=0;
-	long long NWATCHED=0, NCOUNTING=0;
-	__int128 LEARNEDLENGTHSUM=0, LEARNEDDEGREESUM=0;
-	long long NCLAUSESLEARNED=0, NCARDINALITIESLEARNED=0, NGENERALSLEARNED=0;
-	long long NGCD=0, NCARDDETECT=0, NCORECARDINALITIES=0, NCORES=0, NSOLS=0;
-	long long NWEAKENEDNONIMPLYING=0, NWEAKENEDNONIMPLIED=0;
-	long long NRESTARTS=0, NCLEANUP=0;
-	double STARTTIME=0;
+struct Options {
+	std::string formulaName;
+	std::string proofLogName;
+	bool printSol=false;
+	int optMode=4;
 
-	inline long long getDetTime() const {
-		return 1+NADDEDLITERALS+NWATCHLOOKUPS+NWATCHLOOKUPSBJ+NWATCHCHECKS+NPROPCHECKS+NPROP+NTRAILPOPS+NDECIDE;
-	}
+	int verbosity=1;
+	bool originalRoundToOne=false;
+	bool clauseProp=true;
+	bool cardProp=true;
+	bool idxProp=true;
+	bool supProp=true;
+	float countingProp=0.7;
+	int resize_factor=2;
+
+	double rinc=2;
+	long long rfirst=100;
+	long long incReduceDB=300;
+	double v_vsids_decay=0.95;
+	double c_vsids_decay=0.999;
 };

@@ -44,6 +44,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "typedefs.hpp"
 #include "IntSet.hpp"
 #include "Constraint.hpp"
+#include "Options.hpp"
 
 // ---------------------------------------------------------------------
 // Internal datastructures
@@ -69,30 +70,9 @@ enum WatchStatus { FOUNDNEW, FOUNDNONE, CONFLICTING };
 // ---------------------------------------------------------------------
 // Globals
 
-// Parameters
-int verbosity=1;
-bool print_sol=false;
-bool originalRoundToOne=false;
-int opt_mode=4;
-bool clauseProp=true;
-bool cardProp=true;
-bool idxProp=true;
-bool supProp=true;
-float countingProp=0.7;
-
-double rinc=2;
-long long rfirst=100;
-long long nbconstrsbeforereduce=2000;
-long long incReduceDB=300;
-long long nconfl_to_restart=0;
-int resize_factor=2;
-double v_vsids_decay=0.95;
-double v_vsids_inc=1.0;
-double c_vsids_inc=1.0;
-double c_vsids_decay=0.999;
-
 // Variables
 Stats stats;
+Options options;
 std::shared_ptr<Logger> logger;
 
 IntSet tmpSet;
@@ -102,7 +82,6 @@ intConstr tmpConstraint;
 longConstr conflConstraint; // functions as old confl_data
 intConstr logConstraint;
 
-double initial_time;
 Var n = 0;
 Var orig_n = 0;
 std::vector<CRef> constraints;
@@ -117,6 +96,11 @@ std::vector<Lit> phase;
 std::vector<double> activity;
 inline int decisionLevel() { return trail_lim.size(); }
 ID crefID = 0;
+
+long long nbconstrsbeforereduce=2000;
+long long nconfl_to_restart=0;
+double v_vsids_inc=1.0;
+double c_vsids_inc=1.0;
 
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
@@ -216,7 +200,7 @@ struct Constr { // internal constraint optimized for fast propagation
 			widx = widx>>1;
 			assert(data[widx]==p);
 			const unsigned int Csize=size();
-			if(!idxProp || ntrailpops<stats.NTRAILPOPS){ ntrailpops=stats.NTRAILPOPS; watchIdx=degree+1; }
+			if(!options.idxProp || ntrailpops<stats.NTRAILPOPS){ ntrailpops=stats.NTRAILPOPS; watchIdx=degree+1; }
 			assert(watchIdx>degree);
 			stats.NWATCHCHECKS-=watchIdx;
 			for(; watchIdx<Csize; ++watchIdx){
@@ -252,7 +236,7 @@ struct Constr { // internal constraint optimized for fast propagation
 			slack-=c;
 			if(slack<0) return WatchStatus::CONFLICTING;
 			if(slack<ClargestCoef){
-				if(!idxProp || ntrailpops<stats.NTRAILPOPS){ ntrailpops=stats.NTRAILPOPS; watchIdx=0; }
+				if(!options.idxProp || ntrailpops<stats.NTRAILPOPS){ ntrailpops=stats.NTRAILPOPS; watchIdx=0; }
 				stats.NPROPCHECKS-=watchIdx>>1;
 				for(; watchIdx<Csize2 && data[watchIdx]>slack; watchIdx+=2){
 					const Lit l = data[watchIdx+1];
@@ -267,10 +251,10 @@ struct Constr { // internal constraint optimized for fast propagation
 		}
 
 		// use watched propagation
-		if(!idxProp || ntrailpops<stats.NTRAILPOPS){ ntrailpops=stats.NTRAILPOPS; watchIdx=0; }
+		if(!options.idxProp || ntrailpops<stats.NTRAILPOPS){ ntrailpops=stats.NTRAILPOPS; watchIdx=0; }
 		assert(c<0);
 		slack+=c;
-		if(!supProp || slack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
+		if(!options.supProp || slack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
 			stats.NWATCHCHECKS-=watchIdx>>1;
 			for(; watchIdx<Csize2 && slack<ClargestCoef; watchIdx+=2){ // NOTE: first innermost loop of RoundingSat
 				const Coef cf = data[watchIdx];
@@ -356,8 +340,8 @@ struct {
 		// as the constraint is saturated, the coefficients are between 1 and 1e9 as well.
 		assert(!constraint.vars.empty());
 		unsigned int length = constraint.vars.size();
-		bool asClause = clauseProp && constraint.getDegree()==1;
-		bool asCard = !asClause && cardProp && constraint.isCardinality();
+		bool asClause = options.clauseProp && constraint.getDegree()==1;
+		bool asCard = !asClause && options.cardProp && constraint.isCardinality();
 
 		// note: coefficients can be arbitrarily ordered (we don't sort them in descending order for example)
 		// during maintenance of watches the order will be shuffled.
@@ -403,7 +387,7 @@ struct{
 		std::vector<Var> variables;
 		while (!empty()) variables.push_back(removeMax());
 		tree.clear();
-		while(cap<newsize) cap=cap*resize_factor+1;
+		while(cap<newsize) cap=cap*options.resize_factor+1;
 		tree.resize(2*(cap+1), -1);
 		for (Var x : variables) insert(x);
 	}
@@ -433,21 +417,18 @@ struct{
 	}
 } order_heap;
 
-void vDecayActivity() { v_vsids_inc *= (1 / v_vsids_decay); }
+void vDecayActivity() { v_vsids_inc *= (1 / options.v_vsids_decay); }
 void vBumpActivity(Var v){
 	assert(v>0);
-	if ( (activity[v] += v_vsids_inc) > 1e100 ) {
-		// Rescale:
-		for (Var x=1; x<=n; ++x)
-			activity[x] *= 1e-100;
-		v_vsids_inc *= 1e-100; }
-
+	if ( (activity[v] += v_vsids_inc) > 1e100 ) { // Rescale
+		for (Var x=1; x<=n; ++x) activity[x] *= 1e-100;
+		v_vsids_inc *= 1e-100;
+	}
 	// Update order_heap with respect to new activity:
-	if (order_heap.inHeap(v))
-		order_heap.percolateUp(v);
+	if (order_heap.inHeap(v)) order_heap.percolateUp(v);
 }
 
-void cDecayActivity() { c_vsids_inc *= (1 / c_vsids_decay); }
+void cDecayActivity() { c_vsids_inc *= (1 / options.c_vsids_decay); }
 void cBumpActivity (Constr& c) {
 	c.act += c_vsids_inc;
 	if(c.act > 1e20){ // Rescale:
@@ -538,7 +519,7 @@ CRef attachConstraint(intConstr& constraint, ConstraintType type){
 	minWatches>>=1;
 	assert(C.size()>0);
 	assert(minWatches>0);
-	C.setCounting(countingProp==1 || countingProp>(1-minWatches/(float)C.size()));
+	C.setCounting(options.countingProp==1 || options.countingProp>(1-minWatches/(float)C.size()));
 
 	if(C.isCounting()){ // use counting propagation
 		++stats.NCOUNTING;
@@ -656,7 +637,7 @@ bool analyze(CRef confl){
 		if(confl_coef_l>0) {
 			if (conflConstraint.falsifiedAtLvlisOne(Level,decisionLevel())) break;
 			assert(Reason[std::abs(l)] != CRef_Undef);
-			if(originalRoundToOne){
+			if(options.originalRoundToOne){
 				conflConstraint.roundToOne(Level,confl_coef_l,false);
 				confl_coef_l=1;
 			}
@@ -673,8 +654,8 @@ bool analyze(CRef confl){
 			Coef slk = tmpConstraint.getSlack(Level);
 			if(slk>0){
 				Coef div = slk+1;
-				if(originalRoundToOne){ tmpConstraint.weaken(-(tmpConstraint.getCoef(l)%div),l); tmpConstraint.saturate(); }
-				tmpConstraint.roundToOne(Level,div,!originalRoundToOne);
+				if(options.originalRoundToOne){ tmpConstraint.weaken(-(tmpConstraint.getCoef(l)%div),l); tmpConstraint.saturate(); }
+				tmpConstraint.roundToOne(Level,div,!options.originalRoundToOne);
 			}
 			assert(tmpConstraint.getSlack(Level)<=0);
 			for(Var v: tmpConstraint.vars) actSet.add(tmpConstraint.getLit(v));
@@ -751,8 +732,8 @@ void setNbVariables(long long nvars){
 	assert(nvars>0);
 	assert(nvars<INF);
 	if (nvars <= n) return;
-	aux::resizeIntMap(_adj,adj,nvars,resize_factor,{});
-	aux::resizeIntMap(_Level,Level,nvars,resize_factor,-1);
+	aux::resizeIntMap(_adj,adj,nvars,options.resize_factor,{});
+	aux::resizeIntMap(_Level,Level,nvars,options.resize_factor,-1);
 	Pos.resize(nvars+1,-1);
 	Reason.resize(nvars+1,CRef_Undef);
 	activity.resize(nvars+1,0);
@@ -868,7 +849,7 @@ void dropExternal(ID id, bool forceDelete) {
 // only place where constraints are deleted.
 void garbage_collect(){
 	assert(decisionLevel()==0); // so we don't need to update the pointer of Reason<CRef>
-	if (verbosity > 0) puts("c GARBAGE COLLECT");
+	if (options.verbosity > 0) puts("c GARBAGE COLLECT");
 	for(Lit l=-n; l<=n; ++l) for(int i=0; i<(int)adj[l].size(); ++i){
 		if(ca[adj[l][i].cref].isMarkedForDelete()) aux::swapErase(adj[l],i--);
 	}
@@ -892,7 +873,7 @@ void garbage_collect(){
 }
 
 void reduceDB(){
-	if (verbosity > 0) puts("c INPROCESSING");
+	if (options.verbosity > 0) puts("c INPROCESSING");
 	assert(decisionLevel()==0);
 
 	std::vector<CRef> learnts;
@@ -1001,8 +982,8 @@ bool extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit 
 			Coef slk = tmpConstraint.getSlack(Level);
 			if(slk>0){
 				Coef div = slk+1;
-				if(originalRoundToOne){ tmpConstraint.weaken(-(tmpConstraint.getCoef(l)%div),l); tmpConstraint.saturate(); }
-				tmpConstraint.roundToOne(Level,div,!originalRoundToOne);
+				if(options.originalRoundToOne){ tmpConstraint.weaken(-(tmpConstraint.getCoef(l)%div),l); tmpConstraint.saturate(); }
+				tmpConstraint.roundToOne(Level,div,!options.originalRoundToOne);
 			}
 			assert(tmpConstraint.getSlack(Level)<=0);
 			Coef reason_coef_l = tmpConstraint.getCoef(l);
@@ -1062,9 +1043,9 @@ SolveState solve(const IntSet& assumptions, intConstr& core, std::vector<bool>& 
 			cDecayActivity();
 			stats.NCONFL++; nconfl_to_restart--;
 			if(stats.NCONFL%1000==0){
-				if (verbosity > 0) {
+				if (options.verbosity > 0) {
 					printf("c #Conflicts: %10lld | #Constraints: %10lld\n",stats.NCONFL,(long long)constraints.size());
-					if(verbosity>2){
+					if(options.verbosity>2){
 						// memory usage
 						std::cout<<"c total constraint space: "<<ca.cap*4/1024./1024.<<"MB"<<std::endl;
 						std::cout<<"c total #watches: ";{long long cnt=0;for(Lit l=-n;l<=n;l++)cnt+=(long long)adj[l].size();std::cout<<cnt<<std::endl;}
@@ -1083,12 +1064,12 @@ SolveState solve(const IntSet& assumptions, intConstr& core, std::vector<bool>& 
 		} else {
 			if(nconfl_to_restart <= 0){
 				backjumpTo(0);
-				double rest_base = luby(rinc, ++stats.NRESTARTS);
-				nconfl_to_restart = (long long) rest_base * rfirst;
+				double rest_base = luby(options.rinc, ++stats.NRESTARTS);
+				nconfl_to_restart = (long long) rest_base * options.rfirst;
 				if(stats.NCONFL >= (stats.NCLEANUP+1)*nbconstrsbeforereduce) {
 					++stats.NCLEANUP;
 					reduceDB();
-					while(stats.NCONFL >= stats.NCLEANUP*nbconstrsbeforereduce) nbconstrsbeforereduce += incReduceDB;
+					while(stats.NCONFL >= stats.NCLEANUP*nbconstrsbeforereduce) nbconstrsbeforereduce += options.incReduceDB;
 					return SolveState::INPROCESSING;
 				}
 			}
@@ -1132,12 +1113,29 @@ SolveState solve(const IntSet& assumptions, intConstr& core, std::vector<bool>& 
 	}
 }
 
+Val lhs(Constr& C, const std::vector<bool>& sol) {
+	Val result = 0;
+	for (size_t j = 0; j < C.size(); ++j) {
+		Lit l = C.lit(j);
+		result += ((l > 0) == sol[std::abs(l)]) * C.coef(j);
+	}
+	return result;
+}
+bool checksol(const std::vector<bool>& sol) {
+	for (CRef cr: constraints) {
+		Constr& C = ca[cr];
+		if (C.getType() == ConstraintType::FORMULA && lhs(C, sol) < C.degree) return false;
+	}
+	puts("c SATISFIABLE (checked)");
+	return true;
+}
+
 // ---------------------------------------------------------------------
 // IO
 
 namespace io {
 	void print_stats(const Stats& stats) {
-		printf("c CPU time			  : %g s\n", aux::cpuTime() - initial_time);
+		printf("c CPU time			  : %g s\n", aux::cpuTime() - stats.STARTTIME);
 		printf("c deterministic time %lld %.2e\n", stats.getDetTime(), (double) stats.getDetTime());
 		printf("c propagations %lld\n", stats.NPROP);
 		printf("c decisions %lld\n", stats.NDECIDE);
@@ -1173,27 +1171,9 @@ namespace io {
 		printf("c trail pops %lld\n", stats.NTRAILPOPS);
 	}
 
-	Val lhs(Constr& C, const std::vector<bool>& sol) {
-		Val result = 0;
-		for (size_t j = 0; j < C.size(); ++j) {
-			Lit l = C.lit(j);
-			result += ((l > 0) == sol[std::abs(l)]) * C.coef(j);
-		}
-		return result;
-	}
-
-	bool checksol(const std::vector<bool>& sol) {
-		for (CRef cr: constraints) {
-			Constr& C = ca[cr];
-			if (C.getType() == ConstraintType::FORMULA && lhs(C, sol) < C.degree) return false;
-		}
-		puts("c SATISFIABLE (checked)");
-		return true;
-	}
-
 	void printSol(const std::vector<bool>& sol) {
 		assert(checksol(sol));
-		if (!print_sol) return;
+		if (!options.printSol) return;
 		printf("v");
 		for (Var v = 1; v <= orig_n; ++v) printf(sol[v] ? " x%d" : " -x%d", v);
 		printf("\n");
@@ -1243,25 +1223,25 @@ namespace io {
 		printf("\n");
 		printf("Options:\n");
 		printf("  --help           Prints this help message.\n");
-		printf("  --print-sol=arg  Prints the solution if found (default %d).\n", print_sol);
-		printf("  --verbosity=arg  Set the verbosity of the output (default %d).\n", verbosity);
+		printf("  --print-sol=arg  Prints the solution if found (default %d).\n", options.printSol);
+		printf("  --options.verbosity=arg  Set the options.verbosity of the output (default %d).\n", options.verbosity);
 		printf("\n");
-		printf("  --var-decay=arg  Set the VSIDS decay factor (0.5<=arg<1; default %lf).\n", v_vsids_decay);
-		printf("  --rinc=arg       Set the base of the Luby restart sequence (float >=1; default %lf).\n", rinc);
-		printf("  --rfirst=arg     Set the interval of the Luby restart sequence (integer >=1; default %lld).\n", rfirst);
+		printf("  --var-decay=arg  Set the VSIDS decay factor (0.5<=arg<1; default %lf).\n", options.v_vsids_decay);
+		printf("  --options.rinc=arg       Set the base of the Luby restart sequence (float >=1; default %lf).\n", options.rinc);
+		printf("  --options.rfirst=arg     Set the interval of the Luby restart sequence (integer >=1; default %lld).\n", options.rfirst);
 		printf(
 				"  --original-rto=arg Set whether to use RoundingSat's original round-to-one conflict analysis (0 or 1; default %d).\n",
-				originalRoundToOne);
+				options.originalRoundToOne);
 		printf(
 				"  --opt-mode=arg   Set optimization mode: 0 linear, 1(2) (lazy) core-guided, 3(4) (lazy) hybrid (default %d).\n",
-				opt_mode);
+				options.optMode);
 		printf(
 				"  --prop-counting=arg Counting propagation instead of watched propagation (float between 0 (no counting) and 1 (always counting)); default %lf).\n",
-				countingProp);
-		printf("  --prop-clause=arg Optimized two-watched propagation for clauses (0 or 1; default %d).\n", clauseProp);
-		printf("  --prop-card=arg  Optimized watched propagation for cardinalities (0 or 1; default %d).\n", cardProp);
-		printf("  --prop-idx=arg   Optimize index of watches during propagation (0 or 1; default %d).\n", idxProp);
-		printf("  --prop-sup=arg   Avoid superfluous watch checks (0 or 1; default %d).\n", supProp);
+				options.countingProp);
+		printf("  --prop-clause=arg Optimized two-watched propagation for clauses (0 or 1; default %d).\n", options.clauseProp);
+		printf("  --prop-card=arg  Optimized watched propagation for cardinalities (0 or 1; default %d).\n", options.cardProp);
+		printf("  --prop-idx=arg   Optimize index of watches during propagation (0 or 1; default %d).\n", options.idxProp);
+		printf("  --prop-sup=arg   Avoid superfluous watch checks (0 or 1; default %d).\n", options.supProp);
 		printf("  --proof-log=arg  Set a filename for the proof logs (string).\n");
 	}
 
@@ -1282,8 +1262,8 @@ namespace io {
 		if (opt_val.count(option)) val = opt_val.at(option);
 	}
 
-	std::string read_options(int argc, char** argv) {
-		std::string filename;
+	Options read_options(int argc, char** argv) {
+		Options options;
 		for (int i = 1; i < argc; i++) {
 			if (!strcmp(argv[i], "--help")) {
 				usage(argv[0]);
@@ -1291,11 +1271,11 @@ namespace io {
 			}
 		}
 		std::vector<std::string> opts = {"print-sol", "verbosity", "var-decay", "rinc", "rfirst", "original-rto",
-		                                 "opt-mode",
-		                                 "prop-counting", "prop-clause", "prop-card", "prop-idx", "prop-sup", "proof-log"};
+		                                 "opt-mode", "prop-counting", "prop-clause", "prop-card", "prop-idx", "prop-sup",
+		                                 "proof-log"};
 		std::unordered_map<std::string, std::string> opt_val;
 		for (int i = 1; i < argc; i++) {
-			if (std::string(argv[i]).substr(0, 2) != "--") filename = argv[i];
+			if (std::string(argv[i]).substr(0, 2) != "--") options.formulaName = argv[i];
 			else {
 				bool found = false;
 				for (std::string& key : opts) {
@@ -1307,23 +1287,20 @@ namespace io {
 				if (!found) io::exit_ERROR({"Unknown option: ", argv[i], ".\nCheck usage with --help option."});
 			}
 		}
-		getOptionNum(opt_val, "print-sol", [](double x) -> bool { return x == 0 || x == 1; }, print_sol);
-		getOptionNum(opt_val, "verbosity", [](double) -> bool { return true; }, verbosity);
-		getOptionNum(opt_val, "var-decay", [](double x) -> bool { return x >= 0.5 && x < 1; }, v_vsids_decay);
-		getOptionNum(opt_val, "rinc", [](double x) -> bool { return x >= 1; }, rinc);
-		getOptionNum(opt_val, "rfirst", [](double x) -> bool { return x >= 1; }, rfirst);
-		getOptionNum(opt_val, "original-rto", [](double x) -> bool { return x == 0 || x == 1; }, originalRoundToOne);
-		getOptionNum(opt_val, "opt-mode", [](double x) -> bool { return x == 0 || x == 1 || x == 2 || x == 3 || x == 4; },
-		             opt_mode);
-		getOptionNum(opt_val, "prop-counting", [](double x) -> bool { return x >= 0 || x <= 1; }, countingProp);
-		getOptionNum(opt_val, "prop-clause", [](double x) -> bool { return x == 0 || x == 1; }, clauseProp);
-		getOptionNum(opt_val, "prop-card", [](double x) -> bool { return x == 0 || x == 1; }, cardProp);
-		getOptionNum(opt_val, "prop-idx", [](double x) -> bool { return x == 0 || x == 1; }, idxProp);
-		getOptionNum(opt_val, "prop-sup", [](double x) -> bool { return x == 0 || x == 1; }, supProp);
-		std::string proof_log_name = "";
-		getOptionStr(opt_val, "proof-log", proof_log_name);
-		if (!proof_log_name.empty()) logger = std::make_shared<Logger>(proof_log_name);
-		return filename;
+		getOptionNum(opt_val, "print-sol", [](double x) -> bool { return x == 0 || x == 1; }, options.printSol);
+		getOptionNum(opt_val, "verbosity", [](double) -> bool { return true; }, options.verbosity);
+		getOptionNum(opt_val, "var-decay", [](double x) -> bool { return x >= 0.5 && x < 1; }, options.v_vsids_decay);
+		getOptionNum(opt_val, "rinc", [](double x) -> bool { return x >= 1; }, options.rinc);
+		getOptionNum(opt_val, "rfirst", [](double x) -> bool { return x >= 1; }, options.rfirst);
+		getOptionNum(opt_val, "original-rto", [](double x) -> bool { return x == 0 || x == 1; }, options.originalRoundToOne);
+		getOptionNum(opt_val, "opt-mode", [](double x) -> bool { return x == std::round(x) && 0 <= x && x <= 4; }, options.optMode);
+		getOptionNum(opt_val, "prop-counting", [](double x) -> bool { return x >= 0 || x <= 1; }, options.countingProp);
+		getOptionNum(opt_val, "prop-clause", [](double x) -> bool { return x == 0 || x == 1; }, options.clauseProp);
+		getOptionNum(opt_val, "prop-card", [](double x) -> bool { return x == 0 || x == 1; }, options.cardProp);
+		getOptionNum(opt_val, "prop-idx", [](double x) -> bool { return x == 0 || x == 1; }, options.idxProp);
+		getOptionNum(opt_val, "prop-sup", [](double x) -> bool { return x == 0 || x == 1; }, options.supProp);
+		getOptionStr(opt_val, "proof-log", options.proofLogName);
+		return options;
 	}
 }
 
@@ -1666,7 +1643,7 @@ namespace meta {
 		assert(mult > 0);
 		lower_bound += core.getDegree() * mult;
 
-		if ((opt_mode == 2 || opt_mode == 4) && core.vars.size() - core.getDegree() > 1) {
+		if ((options.optMode == 2 || options.optMode == 4) && core.vars.size() - core.getDegree() > 1) {
 			// add auxiliary variable
 			long long newN = n + 1;
 			setNbVariables(newN);
@@ -1733,7 +1710,7 @@ namespace meta {
 			size_t current_time = stats.getDetTime();
 			if (reply != SolveState::INPROCESSING) printObjBounds(lower_bound, upper_bound);
 			assumps.reset();
-			if (opt_mode == 1 || opt_mode == 2 || (opt_mode > 2 && lower_time < upper_time)) { // use core-guided step
+			if (options.optMode == 1 || options.optMode == 2 || (options.optMode > 2 && lower_time < upper_time)) { // use core-guided step
 				reformObj.removeZeroes();
 				for (Var v: reformObj.vars) {
 					assert(reformObj.getLit(v) != 0);
@@ -1755,7 +1732,7 @@ namespace meta {
 				assert(solution.size() > 0);
 				++stats.NSOLS;
 				handleNewSolution(origObj, lastUpperBound);
-				assert((opt_mode != 1 && opt_mode != 2) || lower_bound == upper_bound);
+				assert((options.optMode != 1 && options.optMode != 2) || lower_bound == upper_bound);
 			} else if (reply == SolveState::INCONSISTENT) {
 				++stats.NCORES;
 				if (core.getSlack(Level) < 0) {
@@ -1827,26 +1804,27 @@ static void SIGINT_exit(int signum){
 // Main
 
 int main(int argc, char**argv){
-	initial_time = aux::cpuTime();
-	intConstr objective;
+	stats.STARTTIME=aux::cpuTime();
 
 	signal(SIGINT, SIGINT_exit);
 	signal(SIGTERM,SIGINT_exit);
 	signal(SIGXCPU,SIGINT_exit);
 
 	init();
+	intConstr objective;
 
-	std::string filename = io::read_options(argc, argv);
+	options = io::read_options(argc, argv);
+	if(!options.proofLogName.empty()) logger = std::make_shared<Logger>(options.proofLogName);
 	tmpConstraint.initializeLogging(logger);
 	conflConstraint.initializeLogging(logger);
 	logConstraint.initializeLogging(logger);
 
-	if (!filename.empty()) {
-		std::ifstream fin(filename);
-		if (!fin) io::exit_ERROR({"Could not open ",filename});
+	if (!options.formulaName.empty()) {
+		std::ifstream fin(options.formulaName);
+		if (!fin) io::exit_ERROR({"Could not open ",options.formulaName});
 		parser::file_read(fin,objective);
 	} else {
-		if (verbosity > 0) std::cout << "c No filename given, reading from standard input." << std::endl;
+		if (options.verbosity > 0) std::cout << "c No filename given, reading from standard input." << std::endl;
 		parser::file_read(std::cin,objective);
 	}
 	if(logger) logger->formula_out << "* INPUT FORMULA ABOVE - AUXILIARY AXIOMS BELOW\n";
