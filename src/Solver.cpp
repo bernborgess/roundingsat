@@ -45,8 +45,8 @@ void Solver::setNbVars(long long nvars){
 	assert(nvars<INF);
 	if (nvars <= n) return;
 	aux::resizeIntMap(_adj,adj,nvars,options.resize_factor,{});
-	aux::resizeIntMap(_Level,Level,nvars,options.resize_factor,-1);
-	Pos.resize(nvars+1,-1);
+	aux::resizeIntMap(_Level,Level,nvars,options.resize_factor,INF);
+	Pos.resize(nvars+1,INF);
 	Reason.resize(nvars+1,CRef_Undef);
 	activity.resize(nvars+1,0);
 	phase.resize(nvars+1);
@@ -123,8 +123,8 @@ void Solver::undoOne(){
 	}
 	Var v = std::abs(l);
 	trail.pop_back();
-	Level[l] = -1;
-	Pos[v] = -1;
+	Level[l] = INF;
+	Pos[v] = INF;
 	phase[v] = l;
 	if(!trail_lim.empty() && trail_lim.back() == (int)trail.size())trail_lim.pop_back();
 	order_heap.insert(v);
@@ -159,7 +159,7 @@ CRef Solver::runPropagation() {
 			int idx = ws[it_ws].idx;
 			if(idx<0 && isTrue(Level,idx+INF)){ assert(ca[ws[it_ws].cref].isClause()); continue; } // blocked literal check
 			CRef cr = ws[it_ws].cref;
-			WatchStatus wstat = propagateWatch(cr,ws[it_ws].idx,-p);
+			WatchStatus wstat = checkForPropagation(cr, ws[it_ws].idx, -p);
 			if(wstat==WatchStatus::DROPWATCH) aux::swapErase(ws,it_ws--);
 			else if(wstat==WatchStatus::CONFLICTING){ // clean up current level and stop propagation
 				++stats.NTRAILPOPS;
@@ -175,7 +175,7 @@ CRef Solver::runPropagation() {
 	return CRef_Undef;
 }
 
-WatchStatus Solver::propagateWatch(CRef cr, int& idx, Lit p){
+WatchStatus Solver::checkForPropagation(CRef cr, int& idx, Lit p){
 	Constr& C = ca[cr];
 	if(C.isMarkedForDelete()) return WatchStatus::DROPWATCH;
 
@@ -790,12 +790,14 @@ Lit Solver::pickBranchLit(){
  * 	SAT if satisfying assignment found
  * 	INCONSISTENT if no solution extending assumptions exists
  * 	INTERRUPTED if interrupted by external signal
- * 	INPROCESSING if solver just finished a cleanup phase
+ * 	INRPOCESSED if solver just finished a cleanup phase
+ * 	RESTARTED if solver just restarted
  * @param assumptions: set of assumptions
  * @param core: if INCONSISTENT, implied constraint falsified by assumptions, otherwise untouched
  * 	if core is the empty constraint, at least one assumption is falsified at root
  * @param solution: if SAT, full variable assignment satisfying all constraints, otherwise untouched
  */
+// TODO: use a coroutine / yield instead of a SolveState return value
 SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector<bool>& solution) {
 	backjumpTo(0); // ensures assumptions are reset
 	std::vector<int> assumptions_lim={0};
@@ -837,14 +839,15 @@ SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector
 		} else {
 			if(nconfl_to_restart <= 0){
 				backjumpTo(0);
-				double rest_base = luby(options.rinc, ++stats.NRESTARTS);
-				nconfl_to_restart = (long long) rest_base * options.rfirst;
 				if(stats.NCONFL >= (stats.NCLEANUP+1)*nbconstrsbeforereduce) {
 					++stats.NCLEANUP;
 					reduceDB();
 					while(stats.NCONFL >= stats.NCLEANUP*nbconstrsbeforereduce) nbconstrsbeforereduce += options.incReduceDB;
-					return SolveState::INPROCESSING;
+					return SolveState::INPROCESSED;
 				}
+				double rest_base = luby(options.rinc, ++stats.NRESTARTS);
+				nconfl_to_restart = (long long) rest_base * options.rfirst;
+				return SolveState::RESTARTED;
 			}
 			Lit next = 0;
 			if((int)assumptions_lim.size()>decisionLevel()+1)assumptions_lim.resize(decisionLevel()+1);

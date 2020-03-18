@@ -35,10 +35,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Logger.hpp"
 
 // TODO: make below methods part of a Solver object
-inline bool isTrue(const IntVecIt& level, Lit l){ return ~level[l]; }
-inline bool isFalse(const IntVecIt& level, Lit l){ return ~level[-l]; }
+inline bool isTrue(const IntVecIt& level, Lit l){ return level[l]!=INF; }
+inline bool isFalse(const IntVecIt& level, Lit l){ return level[-l]!=INF; }
 inline bool isUnit(const IntVecIt& level, Lit l){ return level[l]==0; }
-inline bool isUnknown(const std::vector<int>& pos, Lit l){ return pos[std::abs(l)]==-1; }
+inline bool isUnknown(const std::vector<int>& pos, Lit l){ return pos[std::abs(l)]==INF; }
 
 template<class SMALL, class LARGE> // LARGE should be able to fit sums of SMALL
 struct Constraint{
@@ -369,8 +369,7 @@ struct Constraint{
 				++posIt;
 			}
 			if(slack<0){ assertionLevel=std::max(assertionLevel-1,0); break; }
-			while((unsigned int)assertionLevel>=(unsigned int)level[getLit(*coefIt)]) ++coefIt;
-			// NOTE: unsigned int cast ensures -1 is larger than any positive level // TODO: fix with unassigned level INF
+			while(assertionLevel>=level[getLit(*coefIt)]) ++coefIt;
 			assert(coefIt!=vars.cend());
 			if(slack<std::abs(coefs[*coefIt])) break;
 			++assertionLevel;

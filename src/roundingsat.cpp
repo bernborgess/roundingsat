@@ -460,7 +460,7 @@ namespace meta {
 		}
 	};
 
-	std::ostream& operator<<(std::ostream& o, const LazyVar* lv) {
+	std::ostream& operator<<(std::ostream& o, const std::shared_ptr<LazyVar> lv) {
 		for (Var v: lv->introducedVars) o << v << " ";
 		o << "| ";
 		for (Lit l: lv->lhs) o << "+x" << l << " ";
@@ -468,9 +468,9 @@ namespace meta {
 		return o;
 	}
 
-	void checkLazyVariables(longConstr& reformObj, std::vector<LazyVar*>& lazyVars) {
+	void checkLazyVariables(longConstr& reformObj, std::vector<std::shared_ptr<LazyVar>>& lazyVars) {
 		for (int i = 0; i < (int) lazyVars.size(); ++i) {
-			LazyVar* lv = lazyVars[i];
+			std::shared_ptr<LazyVar> lv = lazyVars[i];
 			if (reformObj.getLit(lv->getCurrentVar()) == 0) {
 				// add auxiliary variable
 				long long newN = solver.getNbVars() + 1;
@@ -484,11 +484,7 @@ namespace meta {
 				lv->addAtLeastConstraint();
 				lv->addAtMostConstraint();
 				lv->addSymBreakingConstraint(oldvar);
-				if (lv->introducedVars.size() + lv->rhs == lv->lhs.size()) {
-					aux::swapErase(lazyVars, i--);
-					delete lv;
-					continue;
-				}
+				if (lv->introducedVars.size() + lv->rhs == lv->lhs.size()) { aux::swapErase(lazyVars, i--); continue; }
 			}
 		}
 	}
@@ -502,8 +498,8 @@ namespace meta {
 		if (lastLowerBound == ID_Unsat) io::exit_UNSAT(solution,upper_bound);
 	}
 
-	void handleInconsistency(longConstr& reformObj, const intConstr& origObj, std::vector<LazyVar*>& lazyVars,
-			ID& lastLowerBound) {
+	void handleInconsistency(longConstr& reformObj, const intConstr& origObj,
+			std::vector<std::shared_ptr<LazyVar> >& lazyVars, ID& lastLowerBound) {
 		// take care of derived unit lits and remove zeroes
 		reformObj.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), false);
 		Val prev_lower = lower_bound;
@@ -542,7 +538,7 @@ namespace meta {
 			reformObj.addLhs(mult, newN); // add only one variable for now
 			assert(lower_bound == -reformObj.getDegree());
 			// add first lazy constraint
-			LazyVar* lv = new LazyVar(core, newN, mult); // TODO: shared_ptr
+			std::shared_ptr<LazyVar> lv = std::make_shared<LazyVar>(core, newN, mult);
 			lazyVars.push_back(lv);
 			lv->addAtLeastConstraint();
 			lv->addAtMostConstraint();
@@ -589,12 +585,12 @@ namespace meta {
 		ID lastLowerBound = ID_Undef;
 
 		IntSet assumps;
-		std::vector<LazyVar*> lazyVars;
+		std::vector<std::shared_ptr<LazyVar>> lazyVars;
 		size_t upper_time = 0, lower_time = 0;
 		SolveState reply = SolveState::SAT;
 		while (true) {
 			size_t current_time = stats.getDetTime();
-			if (reply != SolveState::INPROCESSING) printObjBounds(lower_bound, upper_bound);
+			if (reply != SolveState::INPROCESSED || reply != SolveState::RESTARTED) printObjBounds(lower_bound, upper_bound);
 			assumps.reset();
 			if (options.optMode == 1 || options.optMode == 2 || (options.optMode > 2 && lower_time < upper_time)) { // use core-guided step
 				reformObj.removeZeroes();
@@ -610,7 +606,8 @@ namespace meta {
 			assert(upper_bound > lower_bound);
 			reply = solver.solve(assumps, core, solution);
 			if (reply == SolveState::INTERRUPTED) io::exit_INDETERMINATE(solution);
-			else if (reply == SolveState::UNSAT) io::exit_UNSAT(solution,upper_bound);
+			if (reply == SolveState::RESTARTED) continue;
+			if (reply == SolveState::UNSAT) io::exit_UNSAT(solution,upper_bound);
 			assert(solver.decisionLevel() == 0);
 			if (assumps.size() == 0) upper_time += stats.getDetTime() - current_time;
 			else lower_time += stats.getDetTime() - current_time;
@@ -628,7 +625,7 @@ namespace meta {
 				}
 				handleInconsistency(reformObj, origObj, lazyVars, lastLowerBound);
 				core.resize(solver.getNbVars()+1);
-			} // else reply==SolveState::INPROCESSING, keep looping
+			} else assert(reply==SolveState::INPROCESSED); // keep looping
 			if (lower_bound >= upper_bound) {
 				printObjBounds(lower_bound, upper_bound);
 				if (logger) {

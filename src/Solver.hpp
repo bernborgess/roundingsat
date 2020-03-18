@@ -48,7 +48,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "globals.hpp"
 #include "SolverStructs.hpp"
 
-enum SolveState { SAT, UNSAT, INCONSISTENT, INTERRUPTED, INPROCESSING }; // TODO: add RESTARTING?
+enum SolveState { SAT, UNSAT, INCONSISTENT, INTERRUPTED, INPROCESSED, RESTARTED };
 enum WatchStatus { DROPWATCH, KEEPWATCH, CONFLICTING };
 
 class Solver {
@@ -72,7 +72,7 @@ private:
 	std::vector<CRef> constraints;
 	std::unordered_map<ID,CRef> external;
 	std::vector<std::vector<Watch>> _adj={{}}; std::vector<std::vector<Watch>>::iterator adj;
-	std::vector<int> _Level={-1}; IntVecIt Level; // TODO: make Pos, Level, contiguous memory for better cache efficiency.
+	std::vector<int> _Level={INF}; IntVecIt Level; // TODO: make Pos, Level, contiguous memory for better cache efficiency.
 	std::vector<Lit> trail;
 	std::vector<int> trail_lim, Pos;
 	std::vector<CRef> Reason;
@@ -137,10 +137,10 @@ private:
 	void propagate(Lit l, CRef reason);
 	/**
 	* Unit propagation with watched literals.
-	* @post: all watches up to trail[qhead] have been propagated
+	* @post: all constraints have been checked for propagation under trail[0..qhead[
 	*/
 	CRef runPropagation();
-	WatchStatus propagateWatch(CRef cr, int& idx, Lit p);
+	WatchStatus checkForPropagation(CRef cr, int& idx, Lit p);
 
 	// ---------------------------------------------------------------------
 	// Conflict analysis
