@@ -67,8 +67,7 @@ struct Watch {
  * LEARNT constraints are implied by any combination of the above, and may be deleted heuristically.
  */
 enum ConstraintType { FORMULA, AUXILIARY, EXTERNAL, LEARNT };
-enum WatchStatus { FOUNDNEW, FOUNDNONE, CONFLICTING };
-struct Solver;
+class Solver;
 struct Constr { // internal solver constraint optimized for fast propagation
 	static int sz_constr(int length){ return (sizeof(Constr)+sizeof(int)*length)/sizeof(uint32_t); }
 	ID id;
@@ -106,7 +105,6 @@ struct Constr { // internal solver constraint optimized for fast propagation
 	inline Lit lit(unsigned int i) const { return isSimple()?data[i]:data[(i<<1)+1]; }
 	inline bool isWatched(unsigned int i) const { assert(!isSimple()); return data[i]<0; }
 	void undoFalsified(int i);
-	WatchStatus propagateWatch(CRef cr, int& idx, Lit p, Solver& S);
 	template<class S, class L>
 	inline void toConstraint(Constraint<S,L>& out) const {
 		assert(out.isReset()); // don't use a Constraint used by other stuff
@@ -145,7 +143,7 @@ static inline void* xrealloc(void *ptr, size_t size){
 // ---------------------------------------------------------------------
 // Order heap
 
-struct  OrderHeap{ // segment tree (fast implementation of priority queue).
+struct OrderHeap{ // segment tree (fast implementation of priority queue).
 	std::vector<double>& activity;
 	int cap=0;
 	std::vector<Var> tree = {-1,-1};
@@ -159,3 +157,4 @@ struct  OrderHeap{ // segment tree (fast implementation of priority queue).
 	void insert(Var x);
 	Var removeMax();
 };
+

@@ -207,7 +207,7 @@ namespace parser {
 	void opb_read(std::istream& in, Solver& solver, intConstr& objective) {
 		assert(objective.isReset());
 		intConstr input; // TODO: make input use multiple precision to avoid overflow errors
-		input.resize(solver.n + 1);
+		input.resize(solver.getNbVars() + 1);
 		bool first_constraint = true;
 		_unused(first_constraint);
 		for (std::string line; getline(in, line);) {
@@ -249,7 +249,7 @@ namespace parser {
 					if (var.empty() || var[0] != 'x') io::exit_ERROR({"Invalid literal token: ", origvar});
 					var = var.substr(1);
 					Lit l = atoi(var.c_str());
-					if (!(1 <= l && l <= solver.n)) io::exit_ERROR({"Literal token out of variable range: ", origvar});
+					if (!(1 <= l && l <= solver.getNbVars())) io::exit_ERROR({"Literal token out of variable range: ", origvar});
 					if (negated) l = -l;
 					input.addLhs(coef, l);
 				}
@@ -268,13 +268,13 @@ namespace parser {
 				}
 			}
 		}
-		solver.orig_n = solver.n;
+		solver.setNbOrigVars(solver.getNbVars());
 	}
 
 	void wcnf_read(std::istream& in, long long top, Solver& solver, intConstr& objective) {
 		assert(objective.isReset());
 		intConstr input;
-		input.resize(solver.n + 1);
+		input.resize(solver.getNbVars() + 1);
 		for (std::string line; getline(in, line);) {
 			if (line.empty() || line[0] == 'c') continue;
 			else {
@@ -289,23 +289,23 @@ namespace parser {
 				if (weight < top) { // soft clause
 					if (weight >= INF) io::exit_ERROR({"Clause weight exceeds 10^9: ", std::to_string(weight)});
 					if (weight < 0) io::exit_ERROR({"Negative clause weight: ", std::to_string(weight)});
-					solver.setNbVariables(solver.n + 1); // increases n to n+1
-					input.resize(solver.n + 1);
-					objective.resize(solver.n + 1);
-					objective.addLhs(weight, solver.n);
-					input.addLhs(1, solver.n);
+					solver.setNbVars(solver.getNbVars() + 1); // increases n to n+1
+					input.resize(solver.getNbVars() + 1);
+					objective.resize(solver.getNbVars() + 1);
+					objective.addLhs(weight, solver.getNbVars());
+					input.addLhs(1, solver.getNbVars());
 				} // else hard clause
 				if (input.getDegree() >= (Val) INF)
 					io::exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
 				if (solver.addConstraint(input, ConstraintType::FORMULA) == ID_Unsat) io::exit_UNSAT({}, 0);
 			}
 		}
-		solver.orig_n = solver.n - objective.vars.size();
+		solver.setNbOrigVars(solver.getNbVars() - objective.vars.size());
 	}
 
 	void cnf_read(std::istream& in, Solver& solver) {
 		intConstr input;
-		input.resize(solver.n + 1);
+		input.resize(solver.getNbVars() + 1);
 		for (std::string line; getline(in, line);) {
 			if (line.empty() || line[0] == 'c') continue;
 			else {
@@ -317,7 +317,7 @@ namespace parser {
 				if (solver.addConstraint(input, ConstraintType::FORMULA) == ID_Unsat) io::exit_UNSAT({}, 0);
 			}
 		}
-		solver.orig_n = solver.n;
+		solver.setNbOrigVars(solver.getNbVars());
 	}
 
 	void file_read(std::istream& in, Solver& solver, intConstr& objective) {
@@ -330,7 +330,7 @@ namespace parser {
 				is >> type;
 				long long nb;
 				is >> nb;
-				solver.setNbVariables(nb);
+				solver.setNbVars(nb);
 				if (type == "cnf") {
 					cnf_read(in, solver);
 					return;
@@ -345,7 +345,7 @@ namespace parser {
 				std::istringstream is(line.substr(13));
 				long long nb;
 				is >> nb;
-				solver.setNbVariables(nb);
+				solver.setNbVars(nb);
 				opb_read(in, solver, objective);
 				return;
 			}
@@ -473,8 +473,8 @@ namespace meta {
 			LazyVar* lv = lazyVars[i];
 			if (reformObj.getLit(lv->getCurrentVar()) == 0) {
 				// add auxiliary variable
-				long long newN = solver.n + 1;
-				solver.setNbVariables(newN);
+				long long newN = solver.getNbVars() + 1;
+				solver.setNbVars(newN);
 				reformObj.resize(newN + 1);
 				Var oldvar = lv->getCurrentVar();
 				lv->addVar(newN);
@@ -505,7 +505,7 @@ namespace meta {
 	void handleInconsistency(longConstr& reformObj, const intConstr& origObj, std::vector<LazyVar*>& lazyVars,
 			ID& lastLowerBound) {
 		// take care of derived unit lits and remove zeroes
-		reformObj.removeUnitsAndZeroes(solver.Level, solver.Pos, false);
+		reformObj.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), false);
 		Val prev_lower = lower_bound;
 		_unused(prev_lower);
 		lower_bound = -reformObj.getDegree();
@@ -531,13 +531,13 @@ namespace meta {
 
 		if ((options.optMode == 2 || options.optMode == 4) && core.vars.size() - core.getDegree() > 1) {
 			// add auxiliary variable
-			long long newN = solver.n + 1;
-			solver.setNbVariables(newN);
+			long long newN = solver.getNbVars() + 1;
+			solver.setNbVars(newN);
 			core.resize(newN + 1);
 			reformObj.resize(newN + 1);
 			// reformulate the objective
 			core.invert();
-			reformObj.addUp(solver.Level, core, mult, 1, false);
+			reformObj.addUp(solver.getLevel(), core, mult, 1, false);
 			core.invert();
 			reformObj.addLhs(mult, newN); // add only one variable for now
 			assert(lower_bound == -reformObj.getDegree());
@@ -548,15 +548,15 @@ namespace meta {
 			lv->addAtMostConstraint();
 		} else {
 			// add auxiliary variables
-			long long oldN = solver.n;
+			long long oldN = solver.getNbVars();
 			long long newN = oldN - core.getDegree() + core.vars.size();
-			solver.setNbVariables(newN);
+			solver.setNbVars(newN);
 			core.resize(newN + 1);
 			reformObj.resize(newN + 1);
 			// reformulate the objective
 			for (Var v = oldN + 1; v <= newN; ++v) core.addLhs(-1, v);
 			core.invert();
-			reformObj.addUp(solver.Level, core, mult, 1, false);
+			reformObj.addUp(solver.getLevel(), core, mult, 1, false);
 			assert(lower_bound == -reformObj.getDegree());
 			// add channeling constraints
 			if (solver.addConstraint(core, ConstraintType::AUXILIARY) == ID_Unsat) io::exit_UNSAT(solution,upper_bound);
@@ -573,7 +573,7 @@ namespace meta {
 	void optimize(intConstr& origObj) {
 		assert(origObj.vars.size() > 0);
 		// NOTE: -origObj.getDegree() keeps track of the offset of the reformulated objective (or after removing unit lits)
-		origObj.removeUnitsAndZeroes(solver.Level, solver.Pos, false);
+		origObj.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), false);
 		lower_bound = -origObj.getDegree();
 		upper_bound = std::numeric_limits<Val>::max();
 		core.initializeLogging(logger);
@@ -621,13 +621,13 @@ namespace meta {
 				assert((options.optMode != 1 && options.optMode != 2) || lower_bound == upper_bound);
 			} else if (reply == SolveState::INCONSISTENT) {
 				++stats.NCORES;
-				if (core.getSlack(solver.Level) < 0) {
-					if (logger) core.logInconsistency(solver.Level, solver.Pos, stats);
+				if (core.getSlack(solver.getLevel()) < 0) {
+					if (logger) core.logInconsistency(solver.getLevel(), solver.getPos(), stats);
 					assert(solver.decisionLevel() == 0);
 					io::exit_UNSAT(solution,upper_bound);
 				}
 				handleInconsistency(reformObj, origObj, lazyVars, lastLowerBound);
-				core.resize(solver.n+1);
+				core.resize(solver.getNbVars()+1);
 			} // else reply==SolveState::INPROCESSING, keep looping
 			if (lower_bound >= upper_bound) {
 				printObjBounds(lower_bound, upper_bound);
@@ -639,21 +639,21 @@ namespace meta {
 					aux.initializeLogging(logger);
 					longConstr coreAggregate;
 					coreAggregate.initializeLogging(logger);
-					coreAggregate.resize(solver.n + 1);
+					coreAggregate.resize(solver.getNbVars() + 1);
 					origObj.copyTo(aux);
 					aux.invert();
 					aux.addRhs(1 - upper_bound);
 					aux.resetBuffer(lastUpperBound - 1); // -1 to get the unprocessed formula line
-					coreAggregate.addUp(solver.Level, aux, 1, 1, false);
+					coreAggregate.addUp(solver.getLevel(), aux, 1, 1, false);
 					aux.reset();
 					origObj.copyTo(aux);
 					aux.addRhs(lower_bound);
 					aux.resetBuffer(lastLowerBound - 1); // -1 to get the unprocessed formula line
-					coreAggregate.addUp(solver.Level, aux, 1, 1, false);
+					coreAggregate.addUp(solver.getLevel(), aux, 1, 1, false);
 					aux.reset();
-					assert(coreAggregate.getSlack(solver.Level) < 0);
+					assert(coreAggregate.getSlack(solver.getLevel()) < 0);
 					assert(solver.decisionLevel() == 0);
-					coreAggregate.logInconsistency(solver.Level, solver.Pos, stats);
+					coreAggregate.logInconsistency(solver.getLevel(), solver.getPos(), stats);
 				}
 				io::exit_UNSAT(solution,upper_bound);
 			}
@@ -710,7 +710,7 @@ int main(int argc, char**argv){
 		parser::file_read(std::cin, meta::solver, meta::objective);
 	}
 	if(logger) logger->formula_out << "* INPUT FORMULA ABOVE - AUXILIARY AXIOMS BELOW\n";
-	std::cout << "c #variables=" << meta::solver.orig_n << " #constraints=" << meta::solver.constraints.size() << std::endl;
+	std::cout << "c #variables=" << meta::solver.getNbOrigVars() << " #constraints=" << meta::solver.getNbConstraints() << std::endl;
 
 	signal(SIGINT, SIGINT_interrupt);
 	signal(SIGTERM,SIGINT_interrupt);

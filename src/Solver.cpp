@@ -40,7 +40,7 @@ Solver::Solver():order_heap(activity){
 	ca.capacity(1024*1024);//4MB
 }
 
-void Solver::setNbVariables(long long nvars){
+void Solver::setNbVars(long long nvars){
 	assert(nvars>0);
 	assert(nvars<INF);
 	if (nvars <= n) return;
@@ -159,10 +159,8 @@ CRef Solver::runPropagation() {
 			int idx = ws[it_ws].idx;
 			if(idx<0 && isTrue(Level,idx+INF)){ assert(ca[ws[it_ws].cref].isClause()); continue; } // blocked literal check
 			CRef cr = ws[it_ws].cref;
-			Constr& C = ca[cr];
-			if(C.isMarkedForDelete()){ aux::swapErase(ws,it_ws--); continue; }
-			WatchStatus wstat = C.propagateWatch(cr,ws[it_ws].idx,-p,*this);
-			if(wstat==WatchStatus::FOUNDNEW) aux::swapErase(ws,it_ws--);
+			WatchStatus wstat = propagateWatch(cr,ws[it_ws].idx,-p);
+			if(wstat==WatchStatus::DROPWATCH) aux::swapErase(ws,it_ws--);
 			else if(wstat==WatchStatus::CONFLICTING){ // clean up current level and stop propagation
 				++stats.NTRAILPOPS;
 				for(int i=0; i<=it_ws; ++i){
@@ -175,6 +173,148 @@ CRef Solver::runPropagation() {
 		}
 	}
 	return CRef_Undef;
+}
+
+WatchStatus Solver::propagateWatch(CRef cr, int& idx, Lit p){
+	Constr& C = ca[cr];
+	if(C.isMarkedForDelete()) return WatchStatus::DROPWATCH;
+
+	assert(isFalse(Level,p));
+	++stats.NWATCHLOOKUPS;
+	int* data=C.data;
+
+	if(C.isClause()){
+		assert(idx<0);
+		assert(p==data[0] || p==data[1]);
+		assert(C.size()>1);
+		int widx=0;
+		Lit watch=data[0];
+		Lit otherwatch=data[1];
+		if(p==data[1]){
+			widx=1;
+			watch=data[1];
+			otherwatch=data[0];
+		}
+		assert(p==watch);
+		assert(p!=otherwatch);
+		if(isTrue(Level,otherwatch)){
+			idx=otherwatch-INF; // set new blocked literal
+			return WatchStatus::KEEPWATCH; // constraint is satisfied
+		}
+		const unsigned int Csize=C.size();
+		for(unsigned int i=2; i<Csize; ++i){
+			Lit l = data[i];
+			if(!isFalse(Level,l)){
+				int mid = i/2+1;
+				data[i]=data[mid];
+				data[mid]=watch;
+				data[widx]=l;
+				adj[l].emplace_back(cr,otherwatch-INF);
+				stats.NWATCHCHECKS+=i-1;
+				return WatchStatus::DROPWATCH;
+			}
+		}
+		stats.NWATCHCHECKS+=Csize-2;
+		assert(isFalse(Level,watch));
+		for(unsigned int i=2; i<Csize; ++i) assert(isFalse(Level,data[i]));
+		if(isFalse(Level,otherwatch)) return WatchStatus::CONFLICTING;
+		else{ assert(!isTrue(Level,otherwatch)); ++stats.NPROPCLAUSE; propagate(otherwatch,cr); }
+		++stats.NPROPCHECKS;
+		return WatchStatus::KEEPWATCH;
+	}
+
+	assert(idx>=0);
+	unsigned int& watchIdx=C.watchIdx;
+	const Val degree = C.degree;
+	if(C.isCard()){
+		assert(idx%2==1);
+		unsigned int widx=idx;
+		widx = widx>>1;
+		assert(data[widx]==p);
+		const unsigned int Csize=C.size();
+		if(!options.idxProp || C.ntrailpops<stats.NTRAILPOPS){ C.ntrailpops=stats.NTRAILPOPS; watchIdx=degree+1; }
+		assert(watchIdx>degree);
+		stats.NWATCHCHECKS-=watchIdx;
+		for(; watchIdx<Csize; ++watchIdx){
+			Lit l = data[watchIdx];
+			if(!isFalse(Level,l)){
+				unsigned int mid = (watchIdx+degree+1)/2; assert(mid<=watchIdx); assert(mid>degree);
+				data[watchIdx]=data[mid];
+				data[mid]=data[widx];
+				data[widx]=l;
+				adj[l].emplace_back(cr,(widx<<1)+1);
+				stats.NWATCHCHECKS+=watchIdx+1;
+				return WatchStatus::DROPWATCH;
+			}
+		}
+		stats.NWATCHCHECKS+=watchIdx;
+		assert(isFalse(Level,data[widx]));
+		for(unsigned int i=degree+1; i<Csize; ++i) assert(isFalse(Level,data[i]));
+		for(unsigned int i=0; i<=degree; ++i) if(i!=widx && isFalse(Level,data[i])) return WatchStatus::CONFLICTING;
+		for(unsigned int i=0; i<=degree; ++i){
+			Lit l = data[i];
+			if(i!=widx && !isTrue(Level,l)){ ++stats.NPROPCARD; propagate(l,cr); }
+		}
+		stats.NPROPCHECKS+=degree+1;
+		return WatchStatus::KEEPWATCH;
+	}
+
+	assert(idx%2==0);
+	assert(data[idx+1]==p);
+	const unsigned int Csize2 = 2*C.size(); const Coef ClargestCoef = C.largestCoef();
+	const Coef c = data[idx];
+
+	Val& slack = C.slack;
+	if(C.isCounting()){ // use counting propagation
+		slack-=c;
+		if(slack<0) return WatchStatus::CONFLICTING;
+		if(slack<ClargestCoef){
+			if(!options.idxProp || C.ntrailpops<stats.NTRAILPOPS){ C.ntrailpops=stats.NTRAILPOPS; watchIdx=0; }
+			stats.NPROPCHECKS-=watchIdx>>1;
+			for(; watchIdx<Csize2 && data[watchIdx]>slack; watchIdx+=2){
+				const Lit l = data[watchIdx+1];
+				if(isUnknown(Pos,l)){
+					stats.NPROPCLAUSE+=(degree==1); stats.NPROPCARD+=(degree!=1 && ClargestCoef==1); ++stats.NPROPCOUNTING;
+					propagate(l,cr);
+				}
+			}
+			stats.NPROPCHECKS+=watchIdx>>1;
+		}
+		return WatchStatus::KEEPWATCH;
+	}
+
+	// use watched propagation
+	if(!options.idxProp || C.ntrailpops<stats.NTRAILPOPS){ C.ntrailpops=stats.NTRAILPOPS; watchIdx=0; }
+	assert(c<0);
+	slack+=c;
+	if(!options.supProp || slack-c>=ClargestCoef){ // look for new watches if previously, slack was at least ClargestCoef
+		stats.NWATCHCHECKS-=watchIdx>>1;
+		for(; watchIdx<Csize2 && slack<ClargestCoef; watchIdx+=2){ // NOTE: first innermost loop of RoundingSat
+			const Coef cf = data[watchIdx];
+			const Lit l = data[watchIdx+1];
+			if(cf>0 && !isFalse(Level,l)){
+				slack+=cf;
+				data[watchIdx]=-cf;
+				adj[l].emplace_back(cr,watchIdx);
+			}
+		}
+		stats.NWATCHCHECKS+=watchIdx>>1;
+		if(slack<ClargestCoef){ assert(watchIdx==Csize2); watchIdx=0; }
+	} // else we did not find enough watches last time, so we can skip looking for them now
+
+	if(slack>=ClargestCoef){ data[idx]=-c; return WatchStatus::DROPWATCH; }
+	if(slack<0) return WatchStatus::CONFLICTING;
+	// keep the watch, check for propagation
+	stats.NPROPCHECKS-=watchIdx>>1;
+	for(; watchIdx<Csize2 && std::abs(data[watchIdx])>slack; watchIdx+=2){ // NOTE: second innermost loop of RoundingSat
+		const Lit l = data[watchIdx+1];
+		if(isUnknown(Pos,l)){
+			stats.NPROPCLAUSE+=(degree==1); stats.NPROPCARD+=(degree!=1 && ClargestCoef==1); ++stats.NPROPWATCH;
+			propagate(l,cr);
+		}
+	}
+	stats.NPROPCHECKS+=watchIdx>>1;
+	return WatchStatus::KEEPWATCH;
 }
 
 // ---------------------------------------------------------------------
@@ -563,6 +703,8 @@ void Solver::garbage_collect(){
 	#undef update_ptr
 }
 
+// We assume in the garbage collection method that reduceDB() is the
+// only place where constraints are removed from memory.
 void Solver::reduceDB(){
 	if (options.verbosity > 0) puts("c INPROCESSING");
 	assert(decisionLevel()==0);
@@ -599,7 +741,8 @@ void Solver::reduceDB(){
 }
 
 // ---------------------------------------------------------------------
-// ---------------------------------------------------------------------
+// Solving
+
 double Solver::luby(double y, int i){
 	// Find the finite subsequence that contains index 'i', and the
 	// size of that subsequence:
@@ -627,7 +770,6 @@ bool Solver::checksol(const std::vector<bool>& sol) {
 		Constr& C = ca[cr];
 		if (C.getType() == ConstraintType::FORMULA && lhs(C, sol) < C.degree) return false;
 	}
-	//puts("c SATISFIABLE (checked)");
 	return true;
 }
 

@@ -49,10 +49,15 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "SolverStructs.hpp"
 
 enum SolveState { SAT, UNSAT, INCONSISTENT, INTERRUPTED, INPROCESSING }; // TODO: add RESTARTING?
+enum WatchStatus { DROPWATCH, KEEPWATCH, CONFLICTING };
 
-struct Solver {
+class Solver {
 	// ---------------------------------------------------------------------
 	// Members
+private:
+	int n;
+	int orig_n;
+
 	std::shared_ptr<Logger> logger;
 	ID crefID = 0;
 
@@ -64,33 +69,56 @@ struct Solver {
 	intConstr logConstraint;
 	OrderHeap order_heap;
 
-	int n;
-	int orig_n;
-
 	std::vector<CRef> constraints;
 	std::unordered_map<ID,CRef> external;
 	std::vector<std::vector<Watch>> _adj={{}}; std::vector<std::vector<Watch>>::iterator adj;
-	std::vector<int> _Level={-1}; IntVecIt Level; // TODO: make Pos, Reason, Level, contiguous memory for better cache efficiency.
+	std::vector<int> _Level={-1}; IntVecIt Level; // TODO: make Pos, Level, contiguous memory for better cache efficiency.
 	std::vector<Lit> trail;
 	std::vector<int> trail_lim, Pos;
 	std::vector<CRef> Reason;
 	int qhead=0; // for unit propagation
 	std::vector<Lit> phase;
 	std::vector<double> activity;
-	inline int decisionLevel() { return trail_lim.size(); }
 
 	long long nbconstrsbeforereduce=2000;
 	long long nconfl_to_restart=0;
 	double v_vsids_inc=1.0;
 	double c_vsids_inc=1.0;
 
-	// ---------------------------------------------------------------------
-	// Initialization
-
+public:
 	Solver();
-	void setNbVariables(long long nvars);
 	void setLogger(std::shared_ptr<Logger> lgr);
 
+	int getNbVars() const { return n; }
+	void setNbVars(long long nvars);
+	int getNbOrigVars() const { return orig_n; }
+	void setNbOrigVars(int o_n) { orig_n=o_n; }
+
+	const IntVecIt& getLevel() const { return Level; }
+	const std::vector<int>& getPos() const { return Pos; }
+	int decisionLevel() const { return trail_lim.size(); }
+
+	ID addConstraint(const intConstr& c, ConstraintType type);
+	ID addConstraint(const std::vector<Coef>& coefs, const std::vector<Lit>& lits, const Val rhs, ConstraintType type);
+	void dropExternal(ID id, bool forceDelete);
+	int getNbConstraints() const { return constraints.size(); }
+	void getIthConstraint(int i, intConstr& out) const { return ca[constraints[i]].toConstraint(out); }
+
+	/**
+	 * @return:
+	 * 	UNSAT if root inconsistency detected
+	 * 	SAT if satisfying assignment found
+	 * 	INCONSISTENT if no solution extending assumptions exists
+	 * 	INTERRUPTED if interrupted by external signal
+	 * 	INPROCESSING if solver just finished a cleanup phase
+	 * @param assumptions: set of assumptions
+	 * @param core: if INCONSISTENT, implied constraint falsified by assumptions, otherwise untouched
+	 * 	if core is the empty constraint, at least one assumption is falsified at root
+	 * @param solution: if SAT, full variable assignment satisfying all constraints, otherwise untouched
+	 */
+	SolveState solve(const IntSet& assumptions, intConstr& core, std::vector<bool>& solution);
+
+private:
 	// ---------------------------------------------------------------------
 	// VSIDS
 
@@ -108,10 +136,11 @@ struct Solver {
 	void decide(Lit l);
 	void propagate(Lit l, CRef reason);
 	/**
- * Unit propagation with watched literals.
- * @post: all watches up to trail[qhead] have been propagated
- */
+	* Unit propagation with watched literals.
+	* @post: all watches up to trail[qhead] have been propagated
+	*/
 	CRef runPropagation();
+	WatchStatus propagateWatch(CRef cr, int& idx, Lit p);
 
 	// ---------------------------------------------------------------------
 	// Conflict analysis
@@ -132,16 +161,11 @@ struct Solver {
 	CRef attachConstraint(intConstr& constraint, ConstraintType type);
 	bool learnConstraint(longConstr& confl);
 	ID addInputConstraint(ConstraintType type);
-	ID addConstraint(const intConstr& c, ConstraintType type);
-	ID addConstraint(const std::vector<Coef>& coefs, const std::vector<Lit>& lits, const Val rhs, ConstraintType type);
 	void removeConstraint(Constr& C);
-	void dropExternal(ID id, bool forceDelete);
 
 	// ---------------------------------------------------------------------
 	// Garbage collection
 
-	// We assume in the garbage collection method that reduceDB() is the
-	// only place where constraints are deleted.
 	void garbage_collect();
 	void reduceDB();
 
@@ -152,18 +176,5 @@ struct Solver {
 	Val lhs(Constr& C, const std::vector<bool>& sol);
 	bool checksol(const std::vector<bool>& sol);
 	Lit pickBranchLit();
-	/**
-	 * @return:
-	 * 	UNSAT if root inconsistency detected
-	 * 	SAT if satisfying assignment found
-	 * 	INCONSISTENT if no solution extending assumptions exists
-	 * 	INTERRUPTED if interrupted by external signal
-	 * 	INPROCESSING if solver just finished a cleanup phase
-	 * @param assumptions: set of assumptions
-	 * @param core: if INCONSISTENT, implied constraint falsified by assumptions, otherwise untouched
-	 * 	if core is the empty constraint, at least one assumption is falsified at root
-	 * @param solution: if SAT, full variable assignment satisfying all constraints, otherwise untouched
-	 */
-	SolveState solve(const IntSet& assumptions, intConstr& core, std::vector<bool>& solution);
 
 };
