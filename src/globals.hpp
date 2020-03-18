@@ -29,25 +29,15 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-using ID=uint64_t;
-const ID ID_Undef = UINT64_MAX;
-const ID ID_Unsat = UINT64_MAX-1;
+#include "typedefs.hpp"
+#include "Options.hpp"
+#include "Stats.hpp"
+#include "Logger.hpp"
 
-using Var=int;
-using Lit=int;
-using Coef=int;
-using Val=long long;
-
-const Coef INF = 1e9+1;
-
-using IntVecIt = std::vector<int>::iterator;
-
-// TODO: below is part of Solver.hpp
-enum SolveState { SAT, UNSAT, INCONSISTENT, INTERRUPTED, INPROCESSING }; // TODO: add RESTARTING?
-/*
- * FORMULA constraints are original input formula constraints that are only deleted when satisfied at root.
- * AUXILIARY constraints are non-formula constraints that are only deleted when satisfied at root.
- * EXTERNAL constraints are non-formula constraints that are never deleted.
- * LEARNT constraints are implied by any combination of the above, and may be deleted heuristically.
- */
-enum ConstraintType { FORMULA, AUXILIARY, EXTERNAL, LEARNT };
+// ---------------------------------------------------------------------
+// Globals
+Stats stats;
+Options options;
+std::shared_ptr<Logger> logger;
+Var n; Var orig_n;
+bool asynch_interrupt = false;

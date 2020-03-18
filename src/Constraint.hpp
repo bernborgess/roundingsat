@@ -35,9 +35,9 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Logger.hpp"
 
 // TODO: make below methods part of a Solver object
-inline bool isTrue(const std::vector<int>::iterator& level, Lit l){ return ~level[l]; }
-inline bool isFalse(const std::vector<int>::iterator& level, Lit l){ return ~level[-l]; }
-inline bool isUnit(const std::vector<int>::iterator& level, Lit l){ return level[l]==0; }
+inline bool isTrue(const IntVecIt& level, Lit l){ return ~level[l]; }
+inline bool isFalse(const IntVecIt& level, Lit l){ return ~level[-l]; }
+inline bool isUnit(const IntVecIt& level, Lit l){ return level[l]==0; }
 inline bool isUnknown(const std::vector<int>& pos, Lit l){ return pos[std::abs(l)]==-1; }
 
 template<class SMALL, class LARGE> // LARGE should be able to fit sums of SMALL
@@ -101,12 +101,12 @@ struct Constraint{
 		else if(c<0) return -v;
 		else return v;
 	}
-	inline bool falsified(const std::vector<int>::iterator& level, Var v) const {
+	inline bool falsified(const IntVecIt& level, Var v) const {
 		assert(v>0);
 		assert((getLit(v)!=0 && !isFalse(level,getLit(v)))==(coefs[v]>0 && !isFalse(level,v)) || (coefs[v]<0 && !isTrue(level,v)));
 		return (coefs[v]>0 && isFalse(level,v)) || (coefs[v]<0 && isTrue(level,v));
 	}
-	LARGE getSlack(const std::vector<int>::iterator& level) const {
+	LARGE getSlack(const IntVecIt& level) const {
 		LARGE slack = -rhs;
 		for(Var v: vars) if(isTrue(level,v) || (!isFalse(level,v) && coefs[v]>0)) slack+=coefs[v];
 		return slack;
@@ -133,7 +133,7 @@ struct Constraint{
 	}
 
 	// @post: preserves order of vars
-	void removeUnitsAndZeroes(const std::vector<int>::iterator& level,const std::vector<int>& pos,bool doSaturation=true){
+	void removeUnitsAndZeroes(const IntVecIt& level,const std::vector<int>& pos,bool doSaturation=true){
 		if(plogger){
 			for(Var v: vars){
 				Lit l = getLit(v); SMALL c = getCoef(l);
@@ -159,7 +159,7 @@ struct Constraint{
 		vars.resize(j);
 		if(doSaturation) saturate();
 	}
-	bool hasNoUnits(const std::vector<int>::iterator& level) const {
+	bool hasNoUnits(const IntVecIt& level) const {
 		for(Var v: vars) if(isUnit(level,v) || isUnit(level,-v)) return false;
 		return true;
 	}
@@ -230,7 +230,7 @@ struct Constraint{
 	}
 
 	template<class S, class L>
-	void addUp(const std::vector<int>::iterator& level, Constraint<S,L>& c, SMALL cmult=1, SMALL thismult=1,
+	void addUp(const IntVecIt& level, Constraint<S,L>& c, SMALL cmult=1, SMALL thismult=1,
 	           bool saturateAndReduce=true, bool partial=false){
 		assert(!saturateAndReduce || isSaturated());
 		assert(c._unused_()<=_unused_()); // don't add large stuff into small stuff
@@ -265,7 +265,7 @@ struct Constraint{
 		assert(isSaturated());
 	}
 
-	void roundToOne(const std::vector<int>::iterator& level, const SMALL d, bool partial){
+	void roundToOne(const IntVecIt& level, const SMALL d, bool partial){
 		assert(isSaturated());
 		assert(d>0);
 		if(d==1) return;
@@ -316,18 +316,18 @@ struct Constraint{
 	}
 
 	// NOTE: only equivalence preserving operations!
-	void postProcess(const std::vector<int>::iterator& level, const std::vector<int>& pos, bool sortFirst, Stats& sts){
+	void postProcess(const IntVecIt& level, const std::vector<int>& pos, bool sortFirst, Stats& sts){
 		removeUnitsAndZeroes(level, pos); // NOTE: also saturates
 		if(sortFirst) sortInDecreasingCoefOrder();
 		if(divideByGCD()) ++sts.NGCD;
 		if(simplifyToCardinality(true)) ++sts.NCARDDETECT;
 	}
 
-	inline bool falseAtLevel(const std::vector<int>::iterator& level, Var v, int lvl){
+	inline bool falseAtLevel(const IntVecIt& level, Var v, int lvl){
 		return (coefs[v]>0 && level[-v]==lvl) || (coefs[v]<0 && level[v]==lvl);
 	}
 	Var falsev1=0; Var falsev2=0;
-	bool falsifiedAtLvlisOne(const std::vector<int>::iterator& level, int lvl) {
+	bool falsifiedAtLvlisOne(const IntVecIt& level, int lvl) {
 		if(getLit(falsev1)!=0 && getLit(falsev2)!=0 && falseAtLevel(level,falsev1,lvl) && falseAtLevel(level,falsev2,lvl)) return false;
 		falsev1=0; falsev2=0;
 		for(Var v: vars){
@@ -340,7 +340,7 @@ struct Constraint{
 	}
 
 	// @return: earliest decision level that propagates a variable
-	int getAssertionLevel(const std::vector<int>::iterator& level, const std::vector<int>& pos) const {
+	int getAssertionLevel(const IntVecIt& level, const std::vector<int>& pos) const {
 		assert(getSlack(level)<0);
 		// calculate slack at level -1
 		LARGE slack = -rhs;
@@ -379,14 +379,14 @@ struct Constraint{
 	}
 
 	// @post: preserves order after removeZeroes()
-	void weakenNonImplied(const std::vector<int>::iterator& level, LARGE slack, Stats& sts){
+	void weakenNonImplied(const IntVecIt& level, LARGE slack, Stats& sts){
 		for(Var v: vars) if(coefs[v]!=0 && std::abs(coefs[v])<=slack && !falsified(level,v)){
 				weaken(-coefs[v],v);
 				++sts.NWEAKENEDNONIMPLIED;
 			}
 	}
 	// @post: preserves order after removeZeroes()
-	bool weakenNonImplying(const std::vector<int>::iterator& level, SMALL propCoef, LARGE slack, Stats& sts){
+	bool weakenNonImplying(const IntVecIt& level, SMALL propCoef, LARGE slack, Stats& sts){
 		assert(hasNoZeroes());
 		assert(isSortedInDecreasingCoefOrder());
 		long long oldCount = sts.NWEAKENEDNONIMPLYING;
@@ -404,7 +404,7 @@ struct Constraint{
 		return changed;
 	}
 	// @post: preserves order after removeZeroes()
-	void heuristicWeakening(const std::vector<int>::iterator& level, const std::vector<int>& pos, LARGE slk, Stats& sts){
+	void heuristicWeakening(const IntVecIt& level, const std::vector<int>& pos, LARGE slk, Stats& sts){
 		assert(slk==getSlack(level));
 		if (slk<0) return; // no propagation, no idea what to weaken
 		assert(isSortedInDecreasingCoefOrder());
@@ -513,7 +513,7 @@ struct Constraint{
 	}
 
 	// @pre: reducible to unit over v
-	void logUnit(const std::vector<int>::iterator& level, const std::vector<int>& pos, Var v_unit, Stats& sts){
+	void logUnit(const IntVecIt& level, const std::vector<int>& pos, Var v_unit, Stats& sts){
 		assert(plogger);
 		// reduce to unit over v
 		removeUnitsAndZeroes(level,pos);
@@ -529,7 +529,7 @@ struct Constraint{
 		plogger->unitIDs.push_back(plogger->last_proofID);
 	}
 
-	void logInconsistency(const std::vector<int>::iterator& level, const std::vector<int>& pos, Stats& sts){
+	void logInconsistency(const IntVecIt& level, const std::vector<int>& pos, Stats& sts){
 		assert(plogger);
 		removeUnitsAndZeroes(level,pos);
 		logProofLine("i", sts);
