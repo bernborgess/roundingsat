@@ -60,8 +60,14 @@ struct Watch {
 	bool operator==(const Watch& other)const{return other.cref==cref && other.idx==idx;}
 };
 
+/*
+ * FORMULA constraints are original input formula constraints that are only deleted when satisfied at root.
+ * AUXILIARY constraints are non-formula constraints that are only deleted when satisfied at root.
+ * EXTERNAL constraints are non-formula constraints that are never deleted.
+ * LEARNT constraints are implied by any combination of the above, and may be deleted heuristically.
+ */
+enum ConstraintType { FORMULA, AUXILIARY, EXTERNAL, LEARNT };
 enum WatchStatus { FOUNDNEW, FOUNDNONE, CONFLICTING };
-
 struct Solver;
 struct Constr { // internal solver constraint optimized for fast propagation
 	static int sz_constr(int length){ return (sizeof(Constr)+sizeof(int)*length)/sizeof(uint32_t); }
@@ -123,9 +129,8 @@ struct ConstraintAllocator {
 	uint32_t* memory; // TODO: why not uint64_t?
 	uint32_t at=0, cap=0;
 	uint32_t wasted=0; // for GC
-	ID crefID = 0;
 	void capacity(uint32_t min_cap);
-	CRef alloc(intConstr& constraint, ConstraintType type);
+	CRef alloc(intConstr& constraint, ConstraintType type, ID id);
 	Constr& operator[](CRef cr) { return (Constr&)*(memory+cr.ofs); }
 	const Constr& operator[](CRef cr) const { return (Constr&)*(memory+cr.ofs); }
 };

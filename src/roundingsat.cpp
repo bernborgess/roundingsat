@@ -46,66 +46,26 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Solver.hpp"
 #include "globals.hpp"
 
-Stats stats;
-Options options;
-std::shared_ptr<Logger> logger;
-Var n;
-Var orig_n;
 bool asynch_interrupt;
+Options options;
+Stats stats;
 
-Solver solver;
+std::shared_ptr<Logger> logger;
 
 // ---------------------------------------------------------------------
 // IO
 
 namespace io {
-	void print_stats(const Stats& stats) {
-		printf("c CPU time			  : %g s\n", aux::cpuTime() - stats.STARTTIME);
-		printf("c deterministic time %lld %.2e\n", stats.getDetTime(), (double) stats.getDetTime());
-		printf("c propagations %lld\n", stats.NPROP);
-		printf("c decisions %lld\n", stats.NDECIDE);
-		printf("c conflicts %lld\n", stats.NCONFL);
-		printf("c restarts %lld\n", stats.NRESTARTS);
-		printf("c inprocessing phases %lld\n", stats.NCLEANUP);
-		printf("c clauses %lld\n", stats.NCLAUSESLEARNED);
-		printf("c cardinalities %lld\n", stats.NCARDINALITIESLEARNED);
-		printf("c general constraints %lld\n", stats.NGENERALSLEARNED);
-		printf("c watched constraints %lld\n", stats.NWATCHED);
-		printf("c counting constraints %lld\n", stats.NCOUNTING);
-		printf("c average constraint length %.2f\n",
-		       stats.NCONFL == 0 ? 0 : (double) stats.LEARNEDLENGTHSUM / stats.NCONFL);
-		printf("c average constraint degree %.2f\n",
-		       stats.NCONFL == 0 ? 0 : (double) stats.LEARNEDDEGREESUM / stats.NCONFL);
-		printf("c gcd simplifications %lld\n", stats.NGCD);
-		printf("c detected cardinalities %lld\n", stats.NCARDDETECT);
-		printf("c weakened non-implied lits %lld\n", stats.NWEAKENEDNONIMPLIED);
-		printf("c weakened non-implying lits %lld\n", stats.NWEAKENEDNONIMPLYING);
-		printf("c auxiliary variables introduced %d\n", n - orig_n);
-		printf("c solutions found %lld\n", stats.NSOLS);
-		printf("c cores constructed %lld\n", stats.NCORES);
-		printf("c core cardinality constraints returned %lld\n", stats.NCORECARDINALITIES);
-		printf("c clausal propagations %lld\n", stats.NPROPCLAUSE);
-		printf("c cardinality propagations %lld\n", stats.NPROPCARD);
-		printf("c watched propagations %lld\n", stats.NPROPWATCH);
-		printf("c counting propagations %lld\n", stats.NPROPCOUNTING);
-		printf("c watch lookups %lld\n", stats.NWATCHLOOKUPS);
-		printf("c watch backjump lookups %lld\n", stats.NWATCHLOOKUPSBJ);
-		printf("c watch checks %lld\n", stats.NWATCHCHECKS);
-		printf("c propagation checks %lld\n", stats.NPROPCHECKS);
-		printf("c constraint additions %lld\n", stats.NADDEDLITERALS);
-		printf("c trail pops %lld\n", stats.NTRAILPOPS);
-	}
-
 	void printSol(const std::vector<bool>& sol) {
 		if (!options.printSol) return;
 		printf("v");
-		for (Var v = 1; v <= orig_n; ++v) printf(sol[v] ? " x%d" : " -x%d", v);
+		for (Var v = 1; v < (Var)sol.size()-stats.NAUXVARS; ++v) printf(sol[v] ? " x%d" : " -x%d", v);
 		printf("\n");
 	}
 
 	void exit_SAT(const std::vector<bool>& sol) {
 		if (logger) logger->flush();
-		print_stats(stats);
+		stats.print();
 		puts("s SATISFIABLE");
 		printSol(sol);
 		exit(10);
@@ -113,7 +73,7 @@ namespace io {
 
 	void exit_UNSAT(const std::vector<bool>& sol, Val bestObjVal) {
 		if (logger) logger->flush();
-		print_stats(stats);
+		stats.print();
 		if (sol.size() > 0) {
 			std::cout << "o " << bestObjVal << std::endl;
 			std::cout << "s OPTIMUM FOUND" << std::endl;
@@ -128,14 +88,14 @@ namespace io {
 	void exit_INDETERMINATE(const std::vector<bool>& sol) {
 		if (sol.size() > 0) exit_SAT(sol);
 		if (logger) logger->flush();
-		print_stats(stats);
+		stats.print();
 		puts("s UNKNOWN");
 		exit(0);
 	}
 
 	void exit_ERROR(const std::initializer_list<std::string>& messages) {
 		if (logger) logger->flush();
-		print_stats(stats);
+		stats.print();
 		std::cout << "Error: ";
 		for (const std::string& m: messages) std::cout << m;
 		std::cout << std::endl;
@@ -244,10 +204,10 @@ namespace parser {
 		return answer;
 	}
 
-	void opb_read(std::istream& in, intConstr& objective) {
+	void opb_read(std::istream& in, Solver& solver, intConstr& objective) {
 		assert(objective.isReset());
 		intConstr input; // TODO: make input use multiple precision to avoid overflow errors
-		input.resize(n + 1);
+		input.resize(solver.n + 1);
 		bool first_constraint = true;
 		_unused(first_constraint);
 		for (std::string line; getline(in, line);) {
@@ -289,7 +249,7 @@ namespace parser {
 					if (var.empty() || var[0] != 'x') io::exit_ERROR({"Invalid literal token: ", origvar});
 					var = var.substr(1);
 					Lit l = atoi(var.c_str());
-					if (!(1 <= l && l <= n)) io::exit_ERROR({"Literal token out of variable range: ", origvar});
+					if (!(1 <= l && l <= solver.n)) io::exit_ERROR({"Literal token out of variable range: ", origvar});
 					if (negated) l = -l;
 					input.addLhs(coef, l);
 				}
@@ -308,13 +268,13 @@ namespace parser {
 				}
 			}
 		}
-		orig_n = n;
+		solver.orig_n = solver.n;
 	}
 
-	void wcnf_read(std::istream& in, long long top, intConstr& objective) {
+	void wcnf_read(std::istream& in, long long top, Solver& solver, intConstr& objective) {
 		assert(objective.isReset());
 		intConstr input;
-		input.resize(n + 1);
+		input.resize(solver.n + 1);
 		for (std::string line; getline(in, line);) {
 			if (line.empty() || line[0] == 'c') continue;
 			else {
@@ -329,23 +289,23 @@ namespace parser {
 				if (weight < top) { // soft clause
 					if (weight >= INF) io::exit_ERROR({"Clause weight exceeds 10^9: ", std::to_string(weight)});
 					if (weight < 0) io::exit_ERROR({"Negative clause weight: ", std::to_string(weight)});
-					solver.setNbVariables(n + 1); // increases n to n+1
-					input.resize(n + 1);
-					objective.resize(n + 1);
-					objective.addLhs(weight, n);
-					input.addLhs(1, n);
+					solver.setNbVariables(solver.n + 1); // increases n to n+1
+					input.resize(solver.n + 1);
+					objective.resize(solver.n + 1);
+					objective.addLhs(weight, solver.n);
+					input.addLhs(1, solver.n);
 				} // else hard clause
 				if (input.getDegree() >= (Val) INF)
 					io::exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
 				if (solver.addConstraint(input, ConstraintType::FORMULA) == ID_Unsat) io::exit_UNSAT({}, 0);
 			}
 		}
-		orig_n = n - objective.vars.size();
+		solver.orig_n = solver.n - objective.vars.size();
 	}
 
-	void cnf_read(std::istream& in) {
+	void cnf_read(std::istream& in, Solver& solver) {
 		intConstr input;
-		input.resize(n + 1);
+		input.resize(solver.n + 1);
 		for (std::string line; getline(in, line);) {
 			if (line.empty() || line[0] == 'c') continue;
 			else {
@@ -357,10 +317,10 @@ namespace parser {
 				if (solver.addConstraint(input, ConstraintType::FORMULA) == ID_Unsat) io::exit_UNSAT({}, 0);
 			}
 		}
-		orig_n = n;
+		solver.orig_n = solver.n;
 	}
 
-	void file_read(std::istream& in, intConstr& objective) {
+	void file_read(std::istream& in, Solver& solver, intConstr& objective) {
 		for (std::string line; getline(in, line);) {
 			if (line.empty() || line[0] == 'c') continue;
 			if (line[0] == 'p') {
@@ -368,25 +328,25 @@ namespace parser {
 				is >> line; // skip 'p'
 				std::string type;
 				is >> type;
-				long long n;
-				is >> n;
-				solver.setNbVariables(n);
+				long long nb;
+				is >> nb;
+				solver.setNbVariables(nb);
 				if (type == "cnf") {
-					cnf_read(in);
+					cnf_read(in, solver);
 					return;
 				} else if (type == "wcnf") {
 					is >> line; // skip nbConstraints
 					long long top;
 					is >> top;
-					wcnf_read(in, top, objective);
+					wcnf_read(in, top, solver, objective);
 					return;
 				}
 			} else if (line[0] == '*' && line.substr(0, 13) == "* #variable= ") {
 				std::istringstream is(line.substr(13));
-				long long n;
-				is >> n;
-				solver.setNbVariables(n);
-				opb_read(in, objective);
+				long long nb;
+				is >> nb;
+				solver.setNbVariables(nb);
+				opb_read(in, solver, objective);
 				return;
 			}
 		}
@@ -403,6 +363,8 @@ namespace meta {
 	intConstr core;
 	Val upper_bound;
 	Val lower_bound;
+	Solver solver;
+	intConstr objective;
 
 	inline void printObjBounds(Val lower, Val upper) {
 		if (upper < std::numeric_limits<Val>::max()) printf("c bounds %10lld >= %10lld\n", upper, lower);
@@ -511,7 +473,7 @@ namespace meta {
 			LazyVar* lv = lazyVars[i];
 			if (reformObj.getLit(lv->getCurrentVar()) == 0) {
 				// add auxiliary variable
-				long long newN = n + 1;
+				long long newN = solver.n + 1;
 				solver.setNbVariables(newN);
 				reformObj.resize(newN + 1);
 				Var oldvar = lv->getCurrentVar();
@@ -569,7 +531,7 @@ namespace meta {
 
 		if ((options.optMode == 2 || options.optMode == 4) && core.vars.size() - core.getDegree() > 1) {
 			// add auxiliary variable
-			long long newN = n + 1;
+			long long newN = solver.n + 1;
 			solver.setNbVariables(newN);
 			core.resize(newN + 1);
 			reformObj.resize(newN + 1);
@@ -586,7 +548,7 @@ namespace meta {
 			lv->addAtMostConstraint();
 		} else {
 			// add auxiliary variables
-			long long oldN = n;
+			long long oldN = solver.n;
 			long long newN = oldN - core.getDegree() + core.vars.size();
 			solver.setNbVariables(newN);
 			core.resize(newN + 1);
@@ -665,7 +627,7 @@ namespace meta {
 					io::exit_UNSAT(solution,upper_bound);
 				}
 				handleInconsistency(reformObj, origObj, lazyVars, lastLowerBound);
-				core.resize(n+1);
+				core.resize(solver.n+1);
 			} // else reply==SolveState::INPROCESSING, keep looping
 			if (lower_bound >= upper_bound) {
 				printObjBounds(lower_bound, upper_bound);
@@ -677,7 +639,7 @@ namespace meta {
 					aux.initializeLogging(logger);
 					longConstr coreAggregate;
 					coreAggregate.initializeLogging(logger);
-					coreAggregate.resize(n + 1);
+					coreAggregate.resize(solver.n + 1);
 					origObj.copyTo(aux);
 					aux.invert();
 					aux.addRhs(1 - upper_bound);
@@ -735,29 +697,25 @@ int main(int argc, char**argv){
 	signal(SIGTERM,SIGINT_exit);
 	signal(SIGXCPU,SIGINT_exit);
 
-	intConstr objective;
-
 	options = io::read_options(argc, argv);
 	if(!options.proofLogName.empty()) logger = std::make_shared<Logger>(options.proofLogName);
-	solver.tmpConstraint.initializeLogging(logger);
-	solver.conflConstraint.initializeLogging(logger);
-	solver.logConstraint.initializeLogging(logger);
+	meta::solver.setLogger(logger);
 
 	if (!options.formulaName.empty()) {
 		std::ifstream fin(options.formulaName);
 		if (!fin) io::exit_ERROR({"Could not open ",options.formulaName});
-		parser::file_read(fin,objective);
+		parser::file_read(fin, meta::solver, meta::objective);
 	} else {
 		if (options.verbosity > 0) std::cout << "c No filename given, reading from standard input." << std::endl;
-		parser::file_read(std::cin,objective);
+		parser::file_read(std::cin, meta::solver, meta::objective);
 	}
 	if(logger) logger->formula_out << "* INPUT FORMULA ABOVE - AUXILIARY AXIOMS BELOW\n";
-	std::cout << "c #variables=" << orig_n << " #constraints=" << solver.constraints.size() << std::endl;
+	std::cout << "c #variables=" << meta::solver.orig_n << " #constraints=" << meta::solver.constraints.size() << std::endl;
 
 	signal(SIGINT, SIGINT_interrupt);
 	signal(SIGTERM,SIGINT_interrupt);
 	signal(SIGXCPU,SIGINT_interrupt);
 
-	if(objective.vars.size() > 0) meta::optimize(objective);
+	if(meta::objective.vars.size() > 0) meta::optimize(meta::objective);
 	else meta::decide();
 }

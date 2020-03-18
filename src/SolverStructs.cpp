@@ -191,12 +191,13 @@ void ConstraintAllocator::capacity(uint32_t min_cap){
 }
 
 // TODO: allow constraints with 10^18 bit degree
-CRef ConstraintAllocator::alloc(intConstr& constraint, ConstraintType type){
+CRef ConstraintAllocator::alloc(intConstr& constraint, ConstraintType type, ID id){
 	assert(constraint.getDegree()>0);
 	assert(constraint.getDegree()<INF);
 	assert(constraint.isSaturated());
 	// as the constraint is saturated, the coefficients are between 1 and 1e9 as well.
 	assert(!constraint.vars.empty());
+	assert(id>0);
 	unsigned int length = constraint.vars.size();
 	bool asClause = options.clauseProp && constraint.getDegree()==1;
 	bool asCard = !asClause && options.cardProp && constraint.isCardinality();
@@ -208,7 +209,7 @@ CRef ConstraintAllocator::alloc(intConstr& constraint, ConstraintType type){
 	capacity(at);
 	Constr* constr = (Constr*)(memory+old_at);
 	new (constr) Constr;
-	constr->id = logger?logger->last_proofID:++crefID; assert(constr->id>0);
+	constr->id = id;
 	constr->act = 0;
 	constr->degree = constraint.getDegree();
 	constr->header = {0,(unsigned int)type,0x1FFFFFFF,0,0,length};

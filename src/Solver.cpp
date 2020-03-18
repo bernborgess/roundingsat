@@ -56,6 +56,14 @@ void Solver::setNbVariables(long long nvars){
 	order_heap.resize(nvars+1);
 	for(Var v=n+1;v<=nvars;++v) phase[v] = -v, order_heap.insert(v);
 	n = nvars;
+	stats.NAUXVARS=n-orig_n;
+}
+
+void Solver::setLogger(std::shared_ptr<Logger> lgr) {
+	logger = lgr;
+	tmpConstraint.initializeLogging(lgr);
+	conflConstraint.initializeLogging(lgr);
+	logConstraint.initializeLogging(lgr);
 }
 
 // ---------------------------------------------------------------------
@@ -330,7 +338,7 @@ CRef Solver::attachConstraint(intConstr& constraint, ConstraintType type){
 	assert(constraint.vars.size()>0);
 
 	if(logger) constraint.logProofLine("a", stats);
-	CRef cr = ca.alloc(constraint,type);
+	CRef cr = ca.alloc(constraint,type,logger?logger->last_proofID:++crefID);
 	constraints.push_back(cr);
 	Constr& C = ca[cr]; int* data = C.data;
 

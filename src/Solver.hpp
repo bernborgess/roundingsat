@@ -48,9 +48,13 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "globals.hpp"
 #include "SolverStructs.hpp"
 
+enum SolveState { SAT, UNSAT, INCONSISTENT, INTERRUPTED, INPROCESSING }; // TODO: add RESTARTING?
+
 struct Solver {
 	// ---------------------------------------------------------------------
 	// Members
+	std::shared_ptr<Logger> logger;
+	ID crefID = 0;
 
 	ConstraintAllocator ca;
 	IntSet tmpSet;
@@ -59,6 +63,9 @@ struct Solver {
 	longConstr conflConstraint; // functions as old confl_data
 	intConstr logConstraint;
 	OrderHeap order_heap;
+
+	int n;
+	int orig_n;
 
 	std::vector<CRef> constraints;
 	std::unordered_map<ID,CRef> external;
@@ -82,6 +89,7 @@ struct Solver {
 
 	Solver();
 	void setNbVariables(long long nvars);
+	void setLogger(std::shared_ptr<Logger> lgr);
 
 	// ---------------------------------------------------------------------
 	// VSIDS
