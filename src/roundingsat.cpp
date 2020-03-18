@@ -29,8 +29,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include <vector>
 #include <iostream>
-#include <sstream>
-#include <fstream>
 #include <cmath>
 #include <algorithm>
 #include <cstdio>
@@ -47,6 +45,13 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Options.hpp"
 #include "Solver.hpp"
 #include "globals.hpp"
+
+Stats stats;
+Options options;
+std::shared_ptr<Logger> logger;
+Var n;
+Var orig_n;
+bool asynch_interrupt;
 
 Solver solver;
 
@@ -724,12 +729,12 @@ static void SIGINT_exit(int signum){
 
 int main(int argc, char**argv){
 	stats.STARTTIME=aux::cpuTime();
+	asynch_interrupt=false;
 
 	signal(SIGINT, SIGINT_exit);
 	signal(SIGTERM,SIGINT_exit);
 	signal(SIGXCPU,SIGINT_exit);
 
-	solver.init();
 	intConstr objective;
 
 	options = io::read_options(argc, argv);

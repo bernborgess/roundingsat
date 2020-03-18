@@ -27,30 +27,32 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ***********************************************************************/
 
-#pragma once
+#include "aux.hpp"
 
-#include <iostream>
-#include <fstream>
-#include <sstream>
-
-struct Logger{
-	std::ofstream formula_out;
-	std::ofstream proof_out;
-	ID last_formID = 0;
-	ID last_proofID = 0;
-	std::vector<ID> unitIDs;
-
-	Logger(std::string& proof_log_name){
-		formula_out = std::ofstream(proof_log_name+".formula");
-		formula_out << "* #variable= 0 #constraint= 0\n";
-		formula_out << " >= 0 ;\n"; ++last_formID;
-		proof_out = std::ofstream(proof_log_name+".proof");
-		proof_out << "pseudo-Boolean proof version 1.0\n";
-		proof_out << "l 1\n"; ++last_proofID;
+std::ostream& operator<<(std::ostream& os, __int128 x){
+	if(x<0){ os << "-"; x = -x; }
+	uint64_t tenPow18 = 1000000000000000000;
+	uint64_t x1 = x%tenPow18; x/=tenPow18;
+	if(x>0){
+		uint64_t x2 = x%tenPow18; x/=tenPow18;
+		if(x>0) os << (unsigned short) (x%tenPow18);
+		os << x2;
 	}
+	return os << x1;
+}
 
-	void flush(){
-		formula_out.flush();
-		proof_out.flush();
-	}
-};
+unsigned int aux::gcd(unsigned int u, unsigned int v){
+	assert(u!=0);
+	assert(v!=0);
+	if (u%v==0) return v;
+	if (v%u==0) return u;
+	unsigned int t;
+	int shift = __builtin_ctz(u | v);
+	u >>= __builtin_ctz(u);
+	do {
+		v >>= __builtin_ctz(v);
+		if (u > v) { t = v; v = u; u = t; }
+		v = v - u;
+	} while (v != 0);
+	return u << shift;
+}

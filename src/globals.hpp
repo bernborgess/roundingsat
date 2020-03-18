@@ -36,8 +36,9 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 // ---------------------------------------------------------------------
 // Globals
-Stats stats;
-Options options;
-std::shared_ptr<Logger> logger;
-Var n; Var orig_n;
-bool asynch_interrupt = false;
+extern Stats stats;
+extern Options options;
+extern std::shared_ptr<Logger> logger;
+extern Var n;
+extern Var orig_n;
+extern bool asynch_interrupt;

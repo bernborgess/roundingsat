@@ -60,9 +60,10 @@ public:
 		values[key]=!_unused_();
 		keys.push_back(key);
 	}
+
+	std::ostream& operator<<(std::ostream& o){
+		for(int k: keys) if(has(k)) o << k << " ";
+		return o;
+	}
 };
 
-std::ostream& operator<<(std::ostream& os, const IntSet& is){
-	for(int k: is.keys) if(is.has(k)) os << k << " ";
-	return os;
-}
