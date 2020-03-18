@@ -58,13 +58,12 @@ struct Solver {
 	intConstr tmpConstraint;
 	longConstr conflConstraint; // functions as old confl_data
 	intConstr logConstraint;
+	OrderHeap order_heap;
 
-	int heap_cap=0;
-	std::vector<Var> heap_tree = {-1,-1};
 	std::vector<CRef> constraints;
 	std::unordered_map<ID,CRef> external;
 	std::vector<std::vector<Watch>> _adj={{}}; std::vector<std::vector<Watch>>::iterator adj;
-	std::vector<int> _Level={-1}; IntVecIt Level;
+	std::vector<int> _Level={-1}; IntVecIt Level; // TODO: make Pos, Reason, Level, contiguous memory for better cache efficiency.
 	std::vector<Lit> trail;
 	std::vector<int> trail_lim, Pos;
 	std::vector<CRef> Reason;
@@ -86,14 +85,6 @@ struct Solver {
 
 	// ---------------------------------------------------------------------
 	// VSIDS
-
-	// segment tree (fast implementation of priority queue).
-	void heap_resize(int newsize); // TODO: make this heap its own data structure
-	void heap_percolateUp(Var x);
-	bool heap_empty();
-	bool heap_inHeap(Var x);
-	void heap_insert(Var x);
-	Var heap_removeMax();
 
 	void vDecayActivity();
 	void vBumpActivity(Var v);

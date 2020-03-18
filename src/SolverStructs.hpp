@@ -136,3 +136,21 @@ static inline void* xrealloc(void *ptr, size_t size){
 	if(mem == NULL && errno == ENOMEM) throw OutOfMemoryException();
 	else return mem;
 }
+
+// ---------------------------------------------------------------------
+// Order heap
+
+struct  OrderHeap{ // segment tree (fast implementation of priority queue).
+	std::vector<double>& activity;
+	int cap=0;
+	std::vector<Var> tree = {-1,-1};
+
+	OrderHeap(std::vector<double>& a):activity(a){}
+
+	void resize(int newsize);
+	void percolateUp(Var x);
+	bool empty() const;
+	bool inHeap(Var x) const;
+	void insert(Var x);
+	Var removeMax();
+};

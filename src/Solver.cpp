@@ -32,7 +32,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // ---------------------------------------------------------------------
 // Initialization
 
-Solver::Solver(){
+Solver::Solver():order_heap(activity){
 	ca.memory = NULL;
 	ca.at = 0;
 	ca.cap = 0;
@@ -53,50 +53,13 @@ void Solver::setNbVariables(long long nvars){
 	tmpConstraint.resize(nvars+1);
 	conflConstraint.resize(nvars+1);
 	logConstraint.resize(nvars+1);
-	heap_resize(nvars+1);
-	for(Var v=n+1;v<=nvars;++v) phase[v] = -v, heap_insert(v);
+	order_heap.resize(nvars+1);
+	for(Var v=n+1;v<=nvars;++v) phase[v] = -v, order_heap.insert(v);
 	n = nvars;
 }
 
 // ---------------------------------------------------------------------
 // VSIDS
-
-// segment tree (fast implementation of priority queue).
-void Solver::heap_resize(int newsize) {
-	if (heap_cap >= newsize) return;
-	// insert elements in such order that tie breaking remains intact
-	std::vector<Var> variables;
-	while (!heap_empty()) variables.push_back(heap_removeMax());
-	heap_tree.clear();
-	while(heap_cap<newsize) heap_cap=heap_cap*options.resize_factor+1;
-	heap_tree.resize(2*(heap_cap+1), -1);
-	for (Var x : variables) heap_insert(x);
-}
-void Solver::heap_percolateUp(Var x) {
-	for(int at=x+heap_cap+1; at>1; at>>=1){
-		if(heap_tree[at^1]==-1 || activity[x]>activity[heap_tree[at^1]])heap_tree[at>>1]=x;
-		else break;
-	}
-}
-bool Solver::heap_empty() { return heap_tree[1] == -1; }
-bool Solver::heap_inHeap(Var x) { return heap_tree[x+heap_cap+1] != -1; }
-void Solver::heap_insert(Var x) {
-	assert(x<=heap_cap);
-	if (heap_inHeap(x)) return;
-	heap_tree[x+heap_cap+1] = x;
-	heap_percolateUp(x);
-}
-Var Solver::heap_removeMax() {
-	Var x = heap_tree[1];
-	assert(x != -1);
-	heap_tree[x+heap_cap+1] = -1;
-	for(int at=x+heap_cap+1; at>1; at>>=1){
-		if(heap_tree[at^1] != -1 && (heap_tree[at]==-1 || activity[heap_tree[at^1]]>activity[heap_tree[at]]))
-			heap_tree[at>>1]=heap_tree[at^1];
-		else heap_tree[at>>1]=heap_tree[at];
-	}
-	return x;
-}
 
 void Solver::vDecayActivity() { v_vsids_inc *= (1 / options.v_vsids_decay); }
 void Solver::vBumpActivity(Var v){
@@ -106,7 +69,7 @@ void Solver::vBumpActivity(Var v){
 		v_vsids_inc *= 1e-100;
 	}
 	// Update heap with respect to new activity:
-	if (heap_inHeap(v)) heap_percolateUp(v);
+	if (order_heap.inHeap(v)) order_heap.percolateUp(v);
 }
 
 void Solver::cDecayActivity() { c_vsids_inc *= (1 / options.c_vsids_decay); }
@@ -156,7 +119,7 @@ void Solver::undoOne(){
 	Pos[v] = -1;
 	phase[v] = l;
 	if(!trail_lim.empty() && trail_lim.back() == (int)trail.size())trail_lim.pop_back();
-	heap_insert(v);
+	order_heap.insert(v);
 }
 
 void Solver::backjumpTo(int level){
@@ -656,7 +619,7 @@ bool Solver::checksol(const std::vector<bool>& sol) {
 		Constr& C = ca[cr];
 		if (C.getType() == ConstraintType::FORMULA && lhs(C, sol) < C.degree) return false;
 	}
-	puts("c SATISFIABLE (checked)");
+	//puts("c SATISFIABLE (checked)");
 	return true;
 }
 
@@ -664,8 +627,8 @@ Lit Solver::pickBranchLit(){
 	Var next = 0;
 	// Activity based decision:
 	while (next == 0 || !isUnknown(Pos,next)){
-		if (heap_empty()) return 0;
-		else next = heap_removeMax();
+		if (order_heap.empty()) return 0;
+		else next = order_heap.removeMax();
 	}
 	assert(phase[0]==0);
 	return phase[next];
@@ -759,7 +722,7 @@ SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector
 			}
 			if(next==0) next = pickBranchLit();
 			if(next==0){
-				assert(heap_empty());
+				assert(order_heap.empty());
 				assert((int)trail.size()==n);
 				solution.clear();
 				solution.resize(n+1);

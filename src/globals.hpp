@@ -39,6 +39,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 extern Stats stats;
 extern Options options;
 extern std::shared_ptr<Logger> logger;
-extern Var n;
+extern Var n; // TODO: make n a member of Solver
 extern Var orig_n;
 extern bool asynch_interrupt;

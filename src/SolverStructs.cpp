@@ -228,3 +228,40 @@ CRef ConstraintAllocator::alloc(intConstr& constraint, ConstraintType type){
 	}
 	return CRef{old_at};
 }
+
+// segment tree (fast implementation of priority queue).
+void OrderHeap::resize(int newsize) {
+	if (cap >= newsize) return;
+	// insert elements in such order that tie breaking remains intact
+	std::vector<Var> variables;
+	while (!empty()) variables.push_back(removeMax());
+	tree.clear();
+	while(cap<newsize) cap=cap*options.resize_factor+1;
+	tree.resize(2*(cap+1), -1);
+	for (Var x : variables) insert(x);
+}
+void OrderHeap::percolateUp(Var x) {
+	for(int at=x+cap+1; at>1; at>>=1){
+		if(tree[at^1]==-1 || activity[x]>activity[tree[at^1]])tree[at>>1]=x;
+		else break;
+	}
+}
+bool OrderHeap::empty() const { return tree[1] == -1; }
+bool OrderHeap::inHeap(Var x) const { return tree[x+cap+1] != -1; }
+void OrderHeap::insert(Var x) {
+	assert(x<=cap);
+	if (inHeap(x)) return;
+	tree[x+cap+1] = x;
+	percolateUp(x);
+}
+Var OrderHeap::removeMax() {
+	Var x = tree[1];
+	assert(x != -1);
+	tree[x+cap+1] = -1;
+	for(int at=x+cap+1; at>1; at>>=1){
+		if(tree[at^1] != -1 && (tree[at]==-1 || activity[tree[at^1]]>activity[tree[at]]))
+			tree[at>>1]=tree[at^1];
+		else tree[at>>1]=tree[at];
+	}
+	return x;
+}
