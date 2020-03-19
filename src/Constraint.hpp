@@ -259,7 +259,7 @@ struct Constraint{
 		}
 		if(!saturateAndReduce) return;
 		if(old_degree>getDegree()){ removeZeroes(); saturate(); }
-		else{ saturate(c.vars); } // only saturate changed vars
+		else saturate(c.vars); // only saturate changed vars
 		if(getDegree() >= (LARGE) INF){ removeZeroes(); roundToOne(level,aux::ceildiv<LARGE>(getDegree(),1e9),partial); }
 		assert(getDegree() < (LARGE) INF);
 		assert(isSaturated());
@@ -337,6 +337,26 @@ struct Constraint{
 			}
 		}
 		return falsev1!=0;
+	}
+
+	// NOTE: also removes encountered zeroes and changes variable order
+	bool isAssertingBefore(const IntVecIt& level, int lvl) {
+		assert(lvl>=0);
+		assert(isSaturated());
+		LARGE slack = -rhs;
+		SMALL largestCoef = std::numeric_limits<SMALL>::min();
+		for(unsigned int i=0; i<vars.size(); ++i){
+			Var v = vars[i];
+			if(coefs[v]==0){ coefs[v]=_unused_(); aux::swapErase(vars,i--); }
+			else if(level[v]<lvl) slack+=coefs[v];
+			else{
+				if(level[-v]>=lvl){
+					if(coefs[v]>0) slack+=coefs[v];
+					largestCoef=std::max<LARGE>(largestCoef,abs(coefs[v]));
+				}
+			}
+		}
+		return slack<largestCoef;
 	}
 
 	// @return: earliest decision level that propagates a variable
@@ -537,12 +557,24 @@ struct Constraint{
 	}
 
 	void toStreamAsOPB(std::ofstream& o) {
-		for(Var v: vars){
+		std::vector<Var> vs = vars;
+		std::sort(vs.begin(),vs.end(), [](Var v1, Var v2) { return v1<v2; });
+		for(Var v: vs){
 			Lit l = getLit(v);
 			if(l==0) continue;
 			o << "+" << getCoef(l) << (l<0?" ~x":" x") << v << " ";
 		}
 		o << ">= " << getDegree() << " ;\n";
+	}
+	void toStreamWithAssignment(std::ostream& o, const IntVecIt& level, const std::vector<int>& pos) {
+		std::vector<Var> vs = vars;
+		std::sort(vs.begin(),vs.end(), [](Var v1, Var v2) { return v1<v2; });
+		for(Var v: vs){
+			Lit l = getLit(v);
+			if(l==0) continue;
+			o << getCoef(l) << "x" << l << (isUnknown(pos,l)?"u":(isFalse(level,l)?"f"+std::to_string(level[-l]):"t"+std::to_string(level[l]))) << " ";
+		}
+		o << ">= " << getDegree() << "(" << getSlack(level) << ")";
 	}
 };
 
@@ -551,8 +583,7 @@ std::ostream & operator<<(std::ostream & o, Constraint<S,L>& C) {
 	std::vector<Var> vars = C.vars;
 	std::sort(vars.begin(),vars.end(), [](Var v1, Var v2) { return v1<v2; });
 	for(Var v: vars){
-		Lit l = C.getLit(v);
-		if(l==0) continue;
+		Lit l = C.coefs[v]<0?-v:v;
 		o << C.getCoef(l) << "x" << l << " ";
 	}
 	o << ">= " << C.getDegree();

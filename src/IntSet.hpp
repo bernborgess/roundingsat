@@ -61,7 +61,7 @@ public:
 		keys.push_back(key);
 	}
 
-	std::ostream& operator<<(std::ostream& o){
+	std::ostream& operator<<(std::ostream& o) const {
 		for(int k: keys) if(has(k)) o << k << " ";
 		return o;
 	}
