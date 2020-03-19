@@ -4,13 +4,10 @@ RoundingSat is a pseudo-Boolean SAT solver for optimization and decision problem
 
 ## Compilation
 
-The solver currently consists of a single file which can be compiled on Linux. It uses some c++11 constructs.
+In the root directory:
 
-    g++ -o roundingsat roundingsat.cc -O3 -DNDEBUG
-
-or
-
-    clang++ -o roundingsat roundingsat.cc -O3 -DNDEBUG
+    cmake .
+    make release
 
 ## Usage
 
