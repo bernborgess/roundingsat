@@ -96,3 +96,7 @@ p cnf 12 22
 -6 -12 0
 -9 -12 0
 ```
+
+### WCNF format
+
+An extension of the CNF format to allow for soft (weighted) clauses. See the [description](https://maxsat-evaluations.github.io/2018/rules.html#input) for the MaxSAT competition.
