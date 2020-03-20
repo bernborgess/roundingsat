@@ -27,29 +27,16 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ***********************************************************************/
 
-#include <algorithm>
-#include <cassert>
-#include <cmath>
 #include <csignal>
-#include <cstdio>
-#include <cstring>
+#include <fstream>
 #include <iostream>
 #include <memory>
-#include <unordered_map>
-#include <vector>
-
-#include "Constraint.hpp"
-#include "IntSet.hpp"
-#include "Options.hpp"
-#include "Solver.hpp"
 #include "aux.hpp"
-#include "exit.hpp"
 #include "globals.hpp"
 #include "parsing.hpp"
 #include "run.hpp"
-#include "typedefs.hpp"
 
-bool asynch_interrupt;
+bool asynch_interrupt;  // TODO: erase?
 Options options;
 Stats stats;
 

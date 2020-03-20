@@ -29,10 +29,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include "Logger.hpp"
 #include "Options.hpp"
 #include "Stats.hpp"
-#include "typedefs.hpp"
 
 // ---------------------------------------------------------------------
 // Globals

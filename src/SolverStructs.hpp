@@ -29,19 +29,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include <algorithm>
-#include <cassert>
-#include <cmath>
-#include <csignal>
-#include <cstdio>
-#include <cstring>
-#include <iostream>
-#include <memory>
-#include <unordered_map>
-#include <vector>
-
+#include <ostream>
 #include "Constraint.hpp"
-#include "Logger.hpp"
 #include "typedefs.hpp"
 
 struct CRef {
@@ -51,7 +40,7 @@ struct CRef {
   bool operator<(CRef const& o) const { return ofs < o.ofs; }
   std::ostream& operator<<(std::ostream& os) { return os << ofs; }
 };
-const CRef CRef_Undef = {UINT32_MAX};
+const CRef CRef_Undef = {std::numeric_limits<uint32_t>::max()};
 
 struct Watch {
   CRef cref;

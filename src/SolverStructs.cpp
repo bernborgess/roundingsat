@@ -28,7 +28,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ***********************************************************************/
 
 #include "SolverStructs.hpp"
-#include "Solver.hpp"
+#include "Options.hpp"
+#include "globals.hpp"
 
 void Constr::undoFalsified(int i) {
   assert(!isSimple());

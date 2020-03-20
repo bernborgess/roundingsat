@@ -29,16 +29,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include <cmath>
-#include <cstring>
-#include <fstream>
-#include <iostream>
-#include <memory>
-#include <sstream>
-#include <unordered_map>
-#include <vector>
-
-#include "globals.hpp"
+#include "Constraint.hpp"
+#include "Solver.hpp"
 #include "typedefs.hpp"
 
 namespace run {

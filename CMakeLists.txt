@@ -21,8 +21,6 @@ file(GLOB ALL_SRC_FILES ${PROJECT_SOURCE_DIR}/src/*.cpp ${PROJECT_SOURCE_DIR}/sr
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 
-message(STATUS "${_variableName}=${${_variableName}}")
-
 add_executable(roundingsat ${ALL_CPP_FILES})
 #target_link_libraries(roundingsat ${CMAKE_SOURCE_DIR}/lib/libsoplex.a z)
 #target_include_directories(roundingsat PRIVATE "${CMAKE_SOURCE_DIR}/lib")
@@ -51,7 +49,7 @@ add_custom_target(debug
   COMMENT "Creating executable in debug mode.")
 
 add_custom_target(
-        clangformat
+        format
         COMMAND /usr/bin/clang-format
         -style=file
         -i

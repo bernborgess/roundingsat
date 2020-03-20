@@ -29,6 +29,9 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
+#include <algorithm>
+#include <memory>
+#include <sstream>
 #include "Logger.hpp"
 #include "Stats.hpp"
 #include "aux.hpp"

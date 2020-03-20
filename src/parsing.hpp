@@ -29,17 +29,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include <cmath>
-#include <cstring>
-#include <fstream>
-#include <iostream>
-#include <memory>
-#include <sstream>
-#include <unordered_map>
-#include <vector>
-
-#include "globals.hpp"
-#include "typedefs.hpp"
+#include "Solver.hpp"
 
 namespace parsing {
 int read_number(const std::string& s) {  // TODO: should also read larger numbers than int (e.g., capture large degree)

@@ -29,7 +29,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include "exit.hpp"
+#include <cmath>
+#include <cstring>
+#include <unordered_map>
+#include "quit.hpp"
 
 struct Options {
   std::string formulaName;

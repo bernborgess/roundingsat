@@ -29,9 +29,14 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
+#include <cassert>
+#include <limits>
+#include <unordered_map>
+#include <vector>
+
 using ID = uint64_t;
-const ID ID_Undef = UINT64_MAX;
-const ID ID_Unsat = UINT64_MAX - 1;
+const ID ID_Undef = std::numeric_limits<ID>::max();
+const ID ID_Unsat = ID_Undef - 1;
 
 using Var = int;
 using Lit = int;

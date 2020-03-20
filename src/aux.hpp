@@ -29,10 +29,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
+#include <sys/resource.h>
 #include <algorithm>
 #include <cassert>
-#include <cmath>
-#include <csignal>
+#include <limits>
 #include <ostream>
 #include <unordered_map>
 #include <vector>
@@ -116,9 +116,6 @@ inline T floordiv_safe(const T& p, const T& q) {
 unsigned int gcd(unsigned int u, unsigned int v);  // TODO: C++17 provides std::gcd
 
 // Minisat cpuTime function
-#include <sys/resource.h>
-#include <sys/time.h>
-#include <unistd.h>
 static inline double cpuTime() {
   struct rusage ru;
   getrusage(RUSAGE_SELF, &ru);

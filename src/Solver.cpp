@@ -28,6 +28,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ***********************************************************************/
 
 #include "Solver.hpp"
+#include <iostream>
+
+#include "aux.hpp"
+#include "globals.hpp"
 
 // ---------------------------------------------------------------------
 // Initialization

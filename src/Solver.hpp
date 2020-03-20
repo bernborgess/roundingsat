@@ -29,24 +29,12 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include <algorithm>
-#include <cassert>
-#include <cmath>
-#include <csignal>
-#include <cstdio>
-#include <cstring>
-#include <iostream>
 #include <memory>
-#include <unordered_map>
-#include <vector>
-
-#include "Constraint.hpp"
 #include "IntSet.hpp"
-#include "Options.hpp"
 #include "SolverStructs.hpp"
-#include "aux.hpp"
-#include "globals.hpp"
 #include "typedefs.hpp"
+
+class Logger;
 
 enum SolveState { SAT, UNSAT, INCONSISTENT, INTERRUPTED, INPROCESSED, RESTARTED };
 enum WatchStatus { DROPWATCH, KEEPWATCH, CONFLICTING };
