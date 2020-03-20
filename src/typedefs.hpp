@@ -31,13 +31,13 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 using ID = uint64_t;
 const ID ID_Undef = UINT64_MAX;
-const ID ID_Unsat = UINT64_MAX-1;
+const ID ID_Unsat = UINT64_MAX - 1;
 
 using Var = int;
 using Lit = int;
 using Coef = int;
 using Val = long long;
 
-const Coef INF = 1e9+1;
+const Coef INF = 1e9 + 1;
 
 using IntVecIt = std::vector<int>::iterator;

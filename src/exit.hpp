@@ -29,23 +29,23 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include <vector>
-#include <unordered_map>
-#include <cstring>
 #include <cmath>
+#include <cstring>
+#include <fstream>
+#include <iostream>
 #include <memory>
+#include <sstream>
+#include <unordered_map>
+#include <vector>
 
 #include "typedefs.hpp"
 
 class Logger;
 
 namespace quit {
-	void printSol(const std::vector<bool>& sol);
-	void exit_SAT(const std::vector<bool>& sol, const std::shared_ptr<Logger>& logger);
-	void exit_UNSAT(const std::vector<bool>& sol, Val bestObjVal, const std::shared_ptr<Logger>& logger);
-	void exit_INDETERMINATE(const std::vector<bool>& sol, const std::shared_ptr<Logger>& logger);
-	void exit_ERROR(const std::initializer_list<std::string>& messages);
-}
+void printSol(const std::vector<bool>& sol);
+void exit_SAT(const std::vector<bool>& sol, const std::shared_ptr<Logger>& logger);
+void exit_UNSAT(const std::vector<bool>& sol, Val bestObjVal, const std::shared_ptr<Logger>& logger);
+void exit_INDETERMINATE(const std::vector<bool>& sol, const std::shared_ptr<Logger>& logger);
+void exit_ERROR(const std::initializer_list<std::string>& messages);
+}  // namespace quit

@@ -29,30 +29,39 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "aux.hpp"
 
-std::ostream& operator<<(std::ostream& os, __int128 x){
-	if(x<0){ os << "-"; x = -x; }
-	uint64_t tenPow18 = 1000000000000000000;
-	uint64_t x1 = x%tenPow18; x/=tenPow18;
-	if(x>0){
-		uint64_t x2 = x%tenPow18; x/=tenPow18;
-		if(x>0) os << (unsigned short) (x%tenPow18);
-		os << x2;
-	}
-	return os << x1;
+std::ostream& operator<<(std::ostream& os, __int128 x) {
+  if (x < 0) {
+    os << "-";
+    x = -x;
+  }
+  uint64_t tenPow18 = 1000000000000000000;
+  uint64_t x1 = x % tenPow18;
+  x /= tenPow18;
+  if (x > 0) {
+    uint64_t x2 = x % tenPow18;
+    x /= tenPow18;
+    if (x > 0) os << (unsigned short)(x % tenPow18);
+    os << x2;
+  }
+  return os << x1;
 }
 
-unsigned int aux::gcd(unsigned int u, unsigned int v){
-	assert(u!=0);
-	assert(v!=0);
-	if (u%v==0) return v;
-	if (v%u==0) return u;
-	unsigned int t;
-	int shift = __builtin_ctz(u | v);
-	u >>= __builtin_ctz(u);
-	do {
-		v >>= __builtin_ctz(v);
-		if (u > v) { t = v; v = u; u = t; }
-		v = v - u;
-	} while (v != 0);
-	return u << shift;
+unsigned int aux::gcd(unsigned int u, unsigned int v) {
+  assert(u != 0);
+  assert(v != 0);
+  if (u % v == 0) return v;
+  if (v % u == 0) return u;
+  unsigned int t;
+  int shift = __builtin_ctz(u | v);
+  u >>= __builtin_ctz(u);
+  do {
+    v >>= __builtin_ctz(v);
+    if (u > v) {
+      t = v;
+      v = u;
+      u = t;
+    }
+    v = v - u;
+  } while (v != 0);
+  return u << shift;
 }

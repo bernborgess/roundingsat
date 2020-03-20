@@ -29,30 +29,32 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include <iostream>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 
 #include "typedefs.hpp"
 
-struct Logger{
-	std::ofstream formula_out;
-	std::ofstream proof_out;
-	ID last_formID = 0;
-	ID last_proofID = 0;
-	std::vector<ID> unitIDs;
+struct Logger {
+  std::ofstream formula_out;
+  std::ofstream proof_out;
+  ID last_formID = 0;
+  ID last_proofID = 0;
+  std::vector<ID> unitIDs;
 
-	Logger(std::string& proof_log_name){
-		formula_out = std::ofstream(proof_log_name+".formula");
-		formula_out << "* #variable= 0 #constraint= 0\n";
-		formula_out << " >= 0 ;\n"; ++last_formID;
-		proof_out = std::ofstream(proof_log_name+".proof");
-		proof_out << "pseudo-Boolean proof version 1.0\n";
-		proof_out << "l 1\n"; ++last_proofID;
-	}
+  Logger(std::string& proof_log_name) {
+    formula_out = std::ofstream(proof_log_name + ".formula");
+    formula_out << "* #variable= 0 #constraint= 0\n";
+    formula_out << " >= 0 ;\n";
+    ++last_formID;
+    proof_out = std::ofstream(proof_log_name + ".proof");
+    proof_out << "pseudo-Boolean proof version 1.0\n";
+    proof_out << "l 1\n";
+    ++last_proofID;
+  }
 
-	void flush(){
-		formula_out.flush();
-		proof_out.flush();
-	}
+  void flush() {
+    formula_out.flush();
+    proof_out.flush();
+  }
 };

@@ -31,46 +31,46 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "globals.hpp"
 
 void quit::printSol(const std::vector<bool>& sol) {
-	if (!options.printSol) return;
-	printf("v");
-	for (Var v = 1; v < (Var)sol.size()-stats.NAUXVARS; ++v) printf(sol[v] ? " x%d" : " -x%d", v);
-	printf("\n");
+  if (!options.printSol) return;
+  printf("v");
+  for (Var v = 1; v < (Var)sol.size() - stats.NAUXVARS; ++v) printf(sol[v] ? " x%d" : " -x%d", v);
+  printf("\n");
 }
 
 void quit::exit_SAT(const std::vector<bool>& sol, const std::shared_ptr<Logger>& logger) {
-	if (logger) logger->flush();
-	stats.print();
-	puts("s SATISFIABLE");
-	printSol(sol);
-	exit(10);
+  if (logger) logger->flush();
+  stats.print();
+  puts("s SATISFIABLE");
+  printSol(sol);
+  exit(10);
 }
 
 void quit::exit_UNSAT(const std::vector<bool>& sol, Val bestObjVal, const std::shared_ptr<Logger>& logger) {
-	if (logger) logger->flush();
-	stats.print();
-	if (sol.size() > 0) {
-		std::cout << "o " << bestObjVal << std::endl;
-		std::cout << "s OPTIMUM FOUND" << std::endl;
-		printSol(sol);
-		exit(30);
-	} else {
-		puts("s UNSATISFIABLE");
-		exit(20);
-	}
+  if (logger) logger->flush();
+  stats.print();
+  if (sol.size() > 0) {
+    std::cout << "o " << bestObjVal << std::endl;
+    std::cout << "s OPTIMUM FOUND" << std::endl;
+    printSol(sol);
+    exit(30);
+  } else {
+    puts("s UNSATISFIABLE");
+    exit(20);
+  }
 }
 
 void quit::exit_INDETERMINATE(const std::vector<bool>& sol, const std::shared_ptr<Logger>& logger) {
-	if (sol.size() > 0) exit_SAT(sol,logger);
-	if (logger) logger->flush();
-	stats.print();
-	puts("s UNKNOWN");
-	exit(0);
+  if (sol.size() > 0) exit_SAT(sol, logger);
+  if (logger) logger->flush();
+  stats.print();
+  puts("s UNKNOWN");
+  exit(0);
 }
 
 void quit::exit_ERROR(const std::initializer_list<std::string>& messages) {
-	stats.print();
-	std::cout << "Error: ";
-	for (const std::string& m: messages) std::cout << m;
-	std::cout << std::endl;
-	exit(1);
+  stats.print();
+  std::cout << "Error: ";
+  for (const std::string& m : messages) std::cout << m;
+  std::cout << std::endl;
+  exit(1);
 }

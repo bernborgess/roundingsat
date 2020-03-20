@@ -29,152 +29,154 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include <vector>
-#include <iostream>
-#include <cmath>
 #include <algorithm>
-#include <cstdio>
 #include <cassert>
-#include <cstring>
+#include <cmath>
 #include <csignal>
-#include <unordered_map>
+#include <cstdio>
+#include <cstring>
+#include <iostream>
 #include <memory>
+#include <unordered_map>
+#include <vector>
 
-#include "aux.hpp"
-#include "typedefs.hpp"
-#include "IntSet.hpp"
 #include "Constraint.hpp"
+#include "IntSet.hpp"
 #include "Options.hpp"
-#include "globals.hpp"
 #include "SolverStructs.hpp"
+#include "aux.hpp"
+#include "globals.hpp"
+#include "typedefs.hpp"
 
 enum SolveState { SAT, UNSAT, INCONSISTENT, INTERRUPTED, INPROCESSED, RESTARTED };
 enum WatchStatus { DROPWATCH, KEEPWATCH, CONFLICTING };
 
 class Solver {
-	// ---------------------------------------------------------------------
-	// Members
-private:
-	int n;
-	int orig_n;
+  // ---------------------------------------------------------------------
+  // Members
+ private:
+  int n;
+  int orig_n;
 
-	std::shared_ptr<Logger> logger;
-	ID crefID = 0;
+  std::shared_ptr<Logger> logger;
+  ID crefID = 0;
 
-	ConstraintAllocator ca;
-	IntSet tmpSet;
-	IntSet actSet;
-	intConstr tmpConstraint;
-	longConstr conflConstraint; // functions as old confl_data
-	intConstr logConstraint;
-	OrderHeap order_heap;
+  ConstraintAllocator ca;
+  IntSet tmpSet;
+  IntSet actSet;
+  intConstr tmpConstraint;
+  longConstr conflConstraint;  // functions as old confl_data
+  intConstr logConstraint;
+  OrderHeap order_heap;
 
-	std::vector<CRef> constraints;
-	std::unordered_map<ID,CRef> external;
-	std::vector<std::vector<Watch>> _adj={{}}; std::vector<std::vector<Watch>>::iterator adj;
-	std::vector<int> _Level={INF}; IntVecIt Level; // TODO: make Pos, Level, contiguous memory for better cache efficiency.
-	std::vector<Lit> trail;
-	std::vector<int> trail_lim, Pos;
-	std::vector<CRef> Reason;
-	int qhead=0; // for unit propagation
-	std::vector<Lit> phase;
-	std::vector<double> activity;
+  std::vector<CRef> constraints;
+  std::unordered_map<ID, CRef> external;
+  std::vector<std::vector<Watch>> _adj = {{}};
+  std::vector<std::vector<Watch>>::iterator adj;
+  std::vector<int> _Level = {INF};
+  IntVecIt Level;  // TODO: make Pos, Level, contiguous memory for better cache efficiency.
+  std::vector<Lit> trail;
+  std::vector<int> trail_lim, Pos;
+  std::vector<CRef> Reason;
+  int qhead = 0;  // for unit propagation
+  std::vector<Lit> phase;
+  std::vector<double> activity;
 
-	long long nbconstrsbeforereduce=2000;
-	long long nconfl_to_restart=0;
-	double v_vsids_inc=1.0;
-	double c_vsids_inc=1.0;
+  long long nbconstrsbeforereduce = 2000;
+  long long nconfl_to_restart = 0;
+  double v_vsids_inc = 1.0;
+  double c_vsids_inc = 1.0;
 
-public:
-	Solver();
-	void setLogger(std::shared_ptr<Logger> lgr);
+ public:
+  Solver();
+  void setLogger(std::shared_ptr<Logger> lgr);
 
-	int getNbVars() const { return n; }
-	void setNbVars(long long nvars);
-	int getNbOrigVars() const { return orig_n; }
-	void setNbOrigVars(int o_n) { orig_n=o_n; }
+  int getNbVars() const { return n; }
+  void setNbVars(long long nvars);
+  int getNbOrigVars() const { return orig_n; }
+  void setNbOrigVars(int o_n) { orig_n = o_n; }
 
-	const IntVecIt& getLevel() const { return Level; }
-	const std::vector<int>& getPos() const { return Pos; }
-	int decisionLevel() const { return trail_lim.size(); }
+  const IntVecIt& getLevel() const { return Level; }
+  const std::vector<int>& getPos() const { return Pos; }
+  int decisionLevel() const { return trail_lim.size(); }
 
-	ID addConstraint(const intConstr& c, ConstraintType type);
-	ID addConstraint(const std::vector<Coef>& coefs, const std::vector<Lit>& lits, const Val rhs, ConstraintType type);
-	void dropExternal(ID id, bool forceDelete);
-	int getNbConstraints() const { return constraints.size(); }
-	void getIthConstraint(int i, intConstr& out) const { return ca[constraints[i]].toConstraint(out); }
+  ID addConstraint(const intConstr& c, ConstraintType type);
+  ID addConstraint(const std::vector<Coef>& coefs, const std::vector<Lit>& lits, const Val rhs, ConstraintType type);
+  void dropExternal(ID id, bool forceDelete);
+  int getNbConstraints() const { return constraints.size(); }
+  void getIthConstraint(int i, intConstr& out) const { return ca[constraints[i]].toConstraint(out); }
 
-	/**
-	 * @return:
-	 * 	UNSAT if root inconsistency detected
-	 * 	SAT if satisfying assignment found
-	 * 	INCONSISTENT if no solution extending assumptions exists
-	 * 	INTERRUPTED if interrupted by external signal
-	 * 	INPROCESSING if solver just finished a cleanup phase
-	 * @param assumptions: set of assumptions
-	 * @param core: if INCONSISTENT, implied constraint falsified by assumptions, otherwise untouched
-	 * 	if core is the empty constraint, at least one assumption is falsified at root
-	 * @param solution: if SAT, full variable assignment satisfying all constraints, otherwise untouched
-	 */
-	SolveState solve(const IntSet& assumptions, intConstr& core, std::vector<bool>& solution);
+  /**
+   * @return:
+   * 	UNSAT if root inconsistency detected
+   * 	SAT if satisfying assignment found
+   * 	INCONSISTENT if no solution extending assumptions exists
+   * 	INTERRUPTED if interrupted by external signal
+   * 	INPROCESSING if solver just finished a cleanup phase
+   * @param assumptions: set of assumptions
+   * @param core: if INCONSISTENT, implied constraint falsified by assumptions, otherwise untouched
+   * 	if core is the empty constraint, at least one assumption is falsified at root
+   * @param solution: if SAT, full variable assignment satisfying all constraints, otherwise untouched
+   */
+  SolveState solve(const IntSet& assumptions, intConstr& core, std::vector<bool>& solution);
 
-private:
-	// ---------------------------------------------------------------------
-	// VSIDS
+ private:
+  // ---------------------------------------------------------------------
+  // VSIDS
 
-	void vDecayActivity();
-	void vBumpActivity(Var v);
-	void cDecayActivity();
-	void cBumpActivity(Constr& c);
+  void vDecayActivity();
+  void vBumpActivity(Var v);
+  void cDecayActivity();
+  void cBumpActivity(Constr& c);
 
-	// ---------------------------------------------------------------------
-	// Trail manipulation
+  // ---------------------------------------------------------------------
+  // Trail manipulation
 
-	void uncheckedEnqueue(Lit p, CRef from);
-	void undoOne();
-	void backjumpTo(int level);
-	void decide(Lit l);
-	void propagate(Lit l, CRef reason);
-	/**
-	* Unit propagation with watched literals.
-	* @post: all constraints have been checked for propagation under trail[0..qhead[
-	*/
-	CRef runPropagation();
-	WatchStatus checkForPropagation(CRef cr, int& idx, Lit p);
+  void uncheckedEnqueue(Lit p, CRef from);
+  void undoOne();
+  void backjumpTo(int level);
+  void decide(Lit l);
+  void propagate(Lit l, CRef reason);
+  /**
+   * Unit propagation with watched literals.
+   * @post: all constraints have been checked for propagation under trail[0..qhead[
+   */
+  CRef runPropagation();
+  WatchStatus checkForPropagation(CRef cr, int& idx, Lit p);
 
-	// ---------------------------------------------------------------------
-	// Conflict analysis
+  // ---------------------------------------------------------------------
+  // Conflict analysis
 
-	void recomputeLBD(Constr& C);
-	bool analyze(CRef confl);
-	template<class SMALL, class LARGE>
-	LARGE assumpSlack(const IntSet& assumptions, const Constraint<SMALL, LARGE>& core){
-		LARGE slack = -core.getRhs();
-		for(Var v: core.vars) if(assumptions.has(v) || (!assumptions.has(-v) && core.coefs[v]>0)) slack+=core.coefs[v];
-		return slack;
-	}
-	bool extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit l_assump=0);
+  void recomputeLBD(Constr& C);
+  bool analyze(CRef confl);
+  template <class SMALL, class LARGE>
+  LARGE assumpSlack(const IntSet& assumptions, const Constraint<SMALL, LARGE>& core) {
+    LARGE slack = -core.getRhs();
+    for (Var v : core.vars)
+      if (assumptions.has(v) || (!assumptions.has(-v) && core.coefs[v] > 0)) slack += core.coefs[v];
+    return slack;
+  }
+  bool extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit l_assump = 0);
 
-	// ---------------------------------------------------------------------
-	// Constraint management
+  // ---------------------------------------------------------------------
+  // Constraint management
 
-	CRef attachConstraint(intConstr& constraint, ConstraintType type);
-	bool learnConstraint(longConstr& confl);
-	ID addInputConstraint(ConstraintType type);
-	void removeConstraint(Constr& C);
+  CRef attachConstraint(intConstr& constraint, ConstraintType type);
+  bool learnConstraint(longConstr& confl);
+  ID addInputConstraint(ConstraintType type);
+  void removeConstraint(Constr& C);
 
-	// ---------------------------------------------------------------------
-	// Garbage collection
+  // ---------------------------------------------------------------------
+  // Garbage collection
 
-	void garbage_collect();
-	void reduceDB();
+  void garbage_collect();
+  void reduceDB();
 
-	// ---------------------------------------------------------------------
-	// Solving
+  // ---------------------------------------------------------------------
+  // Solving
 
-	double luby(double y, int i);
-	Val lhs(Constr& C, const std::vector<bool>& sol);
-	bool checksol(const std::vector<bool>& sol);
-	Lit pickBranchLit();
-
+  double luby(double y, int i);
+  Val lhs(Constr& C, const std::vector<bool>& sol);
+  bool checksol(const std::vector<bool>& sol);
+  Lit pickBranchLit();
 };

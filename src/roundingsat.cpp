@@ -27,27 +27,27 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ***********************************************************************/
 
-#include <vector>
-#include <iostream>
-#include <cmath>
 #include <algorithm>
-#include <cstdio>
 #include <cassert>
-#include <cstring>
+#include <cmath>
 #include <csignal>
-#include <unordered_map>
+#include <cstdio>
+#include <cstring>
+#include <iostream>
 #include <memory>
+#include <unordered_map>
+#include <vector>
 
-#include "aux.hpp"
-#include "typedefs.hpp"
-#include "IntSet.hpp"
 #include "Constraint.hpp"
+#include "IntSet.hpp"
 #include "Options.hpp"
 #include "Solver.hpp"
-#include "globals.hpp"
+#include "aux.hpp"
 #include "exit.hpp"
+#include "globals.hpp"
 #include "parsing.hpp"
 #include "run.hpp"
+#include "typedefs.hpp"
 
 bool asynch_interrupt;
 Options options;
@@ -56,42 +56,42 @@ Stats stats;
 // ---------------------------------------------------------------------
 // Exit and interrupt
 
-static void SIGINT_interrupt(int signum){
-	_unused(signum);
-	asynch_interrupt = true;
+static void SIGINT_interrupt(int signum) {
+  _unused(signum);
+  asynch_interrupt = true;
 }
 
-static void SIGINT_exit(int signum){
-	_unused(signum);
-	printf("\n*** INTERRUPTED ***\n");
-	exit(1);
+static void SIGINT_exit(int signum) {
+  _unused(signum);
+  printf("\n*** INTERRUPTED ***\n");
+  exit(1);
 }
 
 // ---------------------------------------------------------------------
 // Main
 
-int main(int argc, char**argv){
-	stats.STARTTIME=aux::cpuTime();
-	asynch_interrupt=false;
+int main(int argc, char** argv) {
+  stats.STARTTIME = aux::cpuTime();
+  asynch_interrupt = false;
 
-	signal(SIGINT, SIGINT_exit);
-	signal(SIGTERM,SIGINT_exit);
-	signal(SIGXCPU,SIGINT_exit);
-	signal(SIGINT, SIGINT_interrupt);
-	signal(SIGTERM,SIGINT_interrupt);
-	signal(SIGXCPU,SIGINT_interrupt);
+  signal(SIGINT, SIGINT_exit);
+  signal(SIGTERM, SIGINT_exit);
+  signal(SIGXCPU, SIGINT_exit);
+  signal(SIGINT, SIGINT_interrupt);
+  signal(SIGTERM, SIGINT_interrupt);
+  signal(SIGXCPU, SIGINT_interrupt);
 
-	options.parseCommandLine(argc, argv);
-	if(!options.proofLogName.empty()) run::setLogger(std::make_shared<Logger>(options.proofLogName));
+  options.parseCommandLine(argc, argv);
+  if (!options.proofLogName.empty()) run::setLogger(std::make_shared<Logger>(options.proofLogName));
 
-	if (!options.formulaName.empty()) {
-		std::ifstream fin(options.formulaName);
-		if (!fin) quit::exit_ERROR({"Could not open ", options.formulaName});
-		parsing::file_read(fin, run::solver, run::objective, run::logger);
-	} else {
-		if (options.verbosity > 0) std::cout << "c No filename given, reading from standard input." << std::endl;
-		parsing::file_read(std::cin, run::solver, run::objective, run::logger);
-	}
+  if (!options.formulaName.empty()) {
+    std::ifstream fin(options.formulaName);
+    if (!fin) quit::exit_ERROR({"Could not open ", options.formulaName});
+    parsing::file_read(fin, run::solver, run::objective, run::logger);
+  } else {
+    if (options.verbosity > 0) std::cout << "c No filename given, reading from standard input." << std::endl;
+    parsing::file_read(std::cin, run::solver, run::objective, run::logger);
+  }
 
-	run::run();
+  run::run();
 }
