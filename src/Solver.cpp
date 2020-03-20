@@ -346,8 +346,8 @@ bool Solver::analyze(CRef confl){
 		assert(std::abs(conflConstraint.getCoef(-l))<INF);
 		Coef confl_coef_l = conflConstraint.getCoef(-l);
 		if(confl_coef_l>0) {
-			if (conflConstraint.isAssertingBefore(Level, decisionLevel())) break;
-			//if (conflConstraint.falsifiedAtLvlisOne(Level,decisionLevel())) break;
+			if(options.eagerCA){ if(conflConstraint.isAssertingBefore(Level, decisionLevel())) break; }
+			else{ if(conflConstraint.falsifiedAtLvlisOne(Level,decisionLevel())) break; }
 			assert(Reason[std::abs(l)] != CRef_Undef);
 			if (options.originalRoundToOne) {
 				conflConstraint.roundToOne(Level, confl_coef_l, false);
