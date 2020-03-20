@@ -752,10 +752,10 @@ double Solver::luby(double y, int i){
 	// Find the finite subsequence that contains index 'i', and the
 	// size of that subsequence:
 	int size, seq;
-	for (size = 1, seq = 0; size < i+1; seq++, size = 2*size+1);
+	for (size = 1, seq = 0; size < i+1; seq++, size = 2*size+1){}
 	while(size != i+1){
 		size = (size-1)>>1;
-		seq--;
+		--seq;
 		assert(size!=0);
 		i = i % size;
 	}

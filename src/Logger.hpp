@@ -33,6 +33,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <fstream>
 #include <sstream>
 
+#include "typedefs.hpp"
+
 struct Logger{
 	std::ofstream formula_out;
 	std::ofstream proof_out;

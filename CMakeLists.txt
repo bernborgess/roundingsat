@@ -5,41 +5,55 @@ set(CMAKE_CXX_STANDARD 11)
 
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/")
 
+file(GLOB ALL_CPP_FILES ${PROJECT_SOURCE_DIR}/src/*.cpp)
+file(GLOB ALL_HPP_FILES ${PROJECT_SOURCE_DIR}/src/*.hpp)
+file(GLOB ALL_SRC_FILES ${PROJECT_SOURCE_DIR}/src/*.cpp ${PROJECT_SOURCE_DIR}/src/*.hpp)
+
 #find_package(ZLIB REQUIRED)
 
 # uncomment to profile with gprof
-#SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")
-#SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
-#SET(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -pg")
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")
+#set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
+#set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -pg")
 
 # uncomment to do something ugly
-#SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Ofast")
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Ofast")
 
-SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 
-add_executable(roundingsat src/roundingsat.cpp src/Solver.cpp src/aux.cpp src/SolverStructs.cpp src/exit.cpp)
+message(STATUS "${_variableName}=${${_variableName}}")
+
+add_executable(roundingsat ${ALL_CPP_FILES})
 #target_link_libraries(roundingsat ${CMAKE_SOURCE_DIR}/lib/libsoplex.a z)
 #target_include_directories(roundingsat PRIVATE "${CMAKE_SOURCE_DIR}/lib")
 
-ADD_CUSTOM_TARGET(release
+add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=Release ${CMAKE_SOURCE_DIR}
   COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target roundingsat
   COMMENT "Creating executable in release mode.")
 
-add_executable(roundingsat_info src/roundingsat.cpp src/Solver.cpp src/aux.cpp src/SolverStructs.cpp src/exit.cpp)
+add_executable(roundingsat_info ${ALL_CPP_FILES})
 #target_link_libraries(roundingsat_info ${CMAKE_SOURCE_DIR}/lib/libsoplex.a z)
 #target_include_directories(roundingsat_info PRIVATE "${CMAKE_SOURCE_DIR}/lib")
 
-ADD_CUSTOM_TARGET(info
+add_custom_target(info
   COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=RelWithDebInfo ${CMAKE_SOURCE_DIR}
   COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target roundingsat_info
   COMMENT "Creating executable in release mode with debug info.")
 
-add_executable(roundingsat_debug src/roundingsat.cpp src/Solver.cpp src/aux.cpp src/SolverStructs.cpp src/exit.cpp)
+add_executable(roundingsat_debug ${ALL_CPP_FILES})
 #target_link_libraries(roundingsat_debug ${CMAKE_SOURCE_DIR}/lib/libsoplex_debug.a z)
 #target_include_directories(roundingsat_debug PRIVATE "${CMAKE_SOURCE_DIR}/lib")
 
-ADD_CUSTOM_TARGET(debug
+add_custom_target(debug
   COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=Debug ${CMAKE_SOURCE_DIR}
   COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target roundingsat_debug
   COMMENT "Creating executable in debug mode.")
+
+add_custom_target(
+        clangformat
+        COMMAND /usr/bin/clang-format
+        -style=file
+        -i
+        ${ALL_SRC_FILES}
+)
