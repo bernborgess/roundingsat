@@ -390,10 +390,27 @@ bool Solver::analyze(CRef confl) {
     assert(std::abs(conflConstraint.getCoef(-l)) < INF);
     Coef confl_coef_l = conflConstraint.getCoef(-l);
     if (confl_coef_l > 0) {
+      assert(conflConstraint.getSlack(Level) < 0);
       if (options.eagerCA) {
-        if (conflConstraint.isAssertingBefore(Level, decisionLevel())) break;
+        AssertionStatus status = conflConstraint.isAssertingBefore(Level, decisionLevel());
+        if (status == AssertionStatus::ASSERTING)
+          break;
+        else if (status == AssertionStatus::FALSIFIED) {
+          backjumpTo(decisionLevel() - 1);
+          assert(conflConstraint.getSlack(Level) < 0);
+          continue;
+        }
       } else {
-        if (conflConstraint.falsifiedAtLvlisOne(Level, decisionLevel())) break;
+        if (conflConstraint.falsifiedAtLvlisOne(Level, decisionLevel())) {
+          assert(conflConstraint.falsev1 == std::abs(l));
+          if (conflConstraint.getSlack(Level) + confl_coef_l >= 0)
+            break;
+          else {
+            backjumpTo(decisionLevel() - 1);
+            assert(conflConstraint.getSlack(Level) < 0);
+            continue;
+          }
+        }
       }
       assert(Reason[std::abs(l)] != CRef_Undef);
       if (options.originalRoundToOne) {
@@ -664,15 +681,17 @@ bool Solver::learnConstraint(longConstr& confl) {
   tmpConstraint.removeZeroes();
   tmpConstraint.sortInDecreasingCoefOrder();
   int assertionLevel = tmpConstraint.getAssertionLevel(Level, Pos);
-  assert(assertionLevel == 0 || assertionLevel < decisionLevel());
+  if(assertionLevel<0){
+  	assert(decisionLevel()==0);
+  	assert(tmpConstraint.getSlack(Level)<0);
+	  if (logger) tmpConstraint.logInconsistency(Level, Pos, stats);
+  	return false;
+  }
+  assert(assertionLevel < decisionLevel());
   backjumpTo(assertionLevel);
   assert(qhead == (int)trail.size());  // jumped back sufficiently far to catch up with qhead
   Val slk = tmpConstraint.getSlack(Level);
-  if (slk < 0) {
-    assert(decisionLevel() == 0);
-    if (logger) tmpConstraint.logInconsistency(Level, Pos, stats);
-    return false;
-  }
+  assert(slk>=0);
   tmpConstraint.heuristicWeakening(Level, Pos, slk, stats);
   tmpConstraint.postProcess(Level, Pos, false, stats);
   assert(tmpConstraint.isSaturated());

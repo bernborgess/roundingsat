@@ -43,6 +43,8 @@ inline bool isFalse(const IntVecIt& level, Lit l) { return level[-l] != INF; }
 inline bool isUnit(const IntVecIt& level, Lit l) { return level[l] == 0; }
 inline bool isUnknown(const std::vector<int>& pos, Lit l) { return pos[std::abs(l)] == INF; }
 
+enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
+
 template <class SMALL, class LARGE>  // LARGE should be able to fit sums of SMALL
 struct Constraint {
   LARGE degree = 0;
@@ -394,39 +396,47 @@ struct Constraint {
   }
 
   // NOTE: also removes encountered zeroes and changes variable order
-  bool isAssertingBefore(const IntVecIt& level, int lvl) {
+  AssertionStatus isAssertingBefore(const IntVecIt& level, int lvl) {
     assert(lvl >= 0);
     assert(isSaturated());
-    LARGE slack = -rhs;
+    LARGE slack = -getDegree();
     SMALL largestCoef = std::numeric_limits<SMALL>::min();
-    for (unsigned int i = 0; i < vars.size(); ++i) {
+    for (int i = vars.size() - 1; i >= 0; --i) {
       Var v = vars[i];
-      if (coefs[v] == 0) {
+      SMALL cf = coefs[v];
+      if (cf == 0) {
         coefs[v] = _unused_();
-        aux::swapErase(vars, i--);
-      } else if (level[v] < lvl)
-        slack += coefs[v];
-      else {
-        if (level[-v] >= lvl) {
-          if (coefs[v] > 0) slack += coefs[v];
-          largestCoef = std::max<LARGE>(largestCoef, abs(coefs[v]));
-        }
+        aux::swapErase(vars, i);
+        continue;
       }
+      Lit l = cf < 0 ? -v : v;
+      if (level[-l] < lvl) continue;  // falsified lit
+      SMALL c = std::abs(cf);
+      if (level[l] >= lvl) largestCoef = std::max(largestCoef, c);  // unknown lit
+      slack += c;
+      int mid = (vars.size() + i) / 2;  // move non-falsifieds to the back for efficiency in next call
+      vars[i] = vars[mid];
+      vars[mid] = v;
+      if (slack >= getDegree()) return AssertionStatus::NONASSERTING;
     }
-    return slack < largestCoef;
+    if (slack >= largestCoef)
+      return AssertionStatus::NONASSERTING;
+    else if (slack >= 0)
+      return AssertionStatus::ASSERTING;
+    else
+      return AssertionStatus::FALSIFIED;
   }
 
   // @return: earliest decision level that propagates a variable
   int getAssertionLevel(const IntVecIt& level, const std::vector<int>& pos) const {
     assert(getSlack(level) < 0);
-    // calculate slack at level -1
-    LARGE slack = -rhs;
-    for (Var v : vars)
-      if (coefs[v] > 0) slack += coefs[v];
-    if (slack < 0) return 0;
-
     assert(hasNoZeroes());
     assert(isSortedInDecreasingCoefOrder());
+    assert(hasNoUnits(level));
+    // calculate slack at level 0
+    LARGE slack = -rhs;
+    for (Var v : vars) slack += std::max(0, coefs[v]);
+    if (slack < 0) return -1;
 
     // create useful datastructures
     std::vector<Lit> litsByPos;
@@ -448,16 +458,13 @@ struct Constraint {
         slack -= std::abs(coefs[std::abs(*posIt)]);
         ++posIt;
       }
-      if (slack < 0) {
-        assertionLevel = std::max(assertionLevel - 1, 0);
-        break;
-      }
+      assert(slack>=0);
       while (assertionLevel >= level[getLit(*coefIt)]) ++coefIt;
       assert(coefIt != vars.cend());
-      if (slack < std::abs(coefs[*coefIt])) break;
-      ++assertionLevel;
+      if (slack < std::abs(coefs[*coefIt])) return assertionLevel;
+      assert(posIt != litsByPos.cend());
+      assertionLevel = level[*posIt];
     }
-    return assertionLevel;
   }
 
   // @post: preserves order after removeZeroes()
