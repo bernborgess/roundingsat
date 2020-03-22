@@ -146,11 +146,11 @@ static inline void* xrealloc(void* ptr, size_t size) {
 // Order heap
 
 struct OrderHeap {  // segment tree (fast implementation of priority queue).
-  std::vector<double>& activity;
+  std::vector<ActVal>& activity;
   int cap = 0;
   std::vector<Var> tree = {-1, -1};
 
-  OrderHeap(std::vector<double>& a) : activity(a) {}
+  OrderHeap(std::vector<ActVal>& a) : activity(a) {}
 
   void resize(int newsize);
   void percolateUp(Var x);

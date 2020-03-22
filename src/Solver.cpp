@@ -42,6 +42,7 @@ Solver::Solver() : order_heap(activity) {
   ca.cap = 0;
   ca.wasted = 0;
   ca.capacity(1024 * 1024);  // 4MB
+  assert(sizeof(Constr) == 12 * sizeof(uint32_t));
 }
 
 void Solver::setNbVars(long long nvars) {
@@ -52,7 +53,7 @@ void Solver::setNbVars(long long nvars) {
   aux::resizeIntMap(_Level, Level, nvars, options.resize_factor, INF);
   Pos.resize(nvars + 1, INF);
   Reason.resize(nvars + 1, CRef_Undef);
-  activity.resize(nvars + 1, 0);
+  activity.resize(nvars + 1, 1 / actLimit);
   phase.resize(nvars + 1);
   tmpConstraint.resize(nvars + 1);
   conflConstraint.resize(nvars + 1);
@@ -76,9 +77,13 @@ void Solver::setLogger(std::shared_ptr<Logger> lgr) {
 void Solver::vDecayActivity() { v_vsids_inc *= (1 / options.v_vsids_decay); }
 void Solver::vBumpActivity(Var v) {
   assert(v > 0);
-  if ((activity[v] += v_vsids_inc) > 1e100) {  // Rescale
-    for (Var x = 1; x <= n; ++x) activity[x] *= 1e-100;
-    v_vsids_inc *= 1e-100;
+  if ((activity[v] += v_vsids_inc) > actLimit) {  // Rescale
+    for (Var x = 1; x <= n; ++x) {
+      activity[x] /= actLimit;
+      activity[x] /= actLimit;
+    }
+    v_vsids_inc /= actLimit;
+    v_vsids_inc /= actLimit;
   }
   // Update heap with respect to new activity:
   if (order_heap.inHeap(v)) order_heap.percolateUp(v);
@@ -88,8 +93,8 @@ void Solver::cDecayActivity() { c_vsids_inc *= (1 / options.c_vsids_decay); }
 void Solver::cBumpActivity(Constr& c) {
   c.act += c_vsids_inc;
   if (c.act > 1e20) {  // Rescale:
-    for (size_t i = 0; i < constraints.size(); i++) ca[constraints[i]].act *= 1e-20;
-    c_vsids_inc *= 1e-20;
+    for (size_t i = 0; i < constraints.size(); i++) ca[constraints[i]].act /= 1e20;
+    c_vsids_inc /= 1e20;
   }
 }
 
@@ -681,17 +686,17 @@ bool Solver::learnConstraint(longConstr& confl) {
   tmpConstraint.removeZeroes();
   tmpConstraint.sortInDecreasingCoefOrder();
   int assertionLevel = tmpConstraint.getAssertionLevel(Level, Pos);
-  if(assertionLevel<0){
-  	assert(decisionLevel()==0);
-  	assert(tmpConstraint.getSlack(Level)<0);
-	  if (logger) tmpConstraint.logInconsistency(Level, Pos, stats);
-  	return false;
+  if (assertionLevel < 0) {
+    assert(decisionLevel() == 0);
+    assert(tmpConstraint.getSlack(Level) < 0);
+    if (logger) tmpConstraint.logInconsistency(Level, Pos, stats);
+    return false;
   }
   assert(assertionLevel < decisionLevel());
   backjumpTo(assertionLevel);
   assert(qhead == (int)trail.size());  // jumped back sufficiently far to catch up with qhead
   Val slk = tmpConstraint.getSlack(Level);
-  assert(slk>=0);
+  assert(slk >= 0);
   tmpConstraint.heuristicWeakening(Level, Pos, slk, stats);
   tmpConstraint.postProcess(Level, Pos, false, stats);
   assert(tmpConstraint.isSaturated());

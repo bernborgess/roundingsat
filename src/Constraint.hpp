@@ -458,7 +458,7 @@ struct Constraint {
         slack -= std::abs(coefs[std::abs(*posIt)]);
         ++posIt;
       }
-      assert(slack>=0);
+      assert(slack >= 0);
       while (assertionLevel >= level[getLit(*coefIt)]) ++coefIt;
       assert(coefIt != vars.cend());
       if (slack < std::abs(coefs[*coefIt])) return assertionLevel;

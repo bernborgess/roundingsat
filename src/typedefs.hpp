@@ -46,3 +46,8 @@ using Val = long long;
 const Coef INF = 1e9 + 1;
 
 using IntVecIt = std::vector<int>::iterator;
+
+using ActVal = __float128;
+const ActVal actLimit = (ActVal)1e300 * (ActVal)1e300 * (ActVal)1e300 * (ActVal)1e300 * (ActVal)1e300 * (ActVal)1e300 *
+                        (ActVal)1e300 * (ActVal)1e300 * (ActVal)1e300 * (ActVal)1e300 * (ActVal)1e300 * (ActVal)1e300 *
+                        (ActVal)1e300 * (ActVal)1e300 * (ActVal)1e300 * (ActVal)1e300;
