@@ -71,7 +71,7 @@ struct Constr {  // internal solver constraint optimized for fast propagation
     unsigned size : 30;
   } header;
   long long ntrailpops;
-  float act;
+  ActValC act;
   unsigned int watchIdx;
   Val slack;  // sum of non-falsified watches minus w
   int data[];
@@ -146,11 +146,11 @@ static inline void* xrealloc(void* ptr, size_t size) {
 // Order heap
 
 struct OrderHeap {  // segment tree (fast implementation of priority queue).
-  std::vector<ActVal>& activity;
+  std::vector<ActValV>& activity;
   int cap = 0;
   std::vector<Var> tree = {-1, -1};
 
-  OrderHeap(std::vector<ActVal>& a) : activity(a) {}
+  OrderHeap(std::vector<ActValV>& a) : activity(a) {}
 
   void resize(int newsize);
   void percolateUp(Var x);

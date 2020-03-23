@@ -53,7 +53,7 @@ void Solver::setNbVars(long long nvars) {
   aux::resizeIntMap(_Level, Level, nvars, options.resize_factor, INF);
   Pos.resize(nvars + 1, INF);
   Reason.resize(nvars + 1, CRef_Undef);
-  activity.resize(nvars + 1, 1 / actLimit);
+  activity.resize(nvars + 1, 1 / actLimitV);
   phase.resize(nvars + 1);
   tmpConstraint.resize(nvars + 1);
   conflConstraint.resize(nvars + 1);
@@ -77,13 +77,13 @@ void Solver::setLogger(std::shared_ptr<Logger> lgr) {
 void Solver::vDecayActivity() { v_vsids_inc *= (1 / options.v_vsids_decay); }
 void Solver::vBumpActivity(Var v) {
   assert(v > 0);
-  if ((activity[v] += v_vsids_inc) > actLimit) {  // Rescale
+  if ((activity[v] += v_vsids_inc) > actLimitV) {  // Rescale
     for (Var x = 1; x <= n; ++x) {
-      activity[x] /= actLimit;
-      activity[x] /= actLimit;
+      activity[x] /= actLimitV;
+      activity[x] /= actLimitV;
     }
-    v_vsids_inc /= actLimit;
-    v_vsids_inc /= actLimit;
+    v_vsids_inc /= actLimitV;
+    v_vsids_inc /= actLimitV;
   }
   // Update heap with respect to new activity:
   if (order_heap.inHeap(v)) order_heap.percolateUp(v);
@@ -92,9 +92,13 @@ void Solver::vBumpActivity(Var v) {
 void Solver::cDecayActivity() { c_vsids_inc *= (1 / options.c_vsids_decay); }
 void Solver::cBumpActivity(Constr& c) {
   c.act += c_vsids_inc;
-  if (c.act > 1e20) {  // Rescale:
-    for (size_t i = 0; i < constraints.size(); i++) ca[constraints[i]].act /= 1e20;
-    c_vsids_inc /= 1e20;
+  if (c.act > actLimitC) {  // Rescale:
+    for (size_t i = 0; i < constraints.size(); i++) {
+      ca[constraints[i]].act /= actLimitC;
+      ca[constraints[i]].act /= actLimitC;
+    }
+    c_vsids_inc /= actLimitC;
+    c_vsids_inc /= actLimitC;
   }
 }
 

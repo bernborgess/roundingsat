@@ -68,12 +68,12 @@ class Solver {
   std::vector<CRef> Reason;
   int qhead = 0;  // for unit propagation
   std::vector<Lit> phase;
-  std::vector<ActVal> activity;
+  std::vector<ActValV> activity;
 
   long long nbconstrsbeforereduce = 2000;
   long long nconfl_to_restart = 0;
-  ActVal v_vsids_inc = 1.0;
-  double c_vsids_inc = 1.0;
+  ActValV v_vsids_inc = 1.0;
+  ActValC c_vsids_inc = 1.0;
 
  public:
   Solver();

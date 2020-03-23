@@ -53,8 +53,8 @@ struct Options {
   double rinc = 2;
   long long rfirst = 100;
   long long incReduceDB = 300;
-  double v_vsids_decay = 0.95;
-  double c_vsids_decay = 0.999;
+  float v_vsids_decay = 0.95;
+  float c_vsids_decay = 0.999;
 
   void usage(char* name) {
     printf("Usage: %s [OPTION] instance.(opb|cnf|wcnf)\n", name);
