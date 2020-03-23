@@ -281,7 +281,7 @@ void optimize(intConstr& origObj) {
   SolveState reply = SolveState::SAT;
   while (true) {
     size_t current_time = stats.getDetTime();
-    if (reply != SolveState::INPROCESSED || reply != SolveState::RESTARTED) printObjBounds(lower_bound, upper_bound);
+    if (reply != SolveState::INPROCESSED && reply != SolveState::RESTARTED) printObjBounds(lower_bound, upper_bound);
     assumps.reset();
     if (options.optMode == 1 || options.optMode == 2 ||
         (options.optMode > 2 && lower_time < upper_time)) {  // use core-guided step
