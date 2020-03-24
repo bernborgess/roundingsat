@@ -33,6 +33,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "IntSet.hpp"
 #include "SolverStructs.hpp"
 #include "typedefs.hpp"
+#include "LpSolver.hpp"
+#include "Options.hpp"
 
 class Logger;
 
@@ -45,8 +47,6 @@ class Solver {
  private:
   int n;
   int orig_n;
-
-  std::shared_ptr<Logger> logger;
   ID crefID = 0;
 
   ConstraintAllocator ca;
@@ -77,9 +77,14 @@ class Solver {
 
   bool firstRun = true;
 
+  std::shared_ptr<LpSolver> lpSolver;
+	LpSolver& getLP(){ return *lpSolver; }
+
  public:
+	std::shared_ptr<Logger> logger;
+
   Solver();
-  void setLogger(std::shared_ptr<Logger> lgr);
+	void init(); // call after having read options
 
   int getNbVars() const { return n; }
   void setNbVars(long long nvars);

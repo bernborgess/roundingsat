@@ -34,6 +34,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <iostream>
 #include <unordered_map>
 #include "quit.hpp"
+#include "aux.hpp"
 
 struct Options {
   std::string formulaName;
@@ -58,6 +59,8 @@ struct Options {
   long long incReduceDB = 300;
   float v_vsids_decay = 0.95;
   float c_vsids_decay = 0.999;
+
+	float lpmulti=0;
 
   void usageEnum(const std::string& option, const std::string& explanation, const std::vector<std::string>& optMap,
                  int def) {
@@ -94,6 +97,7 @@ struct Options {
     printf("  --prop-sup=arg   Avoid superfluous watch checks (0 or 1; default %d).\n", supProp);
     printf("  --eager-ca=arg   Terminate conflict analysis as soon as possible (0 or 1; default %d).\n", eagerCA);
     printf("  --proof-log=arg  Set a filename for the proof logs (string).\n");
+	  printf("  --lp=arg         Set the ratio of #pivots/#conflicts to limiting the LP solver's calls (negative means infinite, 0 means no LP solving) (float >=-1; default %lf).\n",lpmulti);
   }
 
   typedef bool (*func)(double);
@@ -139,7 +143,8 @@ struct Options {
     }
     std::vector<std::string> opts = {"print-sol",    "verbosity", "var-decay",     "rinc",        "rfirst",
                                      "original-rto", "opt-mode",  "prop-counting", "prop-clause", "prop-card",
-                                     "prop-idx",     "prop-sup",  "eager-ca",      "proof-log"};
+                                     "prop-idx",     "prop-sup",  "eager-ca",      "proof-log",
+                                     "lp"};
     std::unordered_map<std::string, std::string> opt_val;
     for (int i = 1; i < argc; i++) {
       if (std::string(argv[i]).substr(0, 2) != "--")
@@ -168,6 +173,7 @@ struct Options {
     getOptionNum(opt_val, "prop-idx", [](double x) -> bool { return x == 0 || x == 1; }, idxProp);
     getOptionNum(opt_val, "prop-sup", [](double x) -> bool { return x == 0 || x == 1; }, supProp);
     getOptionNum(opt_val, "eager-ca", [](double x) -> bool { return x == 0 || x == 1; }, eagerCA);
+	  getOptionNum(opt_val, "lp", [](double x) -> bool { _unused(x); return true; }, lpmulti);
     getOptionStr(opt_val, "proof-log", proofLogName);
   }
 };

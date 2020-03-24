@@ -69,15 +69,15 @@ int main(int argc, char** argv) {
   signal(SIGXCPU, SIGINT_interrupt);
 
   options.parseCommandLine(argc, argv);
-  if (!options.proofLogName.empty()) run::setLogger(std::make_shared<Logger>(options.proofLogName));
+  run::solver.init();
 
   if (!options.formulaName.empty()) {
     std::ifstream fin(options.formulaName);
     if (!fin) quit::exit_ERROR({"Could not open ", options.formulaName});
-    parsing::file_read(fin, run::solver, run::objective, run::logger);
+    parsing::file_read(fin, run::solver, run::objective);
   } else {
     if (options.verbosity > 0) std::cout << "c No filename given, reading from standard input." << std::endl;
-    parsing::file_read(std::cin, run::solver, run::objective, run::logger);
+    parsing::file_read(std::cin, run::solver, run::objective);
   }
 
   run::run();

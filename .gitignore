@@ -50,3 +50,5 @@ roundingsat*_info
 # proof logging
 *.formula
 *.proof
+/roundingsat_alpha
+/roundingsat_master

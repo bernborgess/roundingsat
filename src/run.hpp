@@ -41,12 +41,6 @@ Val upper_bound;
 Val lower_bound;
 Solver solver;
 intConstr objective;
-std::shared_ptr<Logger> logger;
-
-void setLogger(const std::shared_ptr<Logger>& lgr) {
-  logger = lgr;
-  solver.setLogger(logger);
-}
 
 inline void printObjBounds(Val lower, Val upper) {
   if (upper < std::numeric_limits<Val>::max())
@@ -68,7 +62,7 @@ void handleNewSolution(const intConstr& origObj, ID& lastUpperBound) {
   solver.dropExternal(lastUpperBound, true);
   lastUpperBound = solver.addConstraint(aux, ConstraintType::EXTERNAL);
   aux.reset();
-  if (lastUpperBound == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, logger);
+  if (lastUpperBound == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
 }
 
 struct LazyVar {
@@ -111,7 +105,7 @@ struct LazyVar {
     solver.dropExternal(atLeastID,
                         false);  // TODO: dropExternal(atLeastID,true)? Or treat them as learned/implied constraints?
     atLeastID = solver.addConstraint(coefs, lits, rhs, ConstraintType::EXTERNAL);
-    if (atLeastID == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, logger);
+    if (atLeastID == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
   }
 
   void addAtMostConstraint() {
@@ -134,14 +128,14 @@ struct LazyVar {
     solver.dropExternal(atMostID,
                         false);  // TODO: dropExternal(atMostID,true)? Or treat them as learned/implied constraints?
     atMostID = solver.addConstraint(coefs, lits, -rhs, ConstraintType::EXTERNAL);
-    if (atMostID == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, logger);
+    if (atMostID == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
   }
 
   void addSymBreakingConstraint(Var prevvar) const {
     assert(introducedVars.size() > 1);
     // y-- + ~y >= 1 (equivalent to y-- >= y)
     if (solver.addConstraint({1, 1}, {prevvar, -getCurrentVar()}, 1, ConstraintType::AUXILIARY) == ID_Unsat)
-      quit::exit_UNSAT(solution, upper_bound, logger);
+      quit::exit_UNSAT(solution, upper_bound, solver.logger);
   }
 };
 
@@ -183,7 +177,7 @@ void addLowerBound(const intConstr& origObj, Val lower_bound, ID& lastLowerBound
   solver.dropExternal(lastLowerBound, true);
   lastLowerBound = solver.addConstraint(aux, ConstraintType::EXTERNAL);
   aux.reset();
-  if (lastLowerBound == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, logger);
+  if (lastLowerBound == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
 }
 
 void handleInconsistency(longConstr& reformObj, const intConstr& origObj,
@@ -245,13 +239,13 @@ void handleInconsistency(longConstr& reformObj, const intConstr& origObj,
     assert(lower_bound == -reformObj.getDegree());
     // add channeling constraints
     if (solver.addConstraint(core, ConstraintType::AUXILIARY) == ID_Unsat)
-      quit::exit_UNSAT(solution, upper_bound, logger);
+      quit::exit_UNSAT(solution, upper_bound, solver.logger);
     core.invert();
     if (solver.addConstraint(core, ConstraintType::AUXILIARY) == ID_Unsat)
-      quit::exit_UNSAT(solution, upper_bound, logger);
+      quit::exit_UNSAT(solution, upper_bound, solver.logger);
     for (Var v = oldN + 1; v < newN; ++v) {  // add symmetry breaking constraints
       if (solver.addConstraint({1, 1}, {v, -v - 1}, 1, ConstraintType::AUXILIARY) == ID_Unsat)
-        quit::exit_UNSAT(solution, upper_bound, logger);
+        quit::exit_UNSAT(solution, upper_bound, solver.logger);
     }
   }
   checkLazyVariables(reformObj, lazyVars);
@@ -264,7 +258,7 @@ void optimize(intConstr& origObj) {
   origObj.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), false);
   lower_bound = -origObj.getDegree();
   upper_bound = std::numeric_limits<Val>::max();
-  core.initializeLogging(logger);
+  core.initializeLogging(solver.logger);
 
   Val opt_coef_sum = 0;
   for (Var v : origObj.vars) opt_coef_sum += std::abs(origObj.coefs[v]);
@@ -299,9 +293,9 @@ void optimize(intConstr& origObj) {
     }
     assert(upper_bound > lower_bound);
     reply = solver.solve(assumps, core, solution);
-    if (reply == SolveState::INTERRUPTED) quit::exit_INDETERMINATE(solution, logger);
+    if (reply == SolveState::INTERRUPTED) quit::exit_INDETERMINATE(solution, solver.logger);
     if (reply == SolveState::RESTARTED) continue;
-    if (reply == SolveState::UNSAT) quit::exit_UNSAT(solution, upper_bound, logger);
+    if (reply == SolveState::UNSAT) quit::exit_UNSAT(solution, upper_bound, solver.logger);
     assert(solver.decisionLevel() == 0);
     if (assumps.size() == 0)
       upper_time += stats.getDetTime() - current_time;
@@ -316,9 +310,9 @@ void optimize(intConstr& origObj) {
     } else if (reply == SolveState::INCONSISTENT) {
       ++stats.NCORES;
       if (core.getSlack(solver.getLevel()) < 0) {
-        if (logger) core.logInconsistency(solver.getLevel(), solver.getPos(), stats);
+        if (solver.logger) core.logInconsistency(solver.getLevel(), solver.getPos(), stats);
         assert(solver.decisionLevel() == 0);
-        quit::exit_UNSAT(solution, upper_bound, logger);
+        quit::exit_UNSAT(solution, upper_bound, solver.logger);
       }
       handleInconsistency(reformObj, origObj, lazyVars, lastLowerBound);
       core.resize(solver.getNbVars() + 1);
@@ -326,14 +320,14 @@ void optimize(intConstr& origObj) {
       assert(reply == SolveState::INPROCESSED);  // keep looping
     if (lower_bound >= upper_bound) {
       printObjBounds(lower_bound, upper_bound);
-      if (logger) {
+      if (solver.logger) {
         assert(lastUpperBound != ID_Undef);
         assert(lastUpperBound != ID_Unsat);
         assert(lastLowerBound != ID_Undef);
         assert(lastLowerBound != ID_Unsat);
-        aux.initializeLogging(logger);
+        aux.initializeLogging(solver.logger);
         longConstr coreAggregate;
-        coreAggregate.initializeLogging(logger);
+        coreAggregate.initializeLogging(solver.logger);
         coreAggregate.resize(solver.getNbVars() + 1);
         origObj.copyTo(aux);
         aux.invert();
@@ -350,7 +344,7 @@ void optimize(intConstr& origObj) {
         assert(solver.decisionLevel() == 0);
         coreAggregate.logInconsistency(solver.getLevel(), solver.getPos(), stats);
       }
-      quit::exit_UNSAT(solution, upper_bound, logger);
+      quit::exit_UNSAT(solution, upper_bound, solver.logger);
     }
   }
 }
@@ -359,11 +353,11 @@ void decide() {
   while (true) {
     SolveState reply = solver.solve({}, core, solution);
     assert(reply != SolveState::INCONSISTENT);
-    if (reply == SolveState::INTERRUPTED) quit::exit_INDETERMINATE({}, logger);
+    if (reply == SolveState::INTERRUPTED) quit::exit_INDETERMINATE({}, solver.logger);
     if (reply == SolveState::SAT)
-      quit::exit_SAT(solution, logger);
+      quit::exit_SAT(solution, solver.logger);
     else if (reply == SolveState::UNSAT)
-      quit::exit_UNSAT({}, 0, logger);
+      quit::exit_UNSAT({}, 0, solver.logger);
   }
 }
 

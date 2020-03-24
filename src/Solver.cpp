@@ -69,11 +69,12 @@ void Solver::setNbOrigVars(int o_n) {
   stats.NAUXVARS = n - orig_n;
 }
 
-void Solver::setLogger(std::shared_ptr<Logger> lgr) {
-  logger = lgr;
-  tmpConstraint.initializeLogging(lgr);
-  conflConstraint.initializeLogging(lgr);
-  logConstraint.initializeLogging(lgr);
+void Solver::init() {
+	if (!options.proofLogName.empty()) logger=std::make_shared<Logger>(options.proofLogName);
+	if (options.lpmulti!=0) lpSolver=std::make_shared<LpSolver>();
+  tmpConstraint.initializeLogging(logger);
+  conflConstraint.initializeLogging(logger);
+  logConstraint.initializeLogging(logger);
 }
 
 // ---------------------------------------------------------------------

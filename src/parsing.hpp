@@ -44,7 +44,7 @@ int read_number(const std::string& s) {  // TODO: should also read larger number
   return answer;
 }
 
-void opb_read(std::istream& in, Solver& solver, intConstr& objective, const std::shared_ptr<Logger>& logger) {
+void opb_read(std::istream& in, Solver& solver, intConstr& objective) {
   assert(objective.isReset());
   intConstr input;  // TODO: make input use multiple precision to avoid overflow errors
   input.resize(solver.getNbVars() + 1);
@@ -105,12 +105,12 @@ void opb_read(std::istream& in, Solver& solver, intConstr& objective, const std:
         input.addRhs(read_number(line0.substr(line0.find("=") + 1)));
         if (input.getDegree() >= (Val)INF)
           quit::exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
-        if (solver.addConstraint(input, ConstraintType::FORMULA) == ID_Unsat) quit::exit_UNSAT({}, 0, logger);
+        if (solver.addConstraint(input, ConstraintType::FORMULA) == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
         if (line0.find(" = ") != std::string::npos) {  // Handle equality case with second constraint
           input.invert();
           if (input.getDegree() >= (Val)INF)
             quit::exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
-          if (solver.addConstraint(input, ConstraintType::FORMULA) == ID_Unsat) quit::exit_UNSAT({}, 0, logger);
+          if (solver.addConstraint(input, ConstraintType::FORMULA) == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
         }
       }
     }
@@ -118,8 +118,7 @@ void opb_read(std::istream& in, Solver& solver, intConstr& objective, const std:
   solver.setNbOrigVars(solver.getNbVars());
 }
 
-void wcnf_read(std::istream& in, long long top, Solver& solver, intConstr& objective,
-               const std::shared_ptr<Logger>& logger) {
+void wcnf_read(std::istream& in, long long top, Solver& solver, intConstr& objective) {
   assert(objective.isReset());
   intConstr input;
   input.resize(solver.getNbVars() + 1);
@@ -146,13 +145,13 @@ void wcnf_read(std::istream& in, long long top, Solver& solver, intConstr& objec
       }  // else hard clause
       if (input.getDegree() >= (Val)INF)
         quit::exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
-      if (solver.addConstraint(input, ConstraintType::FORMULA) == ID_Unsat) quit::exit_UNSAT({}, 0, logger);
+      if (solver.addConstraint(input, ConstraintType::FORMULA) == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
     }
   }
   solver.setNbOrigVars(solver.getNbVars() - objective.vars.size());
 }
 
-void cnf_read(std::istream& in, Solver& solver, const std::shared_ptr<Logger>& logger) {
+void cnf_read(std::istream& in, Solver& solver) {
   intConstr input;
   input.resize(solver.getNbVars() + 1);
   for (std::string line; getline(in, line);) {
@@ -164,13 +163,13 @@ void cnf_read(std::istream& in, Solver& solver, const std::shared_ptr<Logger>& l
       input.addRhs(1);
       Lit l;
       while (is >> l, l) input.addLhs(1, l);
-      if (solver.addConstraint(input, ConstraintType::FORMULA) == ID_Unsat) quit::exit_UNSAT({}, 0, logger);
+      if (solver.addConstraint(input, ConstraintType::FORMULA) == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
     }
   }
   solver.setNbOrigVars(solver.getNbVars());
 }
 
-void file_read(std::istream& in, Solver& solver, intConstr& objective, const std::shared_ptr<Logger>& logger) {
+void file_read(std::istream& in, Solver& solver, intConstr& objective) {
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == 'c') continue;
     if (line[0] == 'p') {
@@ -182,22 +181,22 @@ void file_read(std::istream& in, Solver& solver, intConstr& objective, const std
       is >> nb;
       solver.setNbVars(nb);
       if (type == "cnf") {
-        cnf_read(in, solver, logger);
+        cnf_read(in, solver);
       } else if (type == "wcnf") {
         is >> line;  // skip nbConstraints
         long long top;
         is >> top;
-        wcnf_read(in, top, solver, objective, logger);
+        wcnf_read(in, top, solver, objective);
       }
     } else if (line[0] == '*' && line.substr(0, 13) == "* #variable= ") {
       std::istringstream is(line.substr(13));
       long long nb;
       is >> nb;
       solver.setNbVars(nb);
-      opb_read(in, solver, objective, logger);
+      opb_read(in, solver, objective);
     } else
       quit::exit_ERROR({"No supported format [opb, cnf, wcnf] detected."});
   }
-  if (logger) logger->formula_out << "* INPUT FORMULA ABOVE - AUXILIARY AXIOMS BELOW\n";
+  if (solver.logger) solver.logger->formula_out << "* INPUT FORMULA ABOVE - AUXILIARY AXIOMS BELOW\n";
 }
 }  // namespace parsing
