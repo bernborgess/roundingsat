@@ -33,10 +33,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <algorithm>
 #include <cassert>
 #include <limits>
+#include <numeric>
 #include <ostream>
 #include <unordered_map>
 #include <vector>
-#include <numeric>
 
 #define _unused(x) ((void)(x))  // marks variables unused in release mode
 
@@ -139,27 +139,27 @@ void resizeIntMap(std::vector<T>& _map, typename std::vector<T>::iterator& map, 
 }
 
 template <class T>
-T median(std::vector<T>& v){
-	assert(v.size()>0);
-	size_t n = v.size() / 2;
-	std::nth_element(v.begin(), v.begin()+n, v.end());
-	return v[n];
+T median(std::vector<T>& v) {
+  assert(v.size() > 0);
+  size_t n = v.size() / 2;
+  std::nth_element(v.begin(), v.begin() + n, v.end());
+  return v[n];
 }
 
 template <class T>
-double average(const std::vector<T>& v){
-	assert(v.size()>0);
-	return std::accumulate(v.begin(), v.end(), 0.0) / (double) v.size();
+double average(const std::vector<T>& v) {
+  assert(v.size() > 0);
+  return std::accumulate(v.begin(), v.end(), 0.0) / (double)v.size();
 }
 
 template <class T>
-T min(const std::vector<T>& v){
-	return *std::min_element(v.begin(), v.end());
+T min(const std::vector<T>& v) {
+  return *std::min_element(v.begin(), v.end());
 }
 
 template <class T>
-T max(const std::vector<T>& v){
-	return *std::max_element(v.begin(), v.end());
+T max(const std::vector<T>& v) {
+  return *std::max_element(v.begin(), v.end());
 }
 
 }  // namespace aux

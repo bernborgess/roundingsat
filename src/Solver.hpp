@@ -31,10 +31,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include <memory>
 #include "IntSet.hpp"
-#include "SolverStructs.hpp"
-#include "typedefs.hpp"
 #include "LpSolver.hpp"
 #include "Options.hpp"
+#include "SolverStructs.hpp"
+#include "soplex/headers/soplex.h"
+#include "typedefs.hpp"
 
 class Logger;
 
@@ -78,13 +79,13 @@ class Solver {
   bool firstRun = true;
 
   std::shared_ptr<LpSolver> lpSolver;
-	LpSolver& getLP(){ return *lpSolver; }
+  LpSolver& getLP() { return *lpSolver; }
 
  public:
-	std::shared_ptr<Logger> logger;
+  std::shared_ptr<Logger> logger;
 
   Solver();
-	void init(); // call after having read options
+  void init();  // call after having read options
 
   int getNbVars() const { return n; }
   void setNbVars(long long nvars);

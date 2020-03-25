@@ -1,15 +1,13 @@
 cmake_minimum_required(VERSION 3.5)
 project(RoundingSat2)
 
-set(CMAKE_CXX_STANDARD 11)
-
+set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/")
+find_package(ZLIB REQUIRED)
 
 file(GLOB ALL_CPP_FILES ${PROJECT_SOURCE_DIR}/src/*.cpp)
 file(GLOB ALL_HPP_FILES ${PROJECT_SOURCE_DIR}/src/*.hpp)
 file(GLOB ALL_SRC_FILES ${PROJECT_SOURCE_DIR}/src/*.cpp ${PROJECT_SOURCE_DIR}/src/*.hpp)
-
-#find_package(ZLIB REQUIRED)
 
 # uncomment to profile with gprof
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")
@@ -22,8 +20,8 @@ file(GLOB ALL_SRC_FILES ${PROJECT_SOURCE_DIR}/src/*.cpp ${PROJECT_SOURCE_DIR}/sr
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 
 add_executable(roundingsat ${ALL_CPP_FILES})
-#target_link_libraries(roundingsat ${CMAKE_SOURCE_DIR}/lib/libsoplex.a z)
-#target_include_directories(roundingsat PRIVATE "${CMAKE_SOURCE_DIR}/lib")
+target_link_libraries(roundingsat ${CMAKE_SOURCE_DIR}/src/soplex/libsoplex.a z)
+target_include_directories(roundingsat PRIVATE "${CMAKE_SOURCE_DIR}/src/soplex")
 
 add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=Release ${CMAKE_SOURCE_DIR}
@@ -31,8 +29,8 @@ add_custom_target(release
   COMMENT "Creating executable in release mode.")
 
 add_executable(roundingsat_info ${ALL_CPP_FILES})
-#target_link_libraries(roundingsat_info ${CMAKE_SOURCE_DIR}/lib/libsoplex.a z)
-#target_include_directories(roundingsat_info PRIVATE "${CMAKE_SOURCE_DIR}/lib")
+target_link_libraries(roundingsat_info ${CMAKE_SOURCE_DIR}/src/soplex/libsoplex.a z)
+target_include_directories(roundingsat_info PRIVATE "${CMAKE_SOURCE_DIR}/src/soplex")
 
 add_custom_target(info
   COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=RelWithDebInfo ${CMAKE_SOURCE_DIR}
@@ -40,8 +38,8 @@ add_custom_target(info
   COMMENT "Creating executable in release mode with debug info.")
 
 add_executable(roundingsat_debug ${ALL_CPP_FILES})
-#target_link_libraries(roundingsat_debug ${CMAKE_SOURCE_DIR}/lib/libsoplex_debug.a z)
-#target_include_directories(roundingsat_debug PRIVATE "${CMAKE_SOURCE_DIR}/lib")
+target_link_libraries(roundingsat_debug ${CMAKE_SOURCE_DIR}/src/soplex/libsoplex_debug.a z)
+target_include_directories(roundingsat_debug PRIVATE "${CMAKE_SOURCE_DIR}/src/soplex")
 
 add_custom_target(debug
   COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=Debug ${CMAKE_SOURCE_DIR}

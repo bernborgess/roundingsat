@@ -29,12 +29,16 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#include "soplex/headers/soplex.h"
+#pragma GCC diagnostic pop
 
 class LpSolver {
-public:
-	LpSolver(){}
+  soplex::SoPlex spx;
 
-	void run(){}
+ public:
+  LpSolver() {}
+
+  void run() {}
 };
-
-
