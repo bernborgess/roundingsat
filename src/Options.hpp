@@ -175,7 +175,7 @@ struct Options {
     getOptionNum(opt_val, "prop-idx", [](double x) -> bool { return x == 0 || x == 1; }, idxProp);
     getOptionNum(opt_val, "prop-sup", [](double x) -> bool { return x == 0 || x == 1; }, supProp);
     getOptionNum(opt_val, "eager-ca", [](double x) -> bool { return x == 0 || x == 1; }, eagerCA);
-    getOptionNum(opt_val, "lp",[](double x) -> bool { return x>=-1; }, lpmulti);
+    getOptionNum(opt_val, "lp", [](double x) -> bool { return x >= -1; }, lpmulti);
     getOptionStr(opt_val, "proof-log", proofLogName);
   }
 };

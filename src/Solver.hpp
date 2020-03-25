@@ -43,6 +43,7 @@ enum SolveState { SAT, UNSAT, INCONSISTENT, INTERRUPTED, INPROCESSED, RESTARTED 
 enum WatchStatus { DROPWATCH, KEEPWATCH, CONFLICTING };
 
 class Solver {
+	friend class LpSolver;
   // ---------------------------------------------------------------------
   // Members
  private:
@@ -79,13 +80,13 @@ class Solver {
   bool firstRun = true;
 
   std::shared_ptr<LpSolver> lpSolver;
-  LpSolver& getLP() { return *lpSolver; }
 
  public:
   std::shared_ptr<Logger> logger;
 
   Solver();
   void init();  // call after having read options
+	void initLP(intConstr& objective); // TODO: fix when decoupling Solver and LpSolver
 
   int getNbVars() const { return n; }
   void setNbVars(long long nvars);

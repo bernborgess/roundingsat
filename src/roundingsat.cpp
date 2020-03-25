@@ -80,5 +80,7 @@ int main(int argc, char** argv) {
     parsing::file_read(std::cin, run::solver, run::objective);
   }
 
+	run::solver.initLP(run::objective);
+
   run::run();
 }

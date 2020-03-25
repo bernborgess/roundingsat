@@ -44,6 +44,8 @@ struct Stats {
   double STARTTIME = 0;
   long long NAUXVARS = 0;
 
+  long long NLPCONSTRS = 0;
+
   inline long long getDetTime() const {
     return 1 + NADDEDLITERALS + NWATCHLOOKUPS + NWATCHLOOKUPSBJ + NWATCHCHECKS + NPROPCHECKS + NPROP + NTRAILPOPS +
            NDECIDE;
@@ -82,5 +84,6 @@ struct Stats {
     printf("c propagation checks %lld\n", NPROPCHECKS);
     printf("c constraint additions %lld\n", NADDEDLITERALS);
     printf("c trail pops %lld\n", NTRAILPOPS);
+	  printf("c LP constraints %lld\n", NLPCONSTRS);
   }
 };

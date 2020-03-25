@@ -34,11 +34,45 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "soplex/headers/soplex.h"
 #pragma GCC diagnostic pop
 
+#include "SolverStructs.hpp"
+#include "aux.hpp"
+#include "globals.hpp"
+#include "typedefs.hpp"
+
 class LpSolver {
-  soplex::SoPlex spx;
+  soplex::SoPlex lp;
+  Solver& solver;
+
+  double tolerance = 1e-6; // TODO: add as option
+
+  bool foundLpSolution = false;
+  soplex::DVectorReal lpSolution;
+  soplex::DVectorReal lpSlackSolution;
+  soplex::DVectorReal lpMultipliers;
+  soplex::DVectorReal upperBounds;
+  soplex::DVectorReal lowerBounds;
+  soplex::DSVectorReal lpRow;
+  std::vector<int> datavec;
 
  public:
-  LpSolver() {}
+  LpSolver(Solver& solver, const intConstr& objective);
+
+  void setNbVariables(int n);
 
   void run() {}
+
+ private:
+  void LP_addConstraints();
+  void LP_convertConstraint(CRef cr, soplex::DSVectorReal& row, Val& rhs);
+
+	// NOTE: if b is positive, the comparison is more relaxed. If b is negative, the comparison is more strict.
+	inline bool relaxedLT(double a, double b){ return a <= b*(1+tolerance); }
+// NOTE: if a is negative, the comparison is more relaxed. If a is positive, the comparison is more strict.
+	inline bool strictLT(double a, double b){ return !relaxedLT(b,a); }
+
+	inline double nonIntegrality(double a){ return abs(round(a)-a); }
+	inline bool validCoeff(double a){ return round(a)==a && std::abs(a)<=1e9; }
+	inline bool validRhs(double a){ return round(a)==a && a<=1e15 && a>=-1e15;} // NOTE: double type can only store ranges of integers up to ~9e15
+
+	bool LP_pureCnf();
 };
