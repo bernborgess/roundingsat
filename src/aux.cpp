@@ -40,7 +40,7 @@ std::ostream& operator<<(std::ostream& os, __int128 x) {
   if (x > 0) {
     uint64_t x2 = x % tenPow18;
     x /= tenPow18;
-    if (x > 0) os << (unsigned short)(x % tenPow18);
+    if (x > 0) os << (short)x;
     os << x2;
   }
   return os << x1;

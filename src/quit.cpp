@@ -70,7 +70,6 @@ void quit::exit_INDETERMINATE(const std::vector<bool>& sol, const std::shared_pt
 }
 
 void quit::exit_ERROR(const std::initializer_list<std::string>& messages) {
-  stats.print();
   std::cout << "Error: ";
   for (const std::string& m : messages) std::cout << m;
   std::cout << std::endl;
