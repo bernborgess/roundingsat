@@ -124,7 +124,7 @@ do
     echo "running $i"
     rm $i.proof
     rm $i.formula
-    bzcat /home/jodv/workspace/instances/opt/MIPLIB/miplib2/$i.opb.bz2 | ../roundingsat_debug --proof-log=$i --opt-mode=3 > /dev/null
+    bzcat /home/jodv/workspace/instances/opt/MIPLIB/miplib2/$i.opb.bz2 | ../roundingsat_debug --proof-log=$i --opt-mode=hybrid > /dev/null
     echo "verifying $i"
     wc -l $i.proof
     veripb $i.formula $i.proof -d $1
@@ -137,7 +137,7 @@ do
     echo "running $i"
     rm $i.proof
     rm $i.formula
-    bzcat /home/jodv/workspace/instances/opt/MIPLIB/miplib2/$i.opb.bz2 | ../roundingsat_debug --proof-log=$i --opt-mode=4 > /dev/null
+    bzcat /home/jodv/workspace/instances/opt/MIPLIB/miplib2/$i.opb.bz2 | ../roundingsat_debug --proof-log=$i --opt-mode=lazy-hybrid > /dev/null
     echo "verifying $i"
     wc -l $i.proof
     veripb $i.formula $i.proof -d $1
@@ -150,7 +150,7 @@ do
     echo "running $i"
     rm $i.proof
     rm $i.formula
-    bzcat /home/jodv/workspace/instances/opt/MIPLIB/miplib2/$i.opb.bz2 | ../roundingsat_debug --proof-log=$i --opt-mode=0 > /dev/null
+    bzcat /home/jodv/workspace/instances/opt/MIPLIB/miplib2/$i.opb.bz2 | ../roundingsat_debug --proof-log=$i --opt-mode=linear > /dev/null
     echo "verifying $i"
     wc -l $i.proof
     veripb $i.formula $i.proof -d $1
