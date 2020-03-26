@@ -31,6 +31,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include <cmath>
 #include <cstring>
+#include <iostream>
 #include <unordered_map>
 #include "quit.hpp"
 
@@ -38,7 +39,9 @@ struct Options {
   std::string formulaName;
   std::string proofLogName;
   bool printSol = false;
-  int optMode = 4;
+  enum OPTMODE { LINEAR, COREGUIDED, LAZYCOREGUIDED, HYBRID, LAZYHYBRID };
+  std::vector<std::string> optModeMap = {"linear", "core-guided", "lazy-core-guided", "hybrid", "lazy-hybrid"};
+  OPTMODE optMode = LAZYHYBRID;
 
   int verbosity = 1;
   bool originalRoundToOne = false;
@@ -56,6 +59,15 @@ struct Options {
   float v_vsids_decay = 0.95;
   float c_vsids_decay = 0.999;
 
+  void usageEnum(const std::string& option, const std::string& explanation, const std::vector<std::string>& optMap,
+                 int def) {
+    std::cout << "  --" << option << "=arg ";
+    for (unsigned int i = option.size(); i < 10; ++i) std::cout << " ";
+    std::cout << explanation << ": ";
+    for (std::string s : optMap) std::cout << s << " ";
+    std::cout << "(default " << optMap[def].c_str() << ")\n";
+  }
+
   void usage(char* name) {
     printf("Usage: %s [OPTION] instance.(opb|cnf|wcnf)\n", name);
     printf("\n");
@@ -71,10 +83,7 @@ struct Options {
         "  --original-rto=arg Set whether to use RoundingSat's original round-to-one conflict analysis (0 or 1; "
         "default %d).\n",
         originalRoundToOne);
-    printf(
-        "  --opt-mode=arg   Set optimization mode: 0 linear, 1(2) (lazy) core-guided, 3(4) (lazy) hybrid (default "
-        "%d).\n",
-        optMode);
+    usageEnum("opt-mode", "Set optimization mode", optModeMap, optMode);
     printf(
         "  --prop-counting=arg Counting propagation instead of watched propagation (float between 0 (no counting) and "
         "1 (always counting)); default %lf).\n",
@@ -105,6 +114,20 @@ struct Options {
   void getOptionStr(const std::unordered_map<std::string, std::string>& opt_val, const std::string& option,
                     std::string& val) {
     if (opt_val.count(option)) val = opt_val.at(option);
+  }
+
+  template <typename ENUM>
+  void getOptionEnum(const std::unordered_map<std::string, std::string>& opt_val, const std::string& option, ENUM& val,
+                     const std::vector<std::string>& map) {
+    if (opt_val.count(option)) {
+      std::string s = opt_val.at(option);
+      for (unsigned int i = 0; i < map.size(); ++i)
+        if (map[i] == s) {
+          val = static_cast<ENUM>(i);
+          return;
+        }
+      quit::exit_ERROR({"Invalid value for ", option, ": ", opt_val.at(option), ".\nCheck usage with --help option."});
+    }
   }
 
   void parseCommandLine(int argc, char** argv) {
@@ -138,7 +161,7 @@ struct Options {
     getOptionNum(opt_val, "rinc", [](double x) -> bool { return x >= 1; }, rinc);
     getOptionNum(opt_val, "rfirst", [](double x) -> bool { return x >= 1; }, rfirst);
     getOptionNum(opt_val, "original-rto", [](double x) -> bool { return x == 0 || x == 1; }, originalRoundToOne);
-    getOptionNum(opt_val, "opt-mode", [](double x) -> bool { return x == std::round(x) && 0 <= x && x <= 4; }, optMode);
+    getOptionEnum(opt_val, "opt-mode", optMode, optModeMap);
     getOptionNum(opt_val, "prop-counting", [](double x) -> bool { return x >= 0 || x <= 1; }, countingProp);
     getOptionNum(opt_val, "prop-clause", [](double x) -> bool { return x == 0 || x == 1; }, clauseProp);
     getOptionNum(opt_val, "prop-card", [](double x) -> bool { return x == 0 || x == 1; }, cardProp);

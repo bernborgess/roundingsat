@@ -213,7 +213,8 @@ void handleInconsistency(longConstr& reformObj, const intConstr& origObj,
   assert(mult > 0);
   lower_bound += core.getDegree() * mult;
 
-  if ((options.optMode == 2 || options.optMode == 4) && core.vars.size() - core.getDegree() > 1) {
+  if ((options.optMode == Options::LAZYCOREGUIDED || options.optMode == Options::LAZYHYBRID) &&
+      core.vars.size() - core.getDegree() > 1) {
     // add auxiliary variable
     long long newN = solver.getNbVars() + 1;
     solver.setNbVars(newN);
@@ -283,8 +284,9 @@ void optimize(intConstr& origObj) {
     size_t current_time = stats.getDetTime();
     if (reply != SolveState::INPROCESSED && reply != SolveState::RESTARTED) printObjBounds(lower_bound, upper_bound);
     assumps.reset();
-    if (options.optMode == 1 || options.optMode == 2 ||
-        (options.optMode > 2 && lower_time < upper_time)) {  // use core-guided step
+    if (options.optMode == Options::COREGUIDED || options.optMode == Options::LAZYCOREGUIDED ||
+        ((options.optMode == Options::HYBRID || options.optMode == Options::LAZYHYBRID) &&
+         lower_time < upper_time)) {  // use core-guided step
       reformObj.removeZeroes();
       for (Var v : reformObj.vars) {
         assert(reformObj.getLit(v) != 0);
@@ -309,7 +311,8 @@ void optimize(intConstr& origObj) {
       assert(solution.size() > 0);
       ++stats.NSOLS;
       handleNewSolution(origObj, lastUpperBound);
-      assert((options.optMode != 1 && options.optMode != 2) || lower_bound == upper_bound);
+      assert((options.optMode != Options::COREGUIDED && options.optMode != Options::LAZYCOREGUIDED) ||
+             lower_bound == upper_bound);
     } else if (reply == SolveState::INCONSISTENT) {
       ++stats.NCORES;
       if (core.getSlack(solver.getLevel()) < 0) {
