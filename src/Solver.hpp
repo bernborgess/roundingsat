@@ -82,7 +82,7 @@ class Solver {
   int getNbVars() const { return n; }
   void setNbVars(long long nvars);
   int getNbOrigVars() const { return orig_n; }
-  void setNbOrigVars(int o_n) { orig_n = o_n; }
+  void setNbOrigVars(int o_n);
 
   const IntVecIt& getLevel() const { return Level; }
   const std::vector<int>& getPos() const { return Pos; }

@@ -64,6 +64,11 @@ void Solver::setNbVars(long long nvars) {
   stats.NAUXVARS = n - orig_n;
 }
 
+void Solver::setNbOrigVars(int o_n) {
+  orig_n = o_n;
+  stats.NAUXVARS = n - orig_n;
+}
+
 void Solver::setLogger(std::shared_ptr<Logger> lgr) {
   logger = lgr;
   tmpConstraint.initializeLogging(lgr);
