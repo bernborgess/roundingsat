@@ -99,6 +99,7 @@ struct Constr {  // internal solver constraint optimized for fast propagation
     assert(!isSimple());
     return data[i] < 0;
   }
+  double strength() const;
   void undoFalsified(int i);
   template <class S, class L>
   inline void toConstraint(Constraint<S, L>& out) const {
@@ -153,6 +154,7 @@ struct OrderHeap {  // segment tree (fast implementation of priority queue).
   OrderHeap(std::vector<ActValV>& a) : activity(a) {}
 
   void resize(int newsize);
+  void recalculate();
   void percolateUp(Var x);
   bool empty() const;
   bool inHeap(Var x) const;

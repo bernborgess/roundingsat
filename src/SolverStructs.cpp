@@ -31,6 +31,13 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Options.hpp"
 #include "globals.hpp"
 
+double Constr::strength() const {
+  if (isSimple()) return size() / (double)degree;
+  double coefsum = 0;
+  for (unsigned int i = 0; i < size(); ++i) coefsum += coef(i);
+  return coefsum / (double)degree;
+}
+
 void Constr::undoFalsified(int i) {
   assert(!isSimple());
   assert(isCounting() || isWatched(i));
@@ -106,6 +113,14 @@ void OrderHeap::resize(int newsize) {
   while (!empty()) variables.push_back(removeMax());
   tree.clear();
   while (cap < newsize) cap = cap * options.resize_factor + 1;
+  tree.resize(2 * (cap + 1), -1);
+  for (Var x : variables) insert(x);
+}
+void OrderHeap::recalculate() {  // TODO: more efficient implementation
+  // insert elements in such order that tie breaking remains intact
+  std::vector<Var> variables;
+  while (!empty()) variables.push_back(removeMax());
+  tree.clear();
   tree.resize(2 * (cap + 1), -1);
   for (Var x : variables) insert(x);
 }

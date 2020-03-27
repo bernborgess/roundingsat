@@ -75,6 +75,8 @@ class Solver {
   ActValV v_vsids_inc = 1.0;
   ActValC c_vsids_inc = 1.0;
 
+  bool firstRun = true;
+
  public:
   Solver();
   void setLogger(std::shared_ptr<Logger> lgr);
@@ -109,6 +111,8 @@ class Solver {
   SolveState solve(const IntSet& assumptions, intConstr& core, std::vector<bool>& solution);
 
  private:
+  void presolve();
+
   // ---------------------------------------------------------------------
   // VSIDS
 

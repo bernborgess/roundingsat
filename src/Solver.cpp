@@ -904,6 +904,29 @@ Lit Solver::pickBranchLit() {
   return phase[next];
 }
 
+void Solver::presolve() {
+  firstRun = false;
+
+  // initialize activity and phase based on occurrence of literals in constraints
+  std::vector<double> _vals = {0};
+  std::vector<double>::iterator vals;
+  aux::resizeIntMap(_vals, vals, getNbVars() + 1, options.resize_factor, 0.0);
+  for (CRef cr : constraints) {
+    const Constr& c = ca[cr];
+    double strength = c.strength();
+    for (unsigned int i = 0; i < c.size(); ++i) vals[c.lit(i)] += strength;
+  }
+  ActValV maxAct = 0;
+  for (int v = 1; v <= getNbVars(); ++v) {
+    activity[v] = vals[v] * (ActValV)vals[-v];
+    maxAct = std::max(maxAct, activity[v]);
+    phase[v] = vals[v] > vals[-v] ? v : -v;
+  }
+  order_heap.recalculate();
+  for (int v = 1; v <= getNbVars(); ++v) activity[v] /= 2 * maxAct;
+  v_vsids_inc = 1.0;
+}
+
 /**
  * @return:
  * 	UNSAT if root inconsistency detected
@@ -919,6 +942,7 @@ Lit Solver::pickBranchLit() {
  */
 // TODO: use a coroutine / yield instead of a SolveState return value
 SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector<bool>& solution) {
+  if (firstRun) presolve();
   backjumpTo(0);  // ensures assumptions are reset
   std::vector<int> assumptions_lim = {0};
   assumptions_lim.reserve((int)assumptions.size() + 1);
