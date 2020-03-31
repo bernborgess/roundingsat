@@ -43,7 +43,7 @@ enum SolveState { SAT, UNSAT, INCONSISTENT, INTERRUPTED, INPROCESSED, RESTARTED 
 enum WatchStatus { DROPWATCH, KEEPWATCH, CONFLICTING };
 
 class Solver {
-	friend class LpSolver;
+  friend class LpSolver;
   // ---------------------------------------------------------------------
   // Members
  private:
@@ -85,8 +85,8 @@ class Solver {
   std::shared_ptr<Logger> logger;
 
   Solver();
-  void init();  // call after having read options
-	void initLP(intConstr& objective); // TODO: fix when decoupling Solver and LpSolver
+  void init();                        // call after having read options
+  void initLP(intConstr& objective);  // TODO: fix when decoupling Solver and LpSolver
 
   int getNbVars() const { return n; }
   void setNbVars(long long nvars);
@@ -140,28 +140,21 @@ class Solver {
    * Unit propagation with watched literals.
    * @post: all constraints have been checked for propagation under trail[0..qhead[
    */
-  CRef runPropagation();
+  bool runPropagation();
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p);
 
   // ---------------------------------------------------------------------
   // Conflict analysis
 
   void recomputeLBD(Constr& C);
-  bool analyze(CRef confl);
-  template <class SMALL, class LARGE>
-  LARGE assumpSlack(const IntSet& assumptions, const Constraint<SMALL, LARGE>& core) {
-    LARGE slack = -core.getRhs();
-    for (Var v : core.vars)
-      if (assumptions.has(v) || (!assumptions.has(-v) && core.coefs[v] > 0)) slack += core.coefs[v];
-    return slack;
-  }
-  bool extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit l_assump = 0);
+  bool analyze();
+  bool extractCore(const IntSet& assumptions, intConstr& outCore, Lit l_assump = 0);
 
   // ---------------------------------------------------------------------
   // Constraint management
 
   CRef attachConstraint(intConstr& constraint, ConstraintType type);
-  bool learnConstraint(longConstr& confl);
+  CRef learnConstraint();
   ID addInputConstraint(ConstraintType type);
   void removeConstraint(Constr& C);
 

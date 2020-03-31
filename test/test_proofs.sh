@@ -98,21 +98,23 @@ declare -a arr_opt_lin=(
 #"air02"
 )
 
-i="cnf"
-echo "running $i"
-rm $i.proof
-rm $i.formula
-bzcat /home/jodv/workspace/instances/dec/CNF/even_colouring/ec_rand4regsplit-v030-n1.cnf.bz2 | ../roundingsat_debug --proof-log=$i > /dev/null
-echo "verifying $i"
-wc -l $i.proof
-veripb $i.formula $i.proof -d $1
-echo ""
-
 i="maxsat"
 echo "running $i"
 rm $i.proof
 rm $i.formula
 bzcat /home/jodv/workspace/instances/maxsat/mse19-complete-weighted-benchmarks/planning/driverlog01c.wcsp.dir.wcnf.bz2 | ../roundingsat_debug --proof-log=$i > /dev/null
+echo "verifying $i"
+wc -l $i.proof
+veripb $i.formula $i.proof -d $1
+echo ""
+
+exit 0
+
+i="cnf"
+echo "running $i"
+rm $i.proof
+rm $i.formula
+bzcat /home/jodv/workspace/instances/dec/CNF/even_colouring/ec_rand4regsplit-v030-n1.cnf.bz2 | ../roundingsat_debug --proof-log=$i > /dev/null
 echo "verifying $i"
 wc -l $i.proof
 veripb $i.formula $i.proof -d $1

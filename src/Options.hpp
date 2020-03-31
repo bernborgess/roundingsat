@@ -60,7 +60,7 @@ struct Options {
   float v_vsids_decay = 0.95;
   float c_vsids_decay = 0.999;
 
-	float lpmulti = 0;
+  float lpmulti = 1;
 
   void usageEnum(const std::string& option, const std::string& explanation, const std::vector<std::string>& optMap,
                  int def) {

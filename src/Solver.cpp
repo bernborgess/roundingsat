@@ -77,7 +77,7 @@ void Solver::init() {
 }
 
 void Solver::initLP(intConstr& objective) {
-	if (options.lpmulti != 0) lpSolver = std::make_shared<LpSolver>(*this,objective);
+  if (options.lpmulti != 0) lpSolver = std::make_shared<LpSolver>(*this, objective);
 }
 
 // ---------------------------------------------------------------------
@@ -174,7 +174,7 @@ void Solver::propagate(Lit l, CRef reason) {
  * Unit propagation with watched literals.
  * @post: all watches up to trail[qhead] have been propagated
  */
-CRef Solver::runPropagation() {
+bool Solver::runPropagation() {
   while (qhead < (int)trail.size()) {
     Lit p = trail[qhead++];
     std::vector<Watch>& ws = adj[-p];
@@ -195,11 +195,18 @@ CRef Solver::runPropagation() {
           if (w.idx >= 0 && w.idx % 2 == 0) ca[w.cref].undoFalsified(w.idx);
         }
         --qhead;
-        return cr;
+        Constr& C = ca[cr];
+        if (C.getType() == ConstraintType::LEARNT) {
+          cBumpActivity(C);
+          recomputeLBD(C);
+        }
+        C.toConstraint(conflConstraint);
+        return false;
       }
     }
   }
-  return CRef_Undef;
+  if (lpSolver) return lpSolver->run();
+  return true;
 }
 
 WatchStatus Solver::checkForPropagation(CRef cr, int& idx, Lit p) {
@@ -390,14 +397,8 @@ void Solver::recomputeLBD(Constr& C) {
   tmpSet.reset();
 }
 
-bool Solver::analyze(CRef confl) {
-  Constr& C = ca[confl];
-  if (C.getType() == ConstraintType::LEARNT) {
-    cBumpActivity(C);
-    recomputeLBD(C);
-  }
-
-  C.toConstraint(conflConstraint);
+bool Solver::analyze() {
+  assert(conflConstraint.getSlack(Level) < 0);
   stats.NADDEDLITERALS += conflConstraint.vars.size();
   conflConstraint.removeUnitsAndZeroes(Level, Pos);
   assert(actSet.size() == 0);  // will hold the literals that need their activity bumped
@@ -473,8 +474,8 @@ bool Solver::analyze(CRef confl) {
   return true;
 }
 
-bool Solver::extractCore(const IntSet& assumptions, CRef confl, intConstr& outCore, Lit l_assump) {
-  assert(confl != CRef_Undef);
+bool Solver::extractCore(const IntSet& assumptions, intConstr& outCore, Lit l_assump) {
+  assert(!conflConstraint.isReset());
   outCore.reset();
 
   if (l_assump != 0) {  // l_assump is an assumption propagated to the opposite value
@@ -506,13 +507,12 @@ bool Solver::extractCore(const IntSet& assumptions, CRef confl, intConstr& outCo
   for (Lit l : decisions) decide(l);
   for (Lit l : props) propagate(l, Reason[std::abs(l)]);
 
-  ca[confl].toConstraint(conflConstraint);
   stats.NADDEDLITERALS += conflConstraint.vars.size();
   conflConstraint.removeUnitsAndZeroes(Level, Pos);
   assert(conflConstraint.getSlack(Level) < 0);
 
   // analyze conflict
-  Val assumpslk = assumpSlack(assumptions, conflConstraint);
+  Val assumpslk = conflConstraint.getSlack(assumptions);
   while (assumpslk >= 0) {
     if (asynch_interrupt) return false;
     Lit l = trail.back();
@@ -541,7 +541,7 @@ bool Solver::extractCore(const IntSet& assumptions, CRef confl, intConstr& outCo
       tmpConstraint.reset();
       assert(conflConstraint.getCoef(-l) == 0);
       assert(conflConstraint.getSlack(Level) < 0);
-      assumpslk = assumpSlack(assumptions, conflConstraint);
+      assumpslk = conflConstraint.getSlack(assumptions);
     }
     assert(decisionLevel() == (int)decisions.size());
     undoOne();
@@ -556,7 +556,7 @@ bool Solver::extractCore(const IntSet& assumptions, CRef confl, intConstr& outCo
   for (Var v : outCore.vars)
     if (!assumptions.has(-outCore.getLit(v))) outCore.weaken(-outCore.coefs[v], v);
   outCore.postProcess(Level, Pos, true, stats);
-  assert(assumpSlack(assumptions, outCore) < 0);
+  assert(outCore.getSlack(assumptions) < 0);
   backjumpTo(0);
   return true;
 }
@@ -570,6 +570,7 @@ CRef Solver::attachConstraint(intConstr& constraint, ConstraintType type) {
   assert(constraint.hasNoZeroes());
   assert(constraint.hasNoUnits(Level));
   assert(constraint.getDegree() > 0);
+  assert(constraint.getDegree() < INF);
   assert(constraint.vars.size() > 0);
 
   if (logger) constraint.logProofLine("a", stats);
@@ -690,11 +691,8 @@ CRef Solver::attachConstraint(intConstr& constraint, ConstraintType type) {
   return cr;
 }
 
-bool Solver::learnConstraint(longConstr& confl) {
-  assert(confl.getDegree() > 0);
-  assert(confl.getDegree() < INF);
-  assert(confl.isSaturated());
-  confl.copyTo(tmpConstraint);
+// NOTE: backjumps to place where the constraint is not conflicting, as otherwise we might miss propagations
+CRef Solver::learnConstraint() {
   assert(tmpConstraint.hasNoUnits(Level));
   tmpConstraint.removeZeroes();
   tmpConstraint.sortInDecreasingCoefOrder();
@@ -703,9 +701,8 @@ bool Solver::learnConstraint(longConstr& confl) {
     assert(decisionLevel() == 0);
     assert(tmpConstraint.getSlack(Level) < 0);
     if (logger) tmpConstraint.logInconsistency(Level, Pos, stats);
-    return false;
+    return CRef_Unsat;
   }
-  assert(assertionLevel < decisionLevel());
   backjumpTo(assertionLevel);
   assert(qhead == (int)trail.size());  // jumped back sufficiently far to catch up with qhead
   Val slk = tmpConstraint.getSlack(Level);
@@ -718,7 +715,7 @@ bool Solver::learnConstraint(longConstr& confl) {
   tmpConstraint.reset();
   Constr& C = ca[cr];
   recomputeLBD(C);
-  return true;
+  return cr;
 }
 
 ID Solver::addInputConstraint(ConstraintType type) {
@@ -736,13 +733,12 @@ ID Solver::addInputConstraint(ConstraintType type) {
   }
 
   CRef cr = attachConstraint(tmpConstraint, type);
-  CRef confl = runPropagation();
-  if (confl != CRef_Undef) {
+  bool allClear = runPropagation();
+  if (!allClear) {
     puts("c Input conflict");
     if (logger) {
-      ca[confl].toConstraint(logConstraint);
-      logConstraint.logInconsistency(Level, Pos, stats);
-      logConstraint.reset();
+      conflConstraint.logInconsistency(Level, Pos, stats);
+      conflConstraint.reset();
     }
     assert(decisionLevel() == 0);
     return ID_Unsat;
@@ -952,45 +948,44 @@ SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector
   assumptions_lim.reserve((int)assumptions.size() + 1);
   while (true) {
     if (asynch_interrupt) return SolveState::INTERRUPTED;
-    CRef confl = runPropagation();
-    if (confl != CRef_Undef) {
-      if (decisionLevel() == 0) {
-        if (logger) {
-          ca[confl].toConstraint(logConstraint);
-          logConstraint.logInconsistency(Level, Pos, stats);
-          logConstraint.reset();
-        }
-        return SolveState::UNSAT;
-      }
+    assert(conflConstraint.isReset());
+    bool allClear = runPropagation();
+    if (!allClear) {
+      assert(!conflConstraint.isReset());
       vDecayActivity();
       cDecayActivity();
       stats.NCONFL++;
       nconfl_to_restart--;
-      if (stats.NCONFL % 1000 == 0) {
-        if (options.verbosity > 0) {
-          printf("c #Conflicts: %10lld | #Constraints: %10lld\n", stats.NCONFL, (long long)constraints.size());
-          if (options.verbosity > 2) {
-            // memory usage
-            std::cout << "c total constraint space: " << ca.cap * 4 / 1024. / 1024. << "MB" << std::endl;
-            std::cout << "c total #watches: ";
-            {
-              long long cnt = 0;
-              for (Lit l = -n; l <= n; l++) cnt += (long long)adj[l].size();
-              std::cout << cnt << std::endl;
-            }
-          }
+      if (stats.NCONFL % 1000 == 0 && options.verbosity > 0) {
+        printf("c #Conflicts: %10lld | #Constraints: %10lld\n", stats.NCONFL, (long long)constraints.size());
+        if (options.verbosity > 2) {
+          // memory usage
+          std::cout << "c total constraint space: " << ca.cap * 4 / 1024. / 1024. << "MB" << std::endl;
+          std::cout << "c total #watches: ";
+          long long cnt = 0;
+          for (Lit l = -n; l <= n; l++) cnt += (long long)adj[l].size();
+          std::cout << cnt << std::endl;
         }
       }
-
-      if (decisionLevel() >= (int)assumptions_lim.size()) {
-        if (!analyze(confl)) return SolveState::INTERRUPTED;
-        if (!learnConstraint(conflConstraint)) return SolveState::UNSAT;
+      if (decisionLevel() == 0) {
+        if (logger) {
+          conflConstraint.logInconsistency(Level, Pos, stats);
+          conflConstraint.reset();
+        }
+        return SolveState::UNSAT;
+      } else if (decisionLevel() >= (int)assumptions_lim.size()) {
+        if (!analyze()) return SolveState::INTERRUPTED;
+        assert(conflConstraint.getDegree() > 0);
+        assert(conflConstraint.getDegree() < INF);
+        assert(conflConstraint.isSaturated());
+        conflConstraint.copyTo(tmpConstraint);
+        if (learnConstraint() == CRef_Unsat) return SolveState::UNSAT;
         conflConstraint.reset();
       } else {
-        if (!extractCore(assumptions, confl, core)) return SolveState::INTERRUPTED;
+        if (!extractCore(assumptions, core)) return SolveState::INTERRUPTED;
         return SolveState::INCONSISTENT;
       }
-    } else {
+    } else {  // no conflict
       if (nconfl_to_restart <= 0) {
         backjumpTo(0);
         if (stats.NCONFL >= (stats.NCLEANUP + 1) * nbconstrsbeforereduce) {
@@ -1011,8 +1006,10 @@ SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector
           if (assumptions.has(-l)) {  // found conflicting assumption
             if (isUnit(Level, l))
               backjumpTo(0), core.reset();  // negated assumption is unit
-            else if (!extractCore(assumptions, Reason[std::abs(l)], core, -l))
-              return SolveState::INTERRUPTED;
+            else {
+              ca[Reason[std::abs(l)]].toConstraint(conflConstraint);
+              if (!extractCore(assumptions, core, -l)) return SolveState::INTERRUPTED;
+            }
             return SolveState::INCONSISTENT;
           }
         }

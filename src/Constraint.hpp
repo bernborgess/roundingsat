@@ -32,6 +32,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <algorithm>
 #include <memory>
 #include <sstream>
+#include "IntSet.hpp"
 #include "Logger.hpp"
 #include "Stats.hpp"
 #include "aux.hpp"
@@ -68,6 +69,8 @@ struct Constraint {
 
   void resetBuffer(ID proofID) {
     assert(plogger);
+    assert(proofID != ID_Undef);
+    assert(proofID != ID_Unsat);
     proofBuffer.clear();
     proofBuffer.str(std::string());
     proofBuffer << proofID << " ";
@@ -79,7 +82,9 @@ struct Constraint {
   }
   template <class T>
   inline static std::string proofMult(T mult) {
-    return (mult == 1 ? "" : std::to_string(mult) + " * ");
+    std::stringstream ss;
+    if (mult != 1) ss << mult << " * ";
+    return ss.str();
   }
 
   bool isReset() const { return vars.size() == 0 && rhs == 0; }
@@ -127,6 +132,12 @@ struct Constraint {
     LARGE slack = -rhs;
     for (Var v : vars)
       if (isTrue(level, v) || (!isFalse(level, v) && coefs[v] > 0)) slack += coefs[v];
+    return slack;
+  }
+  LARGE getSlack(const IntSet& assumptions) const {
+    LARGE slack = -rhs;
+    for (Var v : vars)
+      if (assumptions.has(v) || (!assumptions.has(-v) && coefs[v] > 0)) slack += coefs[v];
     return slack;
   }
 
@@ -303,7 +314,7 @@ struct Constraint {
       saturate(c.vars);  // only saturate changed vars
     if (getDegree() >= (LARGE)INF) {
       removeZeroes();
-      roundToOne(level, aux::ceildiv<LARGE>(getDegree(), 1e9), partial);
+      roundToOne(level, aux::ceildiv<LARGE>(getDegree(), INF - 1), partial);
     }
     assert(getDegree() < (LARGE)INF);
     assert(isSaturated());
@@ -429,7 +440,6 @@ struct Constraint {
 
   // @return: earliest decision level that propagates a variable
   int getAssertionLevel(const IntVecIt& level, const std::vector<int>& pos) const {
-    assert(getSlack(level) < 0);
     assert(hasNoZeroes());
     assert(isSortedInDecreasingCoefOrder());
     assert(hasNoUnits(level));
@@ -458,9 +468,9 @@ struct Constraint {
         slack -= std::abs(coefs[std::abs(*posIt)]);
         ++posIt;
       }
-      assert(slack >= 0);
-      while (assertionLevel >= level[getLit(*coefIt)]) ++coefIt;
-      assert(coefIt != vars.cend());
+      assert(slack >= 0);  // NOTE: currently no use case where a falsified constraint is not asserting on some level
+      while (coefIt != vars.cend() && assertionLevel >= level[getLit(*coefIt)]) ++coefIt;
+      if (coefIt == vars.cend()) return INF;  // no assertion level
       if (slack < std::abs(coefs[*coefIt])) return assertionLevel;
       assert(posIt != litsByPos.cend());
       assertionLevel = level[*posIt];
@@ -681,3 +691,4 @@ std::ostream& operator<<(std::ostream& o, Constraint<S, L>& C) {
 
 using intConstr = Constraint<int, long long>;
 using longConstr = Constraint<long long, __int128>;
+using int128Constr = Constraint<__int128, __int128>;

@@ -43,7 +43,8 @@ using Lit = int;
 using Coef = int;
 using Val = long long;
 
-const Coef INF = 1e9 + 1;
+const Coef INF = 1e9 + 1;       // based on max value of int that still allows addition of two ints
+const Val INF_long = 1e15 + 1;  // based on max long range captured by double
 
 using IntVecIt = std::vector<int>::iterator;
 

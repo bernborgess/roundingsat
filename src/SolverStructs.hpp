@@ -41,7 +41,7 @@ struct CRef {
   std::ostream& operator<<(std::ostream& os) { return os << ofs; }
 };
 const CRef CRef_Undef = {std::numeric_limits<uint32_t>::max()};
-const CRef CRef_Unsat = {std::numeric_limits<uint32_t>::max()-1}; // TODO: needed?
+const CRef CRef_Unsat = {std::numeric_limits<uint32_t>::max() - 1};  // TODO: needed?
 
 struct Watch {
   CRef cref;

@@ -43,7 +43,8 @@ class LpSolver {
   soplex::SoPlex lp;
   Solver& solver;
 
-  double tolerance = 1e-6; // TODO: add as option
+  constexpr static double tolerance = 1e-6;  // TODO: add as option
+  constexpr static double INFTY = 1e100;
 
   bool foundLpSolution = false;
   soplex::DVectorReal lpSolution;
@@ -52,27 +53,41 @@ class LpSolver {
   soplex::DVectorReal upperBounds;
   soplex::DVectorReal lowerBounds;
   soplex::DSVectorReal lpRow;
-  std::vector<int> datavec;
+
+  std::vector<std::pair<ID, ID>> row2ids;  // lower bound id and upper bound id
+
+  int128Constr lcc;
+  intConstr ic;
+  // NOTE: 2^59 is the maximum possible, given the 64 bits needed for other calculations
+  constexpr static long long maxMult =
+      576460752303423488;  // 2^50: 1125899906842624 | 2^55: 36028797018963968 | 2^59: 576460752303423488
 
  public:
   LpSolver(Solver& solver, const intConstr& objective);
 
   void setNbVariables(int n);
+  int getNbVariables() const;
 
-  void run() {}
+  bool run();
 
  private:
-  void LP_addConstraints();
+  void LP_addConstraints();  // TODO: remove "LP_" in method names
   void LP_convertConstraint(CRef cr, soplex::DSVectorReal& row, Val& rhs);
+  void LP_resetBasis();
+  void createLinearCombinationFarkas(soplex::DVectorReal& mults);
+  double getScaleFactor(soplex::DVectorReal& mults);
+  bool rowToConstraint(int row, bool negated);
 
-	// NOTE: if b is positive, the comparison is more relaxed. If b is negative, the comparison is more strict.
-	inline bool relaxedLT(double a, double b){ return a <= b*(1+tolerance); }
-// NOTE: if a is negative, the comparison is more relaxed. If a is positive, the comparison is more strict.
-	inline bool strictLT(double a, double b){ return !relaxedLT(b,a); }
+  // NOTE: if b is positive, the comparison is more relaxed. If b is negative, the comparison is more strict.
+  inline static bool relaxedLT(double a, double b) { return a <= b * (1 + tolerance); }
+  // NOTE: if a is negative, the comparison is more relaxed. If a is positive, the comparison is more strict.
+  inline static bool strictLT(double a, double b) { return !relaxedLT(b, a); }
 
-	inline double nonIntegrality(double a){ return abs(round(a)-a); }
-	inline bool validCoeff(double a){ return round(a)==a && std::abs(a)<=1e9; }
-	inline bool validRhs(double a){ return round(a)==a && a<=1e15 && a>=-1e15;} // NOTE: double type can only store ranges of integers up to ~9e15
+  inline static double nonIntegrality(double a) { return abs(round(a) - a); }
+  inline static bool validCoeff(double a) { return round(a) == a && std::abs(a) < INF; }
+  inline static bool validRhs(double a) {
+    return round(a) == a && a < INF_long && a > -INF_long;
+  }  // NOTE: double type can only store ranges of integers up to ~9e15
 
-	bool LP_pureCnf();
+  bool LP_pureCnf();
 };
