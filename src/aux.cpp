@@ -30,20 +30,9 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "aux.hpp"
 
 std::ostream& operator<<(std::ostream& os, __int128 x) {
-  if (x < 0) {
-    os << "-";
-    x = -x;
-  }
-  uint64_t tenPow18 = 1000000000000000000;
-  uint64_t x1 = x % tenPow18;
-  x /= tenPow18;
-  if (x > 0) {
-    uint64_t x2 = x % tenPow18;
-    x /= tenPow18;
-    if (x > 0) os << (short)x;
-    os << x2;
-  }
-  return os << x1;
+  if (x < 0) return os << "-" << -x;
+  if (x < 10) return os << (char)(x + '0');
+  return os << x / 10 << (char)(x % 10 + '0');
 }
 
 unsigned int aux::gcd(unsigned int u, unsigned int v) {

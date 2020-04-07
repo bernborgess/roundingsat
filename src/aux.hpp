@@ -32,9 +32,9 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <sys/resource.h>
 #include <algorithm>
 #include <cassert>
+#include <iostream>
 #include <limits>
 #include <numeric>
-#include <ostream>
 #include <unordered_map>
 #include <vector>
 
@@ -79,6 +79,30 @@ class numeric_limits<__int128> {
 };
 }  // namespace std
 #endif
+
+template <typename T>
+T str2num(const std::string&& description) {
+  T result = 0;
+  for (unsigned int i = 0; i < description.size(); ++i) {
+    result *= 10;
+    result += (int)(description[i] - '0');
+  }
+  return result;
+}
+
+template <typename T>
+std::string num2str(T x) {
+  if (x < 0) return "-" + num2str(-x);
+  if (x == 0) return "0";
+  std::string result = "";
+  result.reserve(10);
+  while (x > 0) {
+    result.push_back(((int)(x % 10)) + '0');
+    x /= 10;
+  }
+  reverse(result.begin(), result.end());
+  return result;
+}
 
 template <class T>
 inline void swapErase(T& indexable, size_t index) {

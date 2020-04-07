@@ -118,7 +118,7 @@ class Solver {
   SolveState solve(const IntSet& assumptions, intConstr& core, std::vector<bool>& solution);
 
  private:
-  void presolve();
+  bool presolve();
 
   // ---------------------------------------------------------------------
   // VSIDS
@@ -139,8 +139,9 @@ class Solver {
   /**
    * Unit propagation with watched literals.
    * @post: all constraints have been checked for propagation under trail[0..qhead[
+   * @return: true if inconsistency is detected, false otherwise. The inconsistency is stored in conflConstraint.
    */
-  bool runPropagation();
+  bool runPropagation(bool onlyUnitPropagation = false);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p);
 
   // ---------------------------------------------------------------------

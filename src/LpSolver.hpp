@@ -68,7 +68,10 @@ class LpSolver {
   void setNbVariables(int n);
   int getNbVariables() const;
 
-  bool run();
+  // @return: false if inconsistency detected, true otherwise
+  bool checkFeasibility(bool inProcessing = false);
+  // @return: false if inconsistency detected, true otherwise
+  bool inProcess();
 
  private:
   void LP_addConstraints();  // TODO: remove "LP_" in method names

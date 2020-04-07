@@ -105,10 +105,10 @@ rm $i.formula
 bzcat /home/jodv/workspace/instances/maxsat/mse19-complete-weighted-benchmarks/planning/driverlog01c.wcsp.dir.wcnf.bz2 | ../roundingsat_debug --proof-log=$i > /dev/null
 echo "verifying $i"
 wc -l $i.proof
-veripb $i.formula $i.proof -d $1
+veripb $i.formula $i.proof -d --arbitraryPrecision $1
 echo ""
 
-exit 0
+# exit 0
 
 i="cnf"
 echo "running $i"
@@ -117,32 +117,19 @@ rm $i.formula
 bzcat /home/jodv/workspace/instances/dec/CNF/even_colouring/ec_rand4regsplit-v030-n1.cnf.bz2 | ../roundingsat_debug --proof-log=$i > /dev/null
 echo "verifying $i"
 wc -l $i.proof
-veripb $i.formula $i.proof -d $1
+veripb $i.formula $i.proof -d --arbitraryPrecision $1
 echo ""
 
-echo "*** HYBRID COREGUIDED OPTIMIZATION ***"
-for i in "${arr_opt_cg[@]}"
+echo "*** DECISION ***"
+for i in "${arr_dec[@]}"
 do
     echo "running $i"
     rm $i.proof
     rm $i.formula
-    bzcat /home/jodv/workspace/instances/opt/MIPLIB/miplib2/$i.opb.bz2 | ../roundingsat_debug --proof-log=$i --opt-mode=hybrid > /dev/null
+    bzcat /home/jodv/workspace/instances/dec/MIPLIB/miplib2/$i.0.u.opb.bz2 | ../roundingsat_debug --proof-log=$i > /dev/null
     echo "verifying $i"
     wc -l $i.proof
-    veripb $i.formula $i.proof -d $1
-    echo ""
-done
-
-echo "*** HYBRID LAZY COREGUIDED OPTIMIZATION ***"
-for i in "${arr_opt_cg_lazy[@]}"
-do
-    echo "running $i"
-    rm $i.proof
-    rm $i.formula
-    bzcat /home/jodv/workspace/instances/opt/MIPLIB/miplib2/$i.opb.bz2 | ../roundingsat_debug --proof-log=$i --opt-mode=lazy-hybrid > /dev/null
-    echo "verifying $i"
-    wc -l $i.proof
-    veripb $i.formula $i.proof -d $1
+    veripb $i.formula $i.proof -d --arbitraryPrecision $1
     echo ""
 done
 
@@ -155,21 +142,38 @@ do
     bzcat /home/jodv/workspace/instances/opt/MIPLIB/miplib2/$i.opb.bz2 | ../roundingsat_debug --proof-log=$i --opt-mode=linear > /dev/null
     echo "verifying $i"
     wc -l $i.proof
-    veripb $i.formula $i.proof -d $1
+    veripb $i.formula $i.proof -d --arbitraryPrecision $1
     echo ""
 done
 
-echo "*** DECISION ***"
-for i in "${arr_dec[@]}"
+echo "*** HYBRID COREGUIDED OPTIMIZATION ***"
+for i in "${arr_opt_cg[@]}"
 do
     echo "running $i"
     rm $i.proof
     rm $i.formula
-    bzcat /home/jodv/workspace/instances/dec/MIPLIB/miplib2/$i.0.u.opb.bz2 | ../roundingsat_debug --proof-log=$i > /dev/null
+    bzcat /home/jodv/workspace/instances/opt/MIPLIB/miplib2/$i.opb.bz2 | ../roundingsat_debug --proof-log=$i --opt-mode=hybrid > /dev/null
     echo "verifying $i"
     wc -l $i.proof
-    veripb $i.formula $i.proof -d $1
+    veripb $i.formula $i.proof -d --arbitraryPrecision $1
     echo ""
 done
+
+echo "*** HYBRID LAZY COREGUIDED OPTIMIZATION ***"
+for i in "${arr_opt_cg_lazy[@]}"
+do
+    echo "running $i"
+    rm $i.proof
+    rm $i.formula
+    bzcat /home/jodv/workspace/instances/opt/MIPLIB/miplib2/$i.opb.bz2 | ../roundingsat_debug --proof-log=$i --opt-mode=lazy-hybrid > /dev/null
+    echo "verifying $i"
+    wc -l $i.proof
+    veripb $i.formula $i.proof -d --arbitraryPrecision $1
+    echo ""
+done
+
+
+
+
 
 

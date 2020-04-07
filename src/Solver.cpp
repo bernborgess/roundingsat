@@ -174,7 +174,7 @@ void Solver::propagate(Lit l, CRef reason) {
  * Unit propagation with watched literals.
  * @post: all watches up to trail[qhead] have been propagated
  */
-bool Solver::runPropagation() {
+bool Solver::runPropagation(bool onlyUnitPropagation) {
   while (qhead < (int)trail.size()) {
     Lit p = trail[qhead++];
     std::vector<Watch>& ws = adj[-p];
@@ -205,7 +205,8 @@ bool Solver::runPropagation() {
       }
     }
   }
-  if (lpSolver) return lpSolver->run();
+  if (onlyUnitPropagation) return true;
+  if (lpSolver) return lpSolver->checkFeasibility();
   return true;
 }
 
@@ -733,7 +734,7 @@ ID Solver::addInputConstraint(ConstraintType type) {
   }
 
   CRef cr = attachConstraint(tmpConstraint, type);
-  bool allClear = runPropagation();
+  bool allClear = runPropagation(true);
   if (!allClear) {
     puts("c Input conflict");
     if (logger) {
@@ -904,27 +905,11 @@ Lit Solver::pickBranchLit() {
   return phase[next];
 }
 
-void Solver::presolve() {
+bool Solver::presolve() {
   firstRun = false;
 
-  // initialize activity and phase based on occurrence of literals in constraints
-  std::vector<double> _vals = {0};
-  std::vector<double>::iterator vals;
-  aux::resizeIntMap(_vals, vals, getNbVars() + 1, options.resize_factor, 0.0);
-  for (CRef cr : constraints) {
-    const Constr& c = ca[cr];
-    double strength = c.strength();
-    for (unsigned int i = 0; i < c.size(); ++i) vals[c.lit(i)] += strength;
-  }
-  ActValV maxAct = 0;
-  for (int v = 1; v <= getNbVars(); ++v) {
-    activity[v] = vals[v] * (ActValV)vals[-v];
-    maxAct = std::max(maxAct, activity[v]);
-    phase[v] = vals[v] > vals[-v] ? v : -v;
-  }
-  order_heap.recalculate();
-  for (int v = 1; v <= getNbVars(); ++v) activity[v] /= 2 * maxAct;
-  v_vsids_inc = 1.0;
+  if (lpSolver) return lpSolver->inProcess();
+  return true;
 }
 
 /**
@@ -942,8 +927,16 @@ void Solver::presolve() {
  */
 // TODO: use a coroutine / yield instead of a SolveState return value
 SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector<bool>& solution) {
-  if (firstRun) presolve();
   backjumpTo(0);  // ensures assumptions are reset
+  if (firstRun) {
+    if (!presolve()) {
+      if (logger) {
+        conflConstraint.logInconsistency(Level, Pos, stats);
+        conflConstraint.reset();
+      }
+      return SolveState::UNSAT;
+    }
+  }
   std::vector<int> assumptions_lim = {0};
   assumptions_lim.reserve((int)assumptions.size() + 1);
   while (true) {
@@ -990,6 +983,15 @@ SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector
         backjumpTo(0);
         if (stats.NCONFL >= (stats.NCLEANUP + 1) * nbconstrsbeforereduce) {
           ++stats.NCLEANUP;
+          if (lpSolver) {
+            if (!lpSolver->inProcess()) {
+              if (logger) {
+                conflConstraint.logInconsistency(Level, Pos, stats);
+                conflConstraint.reset();
+              }
+              return SolveState::UNSAT;
+            }
+          }
           reduceDB();
           while (stats.NCONFL >= stats.NCLEANUP * nbconstrsbeforereduce) nbconstrsbeforereduce += options.incReduceDB;
           return SolveState::INPROCESSED;

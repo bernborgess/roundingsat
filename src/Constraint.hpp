@@ -284,6 +284,7 @@ struct Constraint {
     assert(!saturateAndReduce || isSaturated());
     assert(c._unused_() <= _unused_());  // don't add large stuff into small stuff
     assert(cmult >= 0);
+    assert(thismult >= 0);
     if (plogger) proofBuffer << proofMult(thismult) << c.proofBuffer.str() << proofMult(cmult) << "+ ";
     if (thismult != 1) {
       degree = thismult * getDegree();
@@ -608,7 +609,12 @@ struct Constraint {
     resetBuffer(++plogger->last_proofID);  // ensure consistent proofBuffer
   }
 
-  void logProofLine(std::string info, Stats& sts) {
+  void logCommentLine(std::string&& info, const Stats& sts) {
+    assert(plogger);
+    plogger->proof_out << "* " << sts.getDetTime() << " " << info << "\n";
+  }
+
+  void logProofLine(std::string&& info, const Stats& sts) {
     assert(plogger);
     _unused(info);
     _unused(sts);
@@ -622,7 +628,7 @@ struct Constraint {
   }
 
   // @pre: reducible to unit over v
-  void logUnit(const IntVecIt& level, const std::vector<int>& pos, Var v_unit, Stats& sts) {
+  void logUnit(const IntVecIt& level, const std::vector<int>& pos, Var v_unit, const Stats& sts) {
     assert(plogger);
     // reduce to unit over v
     removeUnitsAndZeroes(level, pos);
@@ -644,7 +650,7 @@ struct Constraint {
     plogger->unitIDs.push_back(plogger->last_proofID);
   }
 
-  void logInconsistency(const IntVecIt& level, const std::vector<int>& pos, Stats& sts) {
+  void logInconsistency(const IntVecIt& level, const std::vector<int>& pos, const Stats& sts) {
     assert(plogger);
     removeUnitsAndZeroes(level, pos);
     logProofLine("i", sts);
