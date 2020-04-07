@@ -130,7 +130,7 @@ double LpSolver::getScaleFactor(soplex::DVectorReal& mults) {
   assert(maxMult / largestV <= max128);
   for (int i = 0; i < mults.dim(); ++i) {
     // TODO: check opposite construction of Farkas constraint, inverting in case multiplier>0
-    if (isnan(mults[i]) || (mults[i] < 0 && lp.rhsReal(i) == INFTY) || (mults[i] > 0 && lp.lhsReal(i) == -INFTY))
+    if (std::isnan(mults[i]) || (mults[i] < 0 && lp.rhsReal(i) == INFTY) || (mults[i] > 0 && lp.lhsReal(i) == -INFTY))
       mults[i] = 0;  // TODO: report NaN to Ambros?
     if (mults[i] != 0) {
       ++nbMults;
