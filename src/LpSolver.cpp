@@ -192,7 +192,7 @@ bool LpSolver::checkFeasibility(bool inProcessing) {
 
   // Run the LP
   soplex::SPxSolver::Status stat;
-	stat = lp.optimize();
+  stat = lp.optimize();
   ++stats.NLPCALLS;
   stats.NLPPIVOTS += lp.numIterations();
   stats.LPSOLVETIME += lp.solveTime();
