@@ -97,9 +97,10 @@ class Solver {
   const std::vector<int>& getPos() const { return Pos; }
   int decisionLevel() const { return trail_lim.size(); }
 
-  ID addConstraint(const intConstr& c, ConstraintType type);
-  ID addConstraint(const std::vector<Coef>& coefs, const std::vector<Lit>& lits, const Val rhs, ConstraintType type);
-  void dropExternal(ID id, bool forceDelete);
+  ID addConstraint(const intConstr& c, ConstraintType type, bool addToLP);
+  ID addConstraint(const std::vector<Coef>& coefs, const std::vector<Lit>& lits, const Val rhs, ConstraintType type,
+                   bool addToLP);
+  void dropExternal(ID id, bool forceDelete, bool removeFromLP);
   int getNbConstraints() const { return constraints.size(); }
   void getIthConstraint(int i, intConstr& out) const { return ca[constraints[i]].toConstraint(out); }
 
@@ -156,7 +157,7 @@ class Solver {
 
   CRef attachConstraint(intConstr& constraint, ConstraintType type);
   CRef learnConstraint();
-  ID addInputConstraint(ConstraintType type);
+  ID addInputConstraint(ConstraintType type, bool addToLP);
   void removeConstraint(Constr& C);
 
   // ---------------------------------------------------------------------

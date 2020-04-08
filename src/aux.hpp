@@ -36,6 +36,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <limits>
 #include <numeric>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #define _unused(x) ((void)(x))  // marks variables unused in release mode

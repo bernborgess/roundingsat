@@ -44,14 +44,15 @@ struct Stats {
   double STARTTIME = 0;
   long long NAUXVARS = 0;
 
-  long long NLPCONSTRS = 0, NLPPIVOTS = 0, NLPNOPIVOT = 0, NLPRESETBASIS = 0;
+  long long NLPADDEDROWS = 0, NLPDELETEDROWS = 0;
+  long long NLPPIVOTSINTERNAL = 0, NLPPIVOTSEXTERNAL = 0, NLPNOPIVOT = 0, NLPRESETBASIS = 0;
   double LPSOLVETIME = 0;
   long long NLPCALLS = 0, NLPOPTIMAL = 0, NLPINFEAS = 0, NLPFARKAS = 0;
   long long NLPCYCLING = 0, NLPNOPRIMAL = 0, NLPNOFARKAS = 0, NLPSINGULAR = 0, NLPOTHER = 0;
 
   inline long long getDetTime() const {
     return 1 + NADDEDLITERALS + NWATCHLOOKUPS + NWATCHLOOKUPSBJ + NWATCHCHECKS + NPROPCHECKS + NPROP + NTRAILPOPS +
-           NDECIDE;
+           NDECIDE + NLPPIVOTSEXTERNAL + NLPPIVOTSINTERNAL;
   }
 
   void print() const {
@@ -88,16 +89,17 @@ struct Stats {
     printf("c constraint additions %lld\n", NADDEDLITERALS);
     printf("c trail pops %lld\n", NTRAILPOPS);
     printf("c LP solve time %g s\n", LPSOLVETIME);
-    printf("c LP constraints %lld\n", NLPCONSTRS);
-    printf("c LP pivots %lld\n", NLPPIVOTS);
+    printf("c LP constraints added %lld\n", NLPADDEDROWS);
+    printf("c LP constraints removed %lld\n", NLPDELETEDROWS);
+    printf("c LP pivots %lld\n", NLPPIVOTSINTERNAL + NLPPIVOTSEXTERNAL);
     printf("c LP calls %lld\n", NLPCALLS);
     printf("c LP optimalities %lld\n", NLPOPTIMAL);
+    printf("c LP no pivot count %lld\n", NLPNOPIVOT);
     printf("c LP infeasibilities %lld\n", NLPINFEAS);
     printf("c LP valid Farkas constraints %lld\n", NLPFARKAS);
     printf("c LP basis resets %lld\n", NLPRESETBASIS);
     printf("c LP cycling count %lld\n", NLPCYCLING);
     printf("c LP singular count %lld\n", NLPSINGULAR);
-    printf("c LP no pivot count %lld\n", NLPNOPIVOT);
     printf("c LP no primal count %lld\n", NLPNOPRIMAL);
     printf("c LP no farkas count %lld\n", NLPNOFARKAS);
     printf("c LP other issue count %lld\n", NLPOTHER);

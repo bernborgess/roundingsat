@@ -51,67 +51,64 @@ void opb_read(std::istream& in, Solver& solver, intConstr& objective) {
   bool first_constraint = true;
   _unused(first_constraint);
   for (std::string line; getline(in, line);) {
-    if (line.empty())
-      continue;
-    else if (line[0] == '*')
-      continue;
+    if (line.empty() || line[0] == '*') continue;
+    for (char& c : line)
+      if (c == ';') c = ' ';
+    bool opt_line = line.substr(0, 4) == "min:";
+    std::string line0;
+    if (opt_line)
+      line = line.substr(4), assert(first_constraint);
     else {
-      for (char& c : line)
-        if (c == ';') c = ' ';
-      bool opt_line = line.substr(0, 4) == "min:";
-      std::string line0;
-      if (opt_line)
-        line = line.substr(4), assert(first_constraint);
-      else {
-        std::string symbol;
-        if (line.find(">=") != std::string::npos)
-          symbol = ">=";
-        else
-          symbol = "=";
-        assert(line.find(symbol) != std::string::npos);
-        line0 = line;
-        line = line.substr(0, line.find(symbol));
-      }
-      first_constraint = false;
-      std::istringstream is(line);
-      input.reset();
-      std::vector<std::string> tokens;
-      std::string tmp;
-      while (is >> tmp) tokens.push_back(tmp);
-      if (tokens.size() % 2 != 0) quit::exit_ERROR({"No support for non-linear constraints."});
-      for (int i = 0; i < (long long)tokens.size(); i += 2)
-        if (find(tokens[i].begin(), tokens[i].end(), 'x') != tokens[i].end())
-          quit::exit_ERROR({"No support for non-linear constraints."});
-      for (int i = 0; i < (long long)tokens.size(); i += 2) {
-        std::string scoef = tokens[i];
-        std::string var = tokens[i + 1];
-        Coef coef = read_number(scoef);
-        bool negated = false;
-        std::string origvar = var;
-        if (!var.empty() && var[0] == '~') {
-          negated = true;
-          var = var.substr(1);
-        }
-        if (var.empty() || var[0] != 'x') quit::exit_ERROR({"Invalid literal token: ", origvar});
+      std::string symbol;
+      if (line.find(">=") != std::string::npos)
+        symbol = ">=";
+      else
+        symbol = "=";
+      assert(line.find(symbol) != std::string::npos);
+      line0 = line;
+      line = line.substr(0, line.find(symbol));
+    }
+    first_constraint = false;
+    std::istringstream is(line);
+    input.reset();
+    std::vector<std::string> tokens;
+    std::string tmp;
+    while (is >> tmp) tokens.push_back(tmp);
+    if (tokens.size() % 2 != 0) quit::exit_ERROR({"No support for non-linear constraints."});
+    for (int i = 0; i < (long long)tokens.size(); i += 2)
+      if (find(tokens[i].begin(), tokens[i].end(), 'x') != tokens[i].end())
+        quit::exit_ERROR({"No support for non-linear constraints."});
+    for (int i = 0; i < (long long)tokens.size(); i += 2) {
+      std::string scoef = tokens[i];
+      std::string var = tokens[i + 1];
+      Coef coef = read_number(scoef);
+      bool negated = false;
+      std::string origvar = var;
+      if (!var.empty() && var[0] == '~') {
+        negated = true;
         var = var.substr(1);
-        Lit l = atoi(var.c_str());
-        if (!(1 <= l && l <= solver.getNbVars())) quit::exit_ERROR({"Literal token out of variable range: ", origvar});
-        if (negated) l = -l;
-        input.addLhs(coef, l);
       }
-      if (opt_line)
-        input.copyTo(objective);
-      else {
-        input.addRhs(read_number(line0.substr(line0.find("=") + 1)));
+      if (var.empty() || var[0] != 'x') quit::exit_ERROR({"Invalid literal token: ", origvar});
+      var = var.substr(1);
+      Lit l = atoi(var.c_str());
+      if (!(1 <= l && l <= solver.getNbVars())) quit::exit_ERROR({"Literal token out of variable range: ", origvar});
+      if (negated) l = -l;
+      input.addLhs(coef, l);
+    }
+    if (opt_line)
+      input.copyTo(objective);
+    else {
+      input.addRhs(read_number(line0.substr(line0.find("=") + 1)));
+      if (input.getDegree() >= (Val)INF)
+        quit::exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
+      if (solver.addConstraint(input, ConstraintType::FORMULA, true) == ID_Unsat)
+        quit::exit_UNSAT({}, 0, solver.logger);
+      if (line0.find(" = ") != std::string::npos) {  // Handle equality case with second constraint
+        input.invert();
         if (input.getDegree() >= (Val)INF)
           quit::exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
-        if (solver.addConstraint(input, ConstraintType::FORMULA) == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
-        if (line0.find(" = ") != std::string::npos) {  // Handle equality case with second constraint
-          input.invert();
-          if (input.getDegree() >= (Val)INF)
-            quit::exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
-          if (solver.addConstraint(input, ConstraintType::FORMULA) == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
-        }
+        if (solver.addConstraint(input, ConstraintType::FORMULA, true) == ID_Unsat)
+          quit::exit_UNSAT({}, 0, solver.logger);
       }
     }
   }
@@ -145,7 +142,8 @@ void wcnf_read(std::istream& in, long long top, Solver& solver, intConstr& objec
       }  // else hard clause
       if (input.getDegree() >= (Val)INF)
         quit::exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
-      if (solver.addConstraint(input, ConstraintType::FORMULA) == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
+      if (solver.addConstraint(input, ConstraintType::FORMULA, true) == ID_Unsat)
+        quit::exit_UNSAT({}, 0, solver.logger);
     }
   }
   solver.setNbOrigVars(solver.getNbVars() - objective.vars.size());
@@ -163,7 +161,8 @@ void cnf_read(std::istream& in, Solver& solver) {
       input.addRhs(1);
       Lit l;
       while (is >> l, l) input.addLhs(1, l);
-      if (solver.addConstraint(input, ConstraintType::FORMULA) == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
+      if (solver.addConstraint(input, ConstraintType::FORMULA, true) == ID_Unsat)
+        quit::exit_UNSAT({}, 0, solver.logger);
     }
   }
   solver.setNbOrigVars(solver.getNbVars());

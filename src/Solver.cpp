@@ -28,8 +28,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ***********************************************************************/
 
 #include "Solver.hpp"
-#include <iostream>
-
 #include "aux.hpp"
 #include "globals.hpp"
 
@@ -77,7 +75,14 @@ void Solver::init() {
 }
 
 void Solver::initLP(intConstr& objective) {
-  if (options.lpmulti != 0) lpSolver = std::make_shared<LpSolver>(*this, objective);
+  if (options.lpmulti == 0) return;
+  bool pureCNF = objective.vars.size() == 0;
+  for (CRef cr : constraints) {
+    if (!pureCNF) break;
+    pureCNF = ca[cr].isClause();
+  }
+  if (pureCNF) return;
+  lpSolver = std::make_shared<LpSolver>(*this, objective);
 }
 
 // ---------------------------------------------------------------------
@@ -719,7 +724,7 @@ CRef Solver::learnConstraint() {
   return cr;
 }
 
-ID Solver::addInputConstraint(ConstraintType type) {
+ID Solver::addInputConstraint(ConstraintType type, bool addToLP) {
   assert(decisionLevel() == 0);
   if (logger) tmpConstraint.logAsInput();
   tmpConstraint.postProcess(Level, Pos, true, stats);
@@ -746,21 +751,22 @@ ID Solver::addInputConstraint(ConstraintType type) {
   }
   ID id = ca[cr].id;
   if (type == ConstraintType::EXTERNAL) external[id] = cr;
+  if (addToLP && lpSolver) lpSolver->addConstraint(cr);
   return id;
 }
 
-ID Solver::addConstraint(const intConstr& c, ConstraintType type) {
+ID Solver::addConstraint(const intConstr& c, ConstraintType type, bool addToLP) {
+  // NOTE: copy to tmpConstraint guarantees original constraint is not changed and does not need logger
   c.copyTo(tmpConstraint);
-  ID result = addInputConstraint(type);
+  ID result = addInputConstraint(type, addToLP);
   tmpConstraint.reset();
   return result;
 }
 
 ID Solver::addConstraint(const std::vector<Coef>& coefs, const std::vector<Lit>& lits, const Val rhs,
-                         ConstraintType type) {
-  // NOTE: copy to tmpConstraint guarantees original constraint is not changed and does not need logger
+                         ConstraintType type, bool addToLP) {
   tmpConstraint.construct(coefs, lits, rhs);
-  ID result = addInputConstraint(type);
+  ID result = addInputConstraint(type, addToLP);
   tmpConstraint.reset();
   return result;
 }
@@ -773,13 +779,14 @@ void Solver::removeConstraint(Constr& C) {
   ca.wasted += C.getMemSize();
 }
 
-void Solver::dropExternal(ID id, bool forceDelete) {
+void Solver::dropExternal(ID id, bool forceDelete, bool removeFromLP) {
   if (id == ID_Undef) return;
   auto old_it = external.find(id);
   assert(old_it != external.end());
   Constr& constr = ca[old_it->second];
   constr.setType(ConstraintType::AUXILIARY);
   if (forceDelete) removeConstraint(constr);
+  if (removeFromLP && lpSolver) lpSolver->removeConstraint(id);
   external.erase(old_it);
 }
 

@@ -55,7 +55,10 @@ class LpSolver {
   soplex::DVectorReal lowerBounds;
   soplex::DSVectorReal lpRow;
 
-  std::vector<std::pair<ID, ID>> row2ids;  // lower bound id and upper bound id
+  std::unordered_map<ID, int> id2row;
+  std::vector<ID> row2id;
+  std::unordered_set<ID> toRemove;
+  std::unordered_map<ID, std::pair<soplex::DSVectorReal, Val>> toAdd;
 
   int128Constr lcc;
   intConstr ic;
@@ -68,19 +71,23 @@ class LpSolver {
 
   void setNbVariables(int n);
   int getNbVariables() const;
+  int getNbRows() const;
 
   // @return: false if inconsistency detected, true otherwise
   bool checkFeasibility(bool inProcessing = false);
   // @return: false if inconsistency detected, true otherwise
   bool inProcess();
 
+  void addConstraint(CRef cr);
+  void removeConstraint(ID id);
+  void flushConstraints();
+
  private:
-  void LP_addConstraints();  // TODO: remove "LP_" in method names
-  void LP_convertConstraint(CRef cr, soplex::DSVectorReal& row, Val& rhs);
+  void LP_convertConstraint(CRef cr, soplex::DSVectorReal& row, Val& rhs);  // TODO: remove "LP_" in method names
   void LP_resetBasis();
   void createLinearCombinationFarkas(soplex::DVectorReal& mults);
   double getScaleFactor(soplex::DVectorReal& mults);
-  bool rowToConstraint(int row, bool negated);
+  bool rowToConstraint(int row);
 
   // NOTE: if b is positive, the comparison is more relaxed. If b is negative, the comparison is more strict.
   inline static bool relaxedLT(double a, double b) { return a <= b * (1 + tolerance); }
@@ -92,6 +99,4 @@ class LpSolver {
   inline static bool validRhs(double a) {
     return round(a) == a && a < INF_long && a > -INF_long;
   }  // NOTE: double type can only store ranges of integers up to ~9e15
-
-  bool LP_pureCnf();
 };

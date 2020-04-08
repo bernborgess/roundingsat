@@ -32,11 +32,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 LpSolver::LpSolver(Solver& slvr, const intConstr& o) : solver(slvr) {
   assert(INFTY == lp.realParam(lp.INFTY));
-  if (o.vars.size() == 0 && LP_pureCnf()) {
-    if (options.verbosity > 1) std::cout << "c Problem is only clausal, disabling LP solving" << std::endl;
-    options.lpmulti = 0;  // disables useless LP
-    return;               // only clausal constraints
-  }
 
   if (options.verbosity > 1) std::cout << "c Initializing LP" << std::endl;
   setNbVariables(solver.getNbVars() + 1);
@@ -48,7 +43,7 @@ LpSolver::LpSolver(Solver& slvr, const intConstr& o) : solver(slvr) {
   lp.setIntParam(soplex::SoPlex::VERBOSITY, options.verbosity);
   // NOTE: alternative "crash basis" only helps on few instances, according to Ambros, so we don't adjust that parameter
 
-  // first add variables
+  // add variables
   // NOTE: batch version is more efficient than adding them one by one
   soplex::LPColSetReal allCols;
   allCols.reMax(getNbVariables());
@@ -56,8 +51,9 @@ LpSolver::LpSolver(Solver& slvr, const intConstr& o) : solver(slvr) {
   for (Var v = 0; v < getNbVariables(); ++v) allCols.add(soplex::LPColReal(0, dummycol, 1, 0));
   lp.addColsReal(allCols);
 
-  // NOTE: batch version is more efficient than adding them one by one
-  LP_addConstraints();
+  // add all formula constraints
+  for (CRef cr : solver.constraints)
+    if (solver.ca[cr].getType() == ConstraintType::FORMULA) addConstraint(cr);
 
   // How does RoundingSat perform branch-and-bound minimization?
   // - F is the objective function, with a trivial lower bound L and trivial upper bound U
@@ -80,7 +76,6 @@ LpSolver::LpSolver(Solver& slvr, const intConstr& o) : solver(slvr) {
       objRow.add(v, c);
     }
     lp.changeObjReal(objective);
-    lp.changeRowReal(0, soplex::LPRowReal(-soplex::infinity, objRow, soplex::infinity));
   } else {  // add default objective function
     for (int v = 1; v < getNbVariables(); ++v) objective[v] = 1;
     lp.changeObjReal(objective);
@@ -101,6 +96,7 @@ void LpSolver::setNbVariables(int n) {
   upperBounds.reDim(n);
 }
 int LpSolver::getNbVariables() const { return lpSolution.dim(); }
+int LpSolver::getNbRows() const { return lp.numRowsReal(); }
 
 // BITWISE: -
 void LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
@@ -109,7 +105,8 @@ void LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
 
   for (int r = 0; r < mults.dim(); ++r) {
     if (mults[r] == 0) continue;
-    rowToConstraint(r, mults[r] < 0);  // NOTE: negative values for upper bounded constraints (rhs)
+    assert(mults[r] > 0);
+    rowToConstraint(r);
     lcc.addUp(solver.getLevel(), ic, mults[r] * mult, 1, false);
     ic.reset();
   }
@@ -145,9 +142,9 @@ double LpSolver::getScaleFactor(soplex::DVectorReal& mults) {
 }
 
 // BITWISE: -
-bool LpSolver::rowToConstraint(int row, bool negated) {
+bool LpSolver::rowToConstraint(int row) {
   assert(ic.isReset());
-  double rhs = negated ? lp.rhsReal(row) : lp.lhsReal(row);
+  double rhs = lp.lhsReal(row);
   assert(std::abs(rhs) != INFTY);
   assert(validRhs(rhs));
   ic.addRhs(rhs);
@@ -160,8 +157,7 @@ bool LpSolver::rowToConstraint(int row, bool negated) {
     assert(el.val != 0);
     ic.addLhs((Coef)el.val, el.idx);
   }
-  if (negated) ic.invert();
-  if (ic.plogger) ic.resetBuffer(negated ? row2ids[row].second : row2ids[row].first);
+  if (ic.plogger) ic.resetBuffer(row2id[row]);
   return true;
 }
 
@@ -172,21 +168,21 @@ bool LpSolver::checkFeasibility(bool inProcessing) {
     // allow as many (total) pivots as weighted conflict count
     // subtract total pivots so far
     // each call to LP solver also counts as a pivot, to reduce number of feasibility calls (that have 0 pivot count)
-    long long allowed = ceil(options.lpmulti * (1 + stats.NCONFL) - stats.NLPPIVOTS - stats.NLPCALLS);
+    long long allowed = ceil(options.lpmulti * (1 + stats.NCONFL) - stats.NLPPIVOTSINTERNAL - stats.NLPCALLS);
     if (allowed <= 0)
       return true;  // no pivot budget available
     else
       lp.setIntParam(soplex::SoPlex::ITERLIMIT, allowed + 100);  // limit number of pivots
     // NOTE: when triggered, allow the LP at least 100 pivots to run.
     // This value is conservative: in benchmarks, SCIP has 382 (median) and 1391 (average) pivots / soplex call.
-  }  // else, no pivot limit
+  } else
+    lp.setIntParam(soplex::SoPlex::ITERLIMIT, -1);  // no pivot limit
+  flushConstraints();
 
   // Set the  LP's bounds based on the current trail
   for (Var v = 1; v < getNbVariables(); ++v) {
-    lowerBounds[v] = 0;
-    upperBounds[v] = 1;
-    if (isTrue(solver.getLevel(), v)) lowerBounds[v] = 1;
-    if (isTrue(solver.getLevel(), -v)) upperBounds[v] = 0;
+    lowerBounds[v] = isTrue(solver.getLevel(), v);
+    upperBounds[v] = !isFalse(solver.getLevel(), v);
   }
   lp.changeBoundsReal(lowerBounds, upperBounds);
 
@@ -194,7 +190,10 @@ bool LpSolver::checkFeasibility(bool inProcessing) {
   soplex::SPxSolver::Status stat;
   stat = lp.optimize();
   ++stats.NLPCALLS;
-  stats.NLPPIVOTS += lp.numIterations();
+  if (inProcessing)
+    stats.NLPPIVOTSEXTERNAL += lp.numIterations();
+  else
+    stats.NLPPIVOTSINTERNAL += lp.numIterations();
   stats.LPSOLVETIME += lp.solveTime();
 
   if (options.verbosity > 1) std::cout << "c LP status: " << stat << std::endl;
@@ -206,6 +205,13 @@ bool LpSolver::checkFeasibility(bool inProcessing) {
 
   if (stat == soplex::SPxSolver::Status::OPTIMAL) {
     ++stats.NLPOPTIMAL;
+    if (inProcessing && lp.hasSol()) {
+      lp.getPrimalReal(lpSolution);
+      foundLpSolution = true;
+      assert((int)solver.phase.size() >= getNbVariables());
+      for (Var v = 1; v < getNbVariables(); ++v) solver.phase[v] = (lpSolution[v] <= 0.5) ? -v : v;
+      std::cout << "c rational objective " << lp.objValueReal() << std::endl;
+    }
     if (lp.numIterations() == 0) {
       ++stats.NLPNOPIVOT;
       return true;
@@ -214,13 +220,6 @@ bool LpSolver::checkFeasibility(bool inProcessing) {
       ++stats.NLPNOPRIMAL;
       LP_resetBasis();
       return true;
-    }
-    if (inProcessing) {
-      lp.getPrimalReal(lpSolution);
-      foundLpSolution = true;
-      assert((int)solver.phase.size() >= getNbVariables());
-      for (Var v = 1; v < getNbVariables(); ++v) solver.phase[v] = (lpSolution[v] <= 0.5) ? -v : v;
-      std::cout << "c rational objective " << lp.objValueReal() << std::endl;
     }
     return true;
   }
@@ -278,24 +277,6 @@ void LpSolver::LP_resetBasis() {
   lp.clearBasis();  // and hope next iteration works fine
 }
 
-void LpSolver::LP_addConstraints() {
-  if (solver.constraints.size() == 0) return;
-  soplex::LPRowSetReal allRows;
-  allRows.reMax(solver.constraints.size());
-  row2ids.reserve(solver.constraints.size());
-  for (CRef cr : solver.constraints) {  // all axioms
-    assert(cr != CRef_Undef && cr != CRef_Unsat);
-    assert(solver.ca[cr].size() > 0);
-    soplex::DSVectorReal row(solver.ca[cr].size());
-    Val rhs;
-    LP_convertConstraint(cr, row, rhs);
-    allRows.add(soplex::LPRowReal(row, soplex::LPRowReal::Type::GREATER_EQUAL, rhs));
-    row2ids.emplace_back(solver.ca[cr].id, ID_Undef);
-  }
-  lp.addRowsReal(allRows);
-  stats.NLPCONSTRS += solver.constraints.size();
-}
-
 void LpSolver::LP_convertConstraint(CRef cr, soplex::DSVectorReal& row, Val& rhs) {
   Constr& C = solver.ca[cr];
   assert(row.max() == (int)C.size());
@@ -307,13 +288,61 @@ void LpSolver::LP_convertConstraint(CRef cr, soplex::DSVectorReal& row, Val& rhs
       rhs -= coef;
       coef = -coef;
     }
+    assert(std::abs(l) < lp.numColsReal());
     row.add(std::abs(l), coef);
   }
   assert(validRhs(rhs));
 }
 
-bool LpSolver::LP_pureCnf() {
-  for (CRef cr : solver.constraints)
-    if (solver.ca[cr].isClause()) return false;
-  return true;
+void LpSolver::addConstraint(CRef cr) {
+  ID id = solver.ca[cr].id;
+  toRemove.erase(id);
+  if (!id2row.count(id) && !toAdd.count(id)) {
+    soplex::DSVectorReal row(solver.ca[cr].size());
+    Val rhs;
+    LP_convertConstraint(cr, row, rhs);
+    toAdd[id] = {row, rhs};
+  }
+}
+
+void LpSolver::removeConstraint(ID id) {
+  toAdd.erase(id);
+  if (id2row.count(id)) toRemove.insert(id);
+}
+
+// TODO: exploit lp.changeRowReal for more efficiency, e.g. when replacing the upper and lower bound on the objective
+void LpSolver::flushConstraints() {
+  if (toRemove.size() > 0) {  // first remove rows
+    std::vector<int> rowsToRemove(row2id.size(), 0);
+    for (ID id : toRemove) {
+      ++stats.NLPDELETEDROWS;
+      rowsToRemove[id2row[id]] = -1;
+      id2row.erase(id);
+    }
+    lp.removeRowsReal(rowsToRemove.data());
+    row2id.resize(id2row.size());
+    for (auto& p : id2row) {
+      int newrow = rowsToRemove[p.second];
+      assert(newrow >= 0);
+      assert(newrow < lp.numRowsReal());
+      id2row[p.first] = newrow;
+      row2id[newrow] = p.first;
+    }
+    toRemove.clear();
+  }
+
+  if (toAdd.size() > 0) {  // then add rows
+    soplex::LPRowSetReal rowsToAdd;
+    rowsToAdd.reMax(toAdd.size());
+    row2id.reserve(row2id.size() + toAdd.size());
+    id2row.reserve(id2row.size() + toAdd.size());
+    for (auto& p : toAdd) {
+      rowsToAdd.add(soplex::LPRowReal(p.second.first, soplex::LPRowReal::Type::GREATER_EQUAL, p.second.second));
+      id2row[p.first] = row2id.size();
+      row2id.push_back(p.first);
+      ++stats.NLPADDEDROWS;
+    }
+    lp.addRowsReal(rowsToAdd);
+    toAdd.clear();
+  }
 }

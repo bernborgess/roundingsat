@@ -59,8 +59,8 @@ void handleNewSolution(const intConstr& origObj, ID& lastUpperBound) {
   origObj.copyTo(aux);
   aux.invert();
   aux.addRhs(-upper_bound + 1);
-  solver.dropExternal(lastUpperBound, true);
-  lastUpperBound = solver.addConstraint(aux, ConstraintType::EXTERNAL);
+  solver.dropExternal(lastUpperBound, true, true);
+  lastUpperBound = solver.addConstraint(aux, ConstraintType::EXTERNAL, true);
   aux.reset();
   if (lastUpperBound == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
 }
@@ -80,8 +80,8 @@ struct LazyVar {
   }
 
   ~LazyVar() {
-    solver.dropExternal(atLeastID, false);
-    solver.dropExternal(atMostID, false);
+    solver.dropExternal(atLeastID, false, false);
+    solver.dropExternal(atMostID, false, false);
   }
 
   Var getCurrentVar() const { return introducedVars.back(); }
@@ -102,9 +102,9 @@ struct LazyVar {
       coefs.push_back(-1);
       lits.push_back(v);
     }
-    solver.dropExternal(atLeastID,
+    solver.dropExternal(atLeastID, false,
                         false);  // TODO: dropExternal(atLeastID,true)? Or treat them as learned/implied constraints?
-    atLeastID = solver.addConstraint(coefs, lits, rhs, ConstraintType::EXTERNAL);
+    atLeastID = solver.addConstraint(coefs, lits, rhs, ConstraintType::EXTERNAL, false);
     if (atLeastID == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
   }
 
@@ -125,16 +125,16 @@ struct LazyVar {
     assert(getCurrentVar() == introducedVars.back());
     coefs.push_back(lhs.size() - rhs - introducedVars.size());
     lits.push_back(getCurrentVar());
-    solver.dropExternal(atMostID,
+    solver.dropExternal(atMostID, false,
                         false);  // TODO: dropExternal(atMostID,true)? Or treat them as learned/implied constraints?
-    atMostID = solver.addConstraint(coefs, lits, -rhs, ConstraintType::EXTERNAL);
+    atMostID = solver.addConstraint(coefs, lits, -rhs, ConstraintType::EXTERNAL, false);
     if (atMostID == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
   }
 
   void addSymBreakingConstraint(Var prevvar) const {
     assert(introducedVars.size() > 1);
     // y-- + ~y >= 1 (equivalent to y-- >= y)
-    if (solver.addConstraint({1, 1}, {prevvar, -getCurrentVar()}, 1, ConstraintType::AUXILIARY) == ID_Unsat)
+    if (solver.addConstraint({1, 1}, {prevvar, -getCurrentVar()}, 1, ConstraintType::AUXILIARY, false) == ID_Unsat)
       quit::exit_UNSAT(solution, upper_bound, solver.logger);
   }
 };
@@ -174,8 +174,8 @@ void checkLazyVariables(longConstr& reformObj, std::vector<std::shared_ptr<LazyV
 void addLowerBound(const intConstr& origObj, Val lower_bound, ID& lastLowerBound) {
   origObj.copyTo(aux);
   aux.addRhs(lower_bound);
-  solver.dropExternal(lastLowerBound, true);
-  lastLowerBound = solver.addConstraint(aux, ConstraintType::EXTERNAL);
+  solver.dropExternal(lastLowerBound, true, true);
+  lastLowerBound = solver.addConstraint(aux, ConstraintType::EXTERNAL, true);
   aux.reset();
   if (lastLowerBound == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
 }
@@ -238,13 +238,13 @@ void handleInconsistency(longConstr& reformObj, const intConstr& origObj,
     reformObj.addUp(solver.getLevel(), core, mult, 1, false);
     assert(lower_bound == -reformObj.getDegree());
     // add channeling constraints
-    if (solver.addConstraint(core, ConstraintType::AUXILIARY) == ID_Unsat)
+    if (solver.addConstraint(core, ConstraintType::AUXILIARY, false) == ID_Unsat)
       quit::exit_UNSAT(solution, upper_bound, solver.logger);
     core.invert();
-    if (solver.addConstraint(core, ConstraintType::AUXILIARY) == ID_Unsat)
+    if (solver.addConstraint(core, ConstraintType::AUXILIARY, false) == ID_Unsat)
       quit::exit_UNSAT(solution, upper_bound, solver.logger);
     for (Var v = oldN + 1; v < newN; ++v) {  // add symmetry breaking constraints
-      if (solver.addConstraint({1, 1}, {v, -v - 1}, 1, ConstraintType::AUXILIARY) == ID_Unsat)
+      if (solver.addConstraint({1, 1}, {v, -v - 1}, 1, ConstraintType::AUXILIARY, false) == ID_Unsat)
         quit::exit_UNSAT(solution, upper_bound, solver.logger);
     }
   }

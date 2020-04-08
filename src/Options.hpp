@@ -31,8 +31,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include <cmath>
 #include <cstring>
-#include <iostream>
-#include <unordered_map>
 #include "aux.hpp"
 #include "quit.hpp"
 
