@@ -473,7 +473,7 @@ struct Constraint {
       while (coefIt != vars.cend() && assertionLevel >= level[getLit(*coefIt)]) ++coefIt;
       if (coefIt == vars.cend()) return INF;  // no assertion level
       if (slack < std::abs(coefs[*coefIt])) return assertionLevel;
-      assert(posIt != litsByPos.cend());
+      if (posIt == litsByPos.cend()) return INF;  // slack will no longer decrease
       assertionLevel = level[*posIt];
     }
   }

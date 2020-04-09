@@ -716,6 +716,7 @@ CRef Solver::learnConstraint() {
   tmpConstraint.heuristicWeakening(Level, Pos, slk, stats);
   tmpConstraint.postProcess(Level, Pos, false, stats);
   assert(tmpConstraint.isSaturated());
+  if (tmpConstraint.getDegree() <= 0) return CRef_Undef;
 
   CRef cr = attachConstraint(tmpConstraint, ConstraintType::LEARNT);
   tmpConstraint.reset();
