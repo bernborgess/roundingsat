@@ -826,7 +826,6 @@ void Solver::garbage_collect() {
 // We assume in the garbage collection method that reduceDB() is the
 // only place where constraints are removed from memory.
 void Solver::reduceDB() {
-  if (options.verbosity > 0) puts("c INPROCESSING");
   assert(decisionLevel() == 0);
 
   std::vector<CRef> learnts;
@@ -991,6 +990,7 @@ SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector
         backjumpTo(0);
         if (stats.NCONFL >= (stats.NCLEANUP + 1) * nbconstrsbeforereduce) {
           ++stats.NCLEANUP;
+          if (options.verbosity > 0) puts("c INPROCESSING");
           if (lpSolver) {
             if (!lpSolver->inProcess()) {
               if (logger) {
