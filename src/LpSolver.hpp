@@ -47,6 +47,8 @@ class LpSolver {
   constexpr static double tolerance = 1e-6;  // TODO: add as option
   constexpr static double INFTY = 1e100;
 
+  double lpPivotMult = 1;
+
   bool foundLpSolution = false;
   soplex::DVectorReal lpSolution;
   soplex::DVectorReal lpSlackSolution;
@@ -65,8 +67,6 @@ class LpSolver {
   // NOTE: 2^59 is the maximum possible, given the 64 bits needed for other calculations
   constexpr static long long maxMult =
       576460752303423488;  // 2^50: 1125899906842624 | 2^55: 36028797018963968 | 2^59: 576460752303423488
-
-  double lpPivotMult = 1;
 
  public:
   LpSolver(Solver& solver, const intConstr& objective);

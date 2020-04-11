@@ -166,28 +166,23 @@ bool LpSolver::checkFeasibility(bool inProcessing) {
   if (options.lpPivotRatio < 0)
     lp.setIntParam(soplex::SoPlex::ITERLIMIT, -1);  // no pivot limit
   else {
-    if (inProcessing) {
-      long long allowed = options.lpPivotRatio * (1 + stats.NCONFL) - stats.NLPPIVOTSROOT;
-      if (allowed <= 0)
-        return true;
-      else
-        lp.setIntParam(soplex::SoPlex::ITERLIMIT,
-                       allowed + 10 * options.lpPivotBudget * lpPivotMult);  // limit number of pivots
-    } else {
+    long long allowed = 0;
+    if (inProcessing)
+      allowed = options.lpPivotRatio * (1 + stats.NCONFL) - stats.NLPPIVOTSROOT;
+    else {
       // explanation of formula:
       // start at 1 to allow initial LP search
       // allow as many (total) pivots as weighted conflict count
       // subtract total pivots so far
       // each call to LP solver also counts as a pivot, to reduce number of feasibility calls (that have 0 pivot count)
-      long long allowed = ceil(options.lpPivotRatio * (1 + stats.NCONFL) - stats.NLPPIVOTSINTERNAL - stats.NLPCALLS);
-      if (allowed <= 0)
-        return true;  // no pivot budget available
-      else
-        lp.setIntParam(soplex::SoPlex::ITERLIMIT,
-                       allowed + options.lpPivotBudget * lpPivotMult);  // limit number of pivots
+      allowed = ceil(options.lpPivotRatio * (1 + stats.NCONFL) - stats.NLPPIVOTSINTERNAL - stats.NLPCALLS);
       // NOTE: when triggered, allow the LP at least 100 pivots to run.
       // This value is conservative: in benchmarks, SCIP has 382 (median) and 1391 (average) pivots / soplex call.
     }
+    if (allowed <= 0)
+      return true;  // no pivot budget available
+    else
+      lp.setIntParam(soplex::SoPlex::ITERLIMIT, allowed + options.lpPivotBudget * lpPivotMult);
   }
   flushConstraints();
 
@@ -215,7 +210,7 @@ bool LpSolver::checkFeasibility(bool inProcessing) {
   assert(stat >= soplex::SPxSolver::Status::ERROR);
 
   if (stat == soplex::SPxSolver::Status::ABORT_ITER) {
-    lpPivotMult *= 1.1;  // increase pivot budget when calling the LP solver
+    lpPivotMult *= 2;  // increase pivot budget when calling the LP solver
     return true;
   }
 

@@ -59,7 +59,7 @@ struct Options {
   float c_vsids_decay = 0.999;
 
   float lpPivotRatio = 1;
-  long long lpPivotBudget = 100;
+  long long lpPivotBudget = 1000;
 
   void usageEnum(const std::string& option, const std::string& explanation, const std::vector<std::string>& optMap,
                  int def) {
