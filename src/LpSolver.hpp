@@ -32,7 +32,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wstrict-overflow"
-#include "soplex/headers/soplex.h"
+#include "soplex/soplex.h"
 #pragma GCC diagnostic pop
 
 #include "SolverStructs.hpp"
