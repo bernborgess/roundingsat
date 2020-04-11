@@ -66,6 +66,8 @@ class LpSolver {
   constexpr static long long maxMult =
       576460752303423488;  // 2^50: 1125899906842624 | 2^55: 36028797018963968 | 2^59: 576460752303423488
 
+  double lpPivotMult = 1;
+
  public:
   LpSolver(Solver& solver, const intConstr& objective);
 

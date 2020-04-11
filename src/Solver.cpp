@@ -75,7 +75,7 @@ void Solver::init() {
 }
 
 void Solver::initLP(intConstr& objective) {
-  if (options.lpmulti == 0) return;
+  if (options.lpPivotRatio == 0) return;
   bool pureCNF = objective.vars.size() == 0;
   for (CRef cr : constraints) {
     if (!pureCNF) break;
@@ -740,8 +740,7 @@ ID Solver::addInputConstraint(ConstraintType type, bool addToLP) {
   }
 
   CRef cr = attachConstraint(tmpConstraint, type);
-  bool allClear = runPropagation(true);
-  if (!allClear) {
+  if (!runPropagation(true)) {
     puts("c Input conflict");
     if (logger) {
       conflConstraint.logInconsistency(Level, Pos, stats);
@@ -849,9 +848,9 @@ void Solver::reduceDB() {
   }
 
   if (promisingLearnts > totalLearnts / 2)
-    nbconstrsbeforereduce += 1000;
+    nconfl_to_reduce += 10 * options.incReduceDB;
   else
-    nbconstrsbeforereduce += 100;
+    nconfl_to_reduce += options.incReduceDB;
   std::sort(learnts.begin(), learnts.end(), [&](CRef x, CRef y) {
     return ca[x].lbd() > ca[y].lbd() || (ca[x].lbd() == ca[y].lbd() && ca[x].act < ca[y].act);
   });
@@ -946,10 +945,11 @@ SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector
   }
   std::vector<int> assumptions_lim = {0};
   assumptions_lim.reserve((int)assumptions.size() + 1);
+  bool allClear = false;
   while (true) {
     if (asynch_interrupt) return SolveState::INTERRUPTED;
     assert(conflConstraint.isReset());
-    bool allClear = runPropagation();
+    allClear = runPropagation(allClear);
     if (!allClear) {
       assert(!conflConstraint.isReset());
       vDecayActivity();
@@ -988,7 +988,7 @@ SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector
     } else {  // no conflict
       if (nconfl_to_restart <= 0) {
         backjumpTo(0);
-        if (stats.NCONFL >= (stats.NCLEANUP + 1) * nbconstrsbeforereduce) {
+        if (stats.NCONFL >= (stats.NCLEANUP + 1) * nconfl_to_reduce) {
           ++stats.NCLEANUP;
           if (options.verbosity > 0) puts("c INPROCESSING");
           if (lpSolver) {
@@ -1001,7 +1001,8 @@ SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector
             }
           }
           reduceDB();
-          while (stats.NCONFL >= stats.NCLEANUP * nbconstrsbeforereduce) nbconstrsbeforereduce += options.incReduceDB;
+          while (stats.NCONFL >= stats.NCLEANUP * nconfl_to_reduce)
+            nconfl_to_reduce += options.incReduceDB * 3;  // TODO: remove *3 when deciding on new stable version
           return SolveState::INPROCESSED;
         }
         double rest_base = luby(options.rinc, ++stats.NRESTARTS);

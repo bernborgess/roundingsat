@@ -45,14 +45,14 @@ struct Stats {
   long long NAUXVARS = 0;
 
   long long NLPADDEDROWS = 0, NLPDELETEDROWS = 0;
-  long long NLPPIVOTSINTERNAL = 0, NLPPIVOTSEXTERNAL = 0, NLPNOPIVOT = 0, NLPRESETBASIS = 0;
+  long long NLPPIVOTSINTERNAL = 0, NLPPIVOTSROOT = 0, NLPNOPIVOT = 0, NLPRESETBASIS = 0;
   double LPSOLVETIME = 0;
   long long NLPCALLS = 0, NLPOPTIMAL = 0, NLPINFEAS = 0, NLPFARKAS = 0;
   long long NLPCYCLING = 0, NLPNOPRIMAL = 0, NLPNOFARKAS = 0, NLPSINGULAR = 0, NLPOTHER = 0;
 
   inline long long getDetTime() const {
     return 1 + NADDEDLITERALS + NWATCHLOOKUPS + NWATCHLOOKUPSBJ + NWATCHCHECKS + NPROPCHECKS + NPROP + NTRAILPOPS +
-           NDECIDE + NLPPIVOTSEXTERNAL + NLPPIVOTSINTERNAL;
+           NDECIDE + NLPPIVOTSROOT + NLPPIVOTSINTERNAL;
   }
 
   void print() const {
@@ -91,7 +91,8 @@ struct Stats {
     printf("c LP solve time %g s\n", LPSOLVETIME);
     printf("c LP constraints added %lld\n", NLPADDEDROWS);
     printf("c LP constraints removed %lld\n", NLPDELETEDROWS);
-    printf("c LP pivots %lld\n", NLPPIVOTSINTERNAL + NLPPIVOTSEXTERNAL);
+    printf("c LP pivots internal %lld\n", NLPPIVOTSINTERNAL);
+    printf("c LP pivots root %lld\n", NLPPIVOTSROOT);
     printf("c LP calls %lld\n", NLPCALLS);
     printf("c LP optimalities %lld\n", NLPOPTIMAL);
     printf("c LP no pivot count %lld\n", NLPNOPIVOT);

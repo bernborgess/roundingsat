@@ -72,7 +72,7 @@ class Solver {
   std::vector<Lit> phase;
   std::vector<ActValV> activity;
 
-  long long nbconstrsbeforereduce = 2000;
+  long long nconfl_to_reduce = 2000;
   long long nconfl_to_restart = 0;
   ActValV v_vsids_inc = 1.0;
   ActValC c_vsids_inc = 1.0;
