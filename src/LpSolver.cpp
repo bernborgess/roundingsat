@@ -40,7 +40,6 @@ LpSolver::LpSolver(Solver& slvr, const intConstr& o) : solver(slvr) {
   lp.setIntParam(soplex::SoPlex::CHECKMODE, soplex::SoPlex::CHECKMODE_REAL);
   lp.setIntParam(soplex::SoPlex::SIMPLIFIER, soplex::SoPlex::SIMPLIFIER_OFF);
   lp.setIntParam(soplex::SoPlex::OBJSENSE, soplex::SoPlex::OBJSENSE_MINIMIZE);
-  lp.setIntParam(soplex::SoPlex::SCALER, soplex::SoPlex::SCALER_OFF);  // avoids assertion failure
   lp.setIntParam(soplex::SoPlex::VERBOSITY, options.verbosity);
   // NOTE: alternative "crash basis" only helps on few instances, according to Ambros, so we don't adjust that parameter
 
