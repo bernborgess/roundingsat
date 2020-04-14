@@ -28,6 +28,11 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target roundingsat -j4
   COMMENT "Creating executable in release mode.")
 
+add_custom_target(release_single
+  COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=Release ${CMAKE_SOURCE_DIR}
+  COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target roundingsat
+  COMMENT "Creating executable in release mode.")
+
 add_executable(roundingsat_debug ${ALL_CPP_FILES})
 target_link_libraries(roundingsat_debug ${CMAKE_SOURCE_DIR}/src/soplex/libsoplex_debug.a z)
 target_include_directories(roundingsat_debug PRIVATE "${CMAKE_SOURCE_DIR}/src/soplex")
@@ -35,6 +40,11 @@ target_include_directories(roundingsat_debug PRIVATE "${CMAKE_SOURCE_DIR}/src/so
 add_custom_target(debug
   COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=Debug ${CMAKE_SOURCE_DIR}
   COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target roundingsat_debug -j4
+  COMMENT "Creating executable in debug mode.")
+
+add_custom_target(debug_single
+  COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=Debug ${CMAKE_SOURCE_DIR}
+  COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target roundingsat_debug
   COMMENT "Creating executable in debug mode.")
 
 add_executable(roundingsat_info ${ALL_CPP_FILES})
