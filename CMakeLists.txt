@@ -25,7 +25,7 @@ target_include_directories(roundingsat PRIVATE "${CMAKE_SOURCE_DIR}/src/soplex")
 
 add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=Release ${CMAKE_SOURCE_DIR}
-  COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target roundingsat -j4
+  COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target roundingsat -j 4
   COMMENT "Creating executable in release mode.")
 
 add_custom_target(release_single
@@ -39,7 +39,7 @@ target_include_directories(roundingsat_debug PRIVATE "${CMAKE_SOURCE_DIR}/src/so
 
 add_custom_target(debug
   COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=Debug ${CMAKE_SOURCE_DIR}
-  COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target roundingsat_debug -j4
+  COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target roundingsat_debug -j 4
   COMMENT "Creating executable in debug mode.")
 
 add_custom_target(debug_single
@@ -53,7 +53,7 @@ target_include_directories(roundingsat_info PRIVATE "${CMAKE_SOURCE_DIR}/src/sop
 
 add_custom_target(info
         COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=RelWithDebInfo ${CMAKE_SOURCE_DIR}
-        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target roundingsat_info -j4
+        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target roundingsat_info -j 4
         COMMENT "Creating executable in release mode with debug info.")
 
 add_custom_target(
