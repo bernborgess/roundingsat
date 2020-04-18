@@ -42,16 +42,25 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "globals.hpp"
 #include "typedefs.hpp"
 
+struct CandidateCut {
+  SimpleCons simpcons;
+  CRef cr = CRef_Undef;
+  double norm = 0;
+  double lpViolation = 0;
+
+  CandidateCut(){};  // TODO erase
+  CandidateCut(const int128Constr& in, const soplex::DVectorReal& sol);
+  double cosOfAngleTo(const CandidateCut& other) const;
+};
+
 class LpSolver {
   soplex::SoPlex lp;
   Solver& solver;
 
-  constexpr static double tolerance = 1e-6;  // TODO: add as option
   constexpr static double INFTY = 1e100;
 
   double lpPivotMult = 1;
 
-  bool foundLpSolution = false;
   soplex::DVectorReal lpSolution;
   soplex::DVectorReal lpSlackSolution;
   soplex::DVectorReal lpMultipliers;
@@ -90,11 +99,13 @@ class LpSolver {
   void LP_convertConstraint(CRef cr, soplex::DSVectorReal& row, Val& rhs);  // TODO: remove "LP_" in method names
   void LP_resetBasis();
   void createLinearCombinationFarkas(soplex::DVectorReal& mults);
+  CandidateCut createLinearCombinationGomory(soplex::DVectorReal& mults);
   double getScaleFactor(soplex::DVectorReal& mults);
   bool rowToConstraint(int row);
+  bool addGomoryCuts();
 
   // NOTE: if b is positive, the comparison is more relaxed. If b is negative, the comparison is more strict.
-  inline static bool relaxedLT(double a, double b) { return a <= b * (1 + tolerance); }
+  inline static bool relaxedLT(double a, double b) { return a <= b * (1 + options.tolerance); }
   // NOTE: if a is negative, the comparison is more relaxed. If a is positive, the comparison is more strict.
   inline static bool strictLT(double a, double b) { return !relaxedLT(b, a); }
 

@@ -30,6 +30,39 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "LpSolver.hpp"
 #include "Solver.hpp"
 
+CandidateCut::CandidateCut(const int128Constr& in, const soplex::DVectorReal& sol) {
+  simpcons = in.toSimpleCons();
+  double norm = 0;
+  for (const auto& p : simpcons.terms) norm += (double)p.c * (double)p.c;
+  norm = std::sqrt(norm);
+  lpViolation = -simpcons.rhs;
+  for (auto& p : simpcons.terms) lpViolation += (double)p.c * sol[p.l];
+  lpViolation /= norm;
+  std::sort(simpcons.terms.begin(), simpcons.terms.end(), [](const Term& t1, const Term& t2) { return t1.l < t2.l; });
+}
+
+// @pre: simpcons is ordered and norm is calculated
+double CandidateCut::cosOfAngleTo(const CandidateCut& other) const {
+  assert(norm != 0 && other.norm != 0);
+  double cos = 0;
+  int i = 0;
+  int j = 0;
+  while (i < (int)simpcons.terms.size() && j < (int)other.simpcons.terms.size()) {
+    int x = simpcons.terms[i].l;
+    int y = other.simpcons.terms[j].l;
+    if (x < y)
+      ++i;
+    else if (x > y)
+      ++j;
+    else {  // x==y
+      cos += (double)simpcons.terms[i].c * (double)other.simpcons.terms[j].c;
+      ++i;
+      ++j;
+    }
+  }
+  return cos / (norm * other.norm);
+}
+
 LpSolver::LpSolver(Solver& slvr, const intConstr& o) : solver(slvr) {
   assert(INFTY == lp.realParam(lp.INFTY));
 
@@ -114,6 +147,63 @@ void LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
   if (lcc.getDegree() >= INF) lcc.roundToOne(solver.getLevel(), aux::ceildiv<__int128>(lcc.getDegree(), INF - 1), true);
   assert(lcc.getDegree() < INF);
   assert(lcc.isSaturated());
+}
+
+CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults) {
+  // TODO
+  return CandidateCut();
+}
+
+bool LpSolver::addGomoryCuts() {
+  std::vector<int> indices;
+  indices.resize(lp.numRowsReal());
+  lp.getBasisInd(indices.data());
+  lpMultipliers.reDim(lp.numRowsReal());
+
+  std::vector<CandidateCut> candidateCuts;
+  std::vector<double> normalization;
+
+  for (int row = 0; row < lp.numRowsReal(); ++row) {
+    double fractionality = 0;
+    if (indices[row] >= 0)  // basic original variable / column
+      fractionality = nonIntegrality(lpSolution[indices[row]]);
+    else  // basic slack variable / row
+      fractionality = nonIntegrality(lpSlackSolution[-indices[row] - 1]);
+    if (fractionality == 0) continue;
+
+    lp.getBasisInverseRowReal(row, lpMultipliers.get_ptr());
+    candidateCuts.push_back(createLinearCombinationGomory(lpMultipliers));
+    if (candidateCuts.back().lpViolation < options.tolerance) candidateCuts.pop_back();
+    for (int i = 0; i < lpMultipliers.dim(); ++i) lpMultipliers[i] = -lpMultipliers[i];
+    candidateCuts.push_back(createLinearCombinationGomory(lpMultipliers));
+    if (candidateCuts.back().lpViolation < options.tolerance) candidateCuts.pop_back();
+  }
+  std::sort(candidateCuts.begin(), candidateCuts.end(), [](const CandidateCut& x1, const CandidateCut& x2) {
+    return x1.lpViolation > x2.lpViolation ||
+           (x1.lpViolation == x2.lpViolation && x1.simpcons.terms.size() < x2.simpcons.terms.size());
+  });
+
+  // filter the candidate cuts
+  std::vector<int> keptCuts;  // indices
+  for (unsigned int i = 0; i < candidateCuts.size(); ++i) {
+    bool parallel = false;
+    for (unsigned int j = 0; j < keptCuts.size() && !parallel; ++j)
+      parallel = candidateCuts[keptCuts[j]].cosOfAngleTo(candidateCuts[i]) > options.maxCutCos;
+    if (!parallel) keptCuts.push_back(i);
+  }
+
+  for (int i : keptCuts) {
+    auto& cc = candidateCuts[i];
+    if (cc.cr == CRef_Undef) {
+      solver.tmpConstraint.construct(cc.simpcons);
+      cc.cr = solver.learnConstraint();
+    }
+    assert(cc.cr != CRef_Undef);
+    if (cc.cr == CRef_Unsat) return false;
+    addConstraint(cc.cr);
+  }
+
+  return true;
 }
 
 // BITWISE: +log2(maxMult)+log2(1e9) // TODO: check BITWISE
@@ -217,10 +307,10 @@ bool LpSolver::checkFeasibility(bool inProcessing) {
     ++stats.NLPOPTIMAL;
     if (inProcessing && lp.hasSol()) {
       lp.getPrimal(lpSolution);
-      foundLpSolution = true;
       assert((int)solver.phase.size() >= getNbVariables());
       for (Var v = 1; v < getNbVariables(); ++v) solver.phase[v] = (lpSolution[v] <= 0.5) ? -v : v;
       std::cout << "c rational objective " << lp.objValueReal() << std::endl;
+      // if (options.addGomoryCuts) addGomoryCuts();
     }
     if (lp.numIterations() == 0) {
       ++stats.NLPNOPIVOT;
@@ -264,6 +354,7 @@ bool LpSolver::checkFeasibility(bool inProcessing) {
   lp.getDualFarkas(lpMultipliers);
 
   createLinearCombinationFarkas(lpMultipliers);
+  // TODO: asserting case and postprocessing?
   if (lcc.getSlack(solver.getLevel()) >= 0) {
     lcc.copyTo(solver.tmpConstraint);
     lcc.reset();
