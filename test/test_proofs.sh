@@ -102,7 +102,7 @@ i="maxsat"
 echo "running $i"
 rm $i.proof
 rm $i.formula
-bzcat /home/jodv/workspace/instances/maxsat/mse19-complete-weighted-benchmarks/planning/driverlog01c.wcsp.dir.wcnf.bz2 | ../roundingsat_debug --proof-log=$i > /dev/null
+bzcat /home/jod/workspace/instances/maxsat/mse19-complete-weighted-benchmarks/planning/driverlog01c.wcsp.dir.wcnf.bz2 | ../roundingsat_debug --proof-log=$i > /dev/null
 echo "verifying $i"
 wc -l $i.proof
 veripb $i.formula $i.proof -d --arbitraryPrecision $1
@@ -114,7 +114,7 @@ i="cnf"
 echo "running $i"
 rm $i.proof
 rm $i.formula
-bzcat /home/jodv/workspace/instances/dec/CNF/even_colouring/ec_rand4regsplit-v030-n1.cnf.bz2 | ../roundingsat_debug --proof-log=$i > /dev/null
+bzcat /home/jod/workspace/instances/dec/CNF/even_colouring/ec_rand4regsplit-v030-n1.cnf.bz2 | ../roundingsat_debug --proof-log=$i > /dev/null
 echo "verifying $i"
 wc -l $i.proof
 veripb $i.formula $i.proof -d --arbitraryPrecision $1
@@ -126,7 +126,7 @@ do
     echo "running $i"
     rm $i.proof
     rm $i.formula
-    bzcat /home/jodv/workspace/instances/dec/MIPLIB/miplib2/$i.0.u.opb.bz2 | ../roundingsat_debug --proof-log=$i > /dev/null
+    bzcat /home/jod/workspace/instances/dec/MIPLIB/miplib2/$i.0.u.opb.bz2 | ../roundingsat_debug --proof-log=$i > /dev/null
     echo "verifying $i"
     wc -l $i.proof
     veripb $i.formula $i.proof -d --arbitraryPrecision $1
@@ -139,7 +139,7 @@ do
     echo "running $i"
     rm $i.proof
     rm $i.formula
-    bzcat /home/jodv/workspace/instances/opt/MIPLIB/miplib2/$i.opb.bz2 | ../roundingsat_debug --proof-log=$i --opt-mode=linear > /dev/null
+    bzcat /home/jod/workspace/instances/opt/MIPLIB/miplib2/$i.opb.bz2 | ../roundingsat_debug --proof-log=$i --opt-mode=linear > /dev/null
     echo "verifying $i"
     wc -l $i.proof
     veripb $i.formula $i.proof -d --arbitraryPrecision $1
@@ -152,7 +152,7 @@ do
     echo "running $i"
     rm $i.proof
     rm $i.formula
-    bzcat /home/jodv/workspace/instances/opt/MIPLIB/miplib2/$i.opb.bz2 | ../roundingsat_debug --proof-log=$i --opt-mode=hybrid > /dev/null
+    bzcat /home/jod/workspace/instances/opt/MIPLIB/miplib2/$i.opb.bz2 | ../roundingsat_debug --proof-log=$i --opt-mode=hybrid > /dev/null
     echo "verifying $i"
     wc -l $i.proof
     veripb $i.formula $i.proof -d --arbitraryPrecision $1
@@ -165,7 +165,7 @@ do
     echo "running $i"
     rm $i.proof
     rm $i.formula
-    bzcat /home/jodv/workspace/instances/opt/MIPLIB/miplib2/$i.opb.bz2 | ../roundingsat_debug --proof-log=$i --opt-mode=lazy-hybrid > /dev/null
+    bzcat /home/jod/workspace/instances/opt/MIPLIB/miplib2/$i.opb.bz2 | ../roundingsat_debug --proof-log=$i --opt-mode=lazy-hybrid > /dev/null
     echo "verifying $i"
     wc -l $i.proof
     veripb $i.formula $i.proof -d --arbitraryPrecision $1
