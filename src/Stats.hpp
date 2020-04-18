@@ -55,6 +55,8 @@ struct Stats {
            NDECIDE + NLPPIVOTSROOT + NLPPIVOTSINTERNAL;
   }
 
+  // TODO: track LP time again
+
   void print() const {
     printf("c CPU time			  : %g s\n", aux::cpuTime() - STARTTIME);
     printf("c deterministic time %lld %.2e\n", getDetTime(), (double)getDetTime());

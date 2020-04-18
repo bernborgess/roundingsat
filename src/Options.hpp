@@ -60,6 +60,9 @@ struct Options {
 
   float lpPivotRatio = 1;
   long long lpPivotBudget = 1000;
+  bool addGomoryCuts = true;
+  double tolerance = 1e-6;
+  double maxCutCos = 0.9;
 
   void usageEnum(const std::string& option, const std::string& explanation, const std::vector<std::string>& optMap,
                  int def) {
@@ -96,16 +99,22 @@ struct Options {
     printf("  --prop-sup=arg   Avoid superfluous watch checks (0 or 1; default %d).\n", supProp);
     printf("  --eager-ca=arg   Terminate conflict analysis as soon as possible (0 or 1; default %d).\n", eagerCA);
     printf("  --proof-log=arg  Set a filename for the proof logs (string).\n");
+    printf("  --tolerance=arg  Set the tolerance of floating point calculations (float >0; default %e).\n", tolerance);
     printf(
         "  --lp=arg         Set the ratio of #pivots/#conflicts to limiting the LP solver's calls (negative means "
         "infinite, 0 means no LP solving) (float >=-1; default %lf).\n",
         lpPivotRatio);
     printf("  --lp-budget=arg  Set the minimum LP call pivot budget (integer >=1; default %lld).\n", lpPivotBudget);
+    printf("  --lp-add-gomory-cuts=arg Generate Gomory cuts (0 or 1; default %d).\n", addGomoryCuts);
+    printf(
+        "  --lp-maxcutcos=arg Set upper bound on cosine of angle between cuts added in one round. Higher means cuts "
+        "can be more parallel (float between 0 and 1; default %e).\n",
+        maxCutCos);
   }
 
   typedef bool (*func)(double);
 
-  template <class T>
+  template <typename T>
   void getOptionNum(const std::unordered_map<std::string, std::string>& opt_val, const std::string& option, func test,
                     T& val) {
     if (opt_val.count(option)) {
@@ -144,9 +153,10 @@ struct Options {
         exit(0);
       }
     }
-    std::vector<std::string> opts = {
-        "print-sol",   "verbosity", "var-decay", "rinc",     "rfirst",   "original-rto", "opt-mode", "prop-counting",
-        "prop-clause", "prop-card", "prop-idx",  "prop-sup", "eager-ca", "proof-log",    "lp",       "lp-budget"};
+    std::vector<std::string> opts = {"print-sol",    "verbosity",          "var-decay",     "rinc",        "rfirst",
+                                     "original-rto", "opt-mode",           "prop-counting", "prop-clause", "prop-card",
+                                     "prop-idx",     "prop-sup",           "eager-ca",      "proof-log",   "lp",
+                                     "lp-budget",    "lp-add-gomory-cuts", "lp-tolerance",  "lp-maxcutcos"};
     std::unordered_map<std::string, std::string> opt_val;
     for (int i = 1; i < argc; i++) {
       if (std::string(argv[i]).substr(0, 2) != "--")
@@ -162,21 +172,41 @@ struct Options {
         if (!found) quit::exit_ERROR({"Unknown option: ", argv[i], ".\nCheck usage with --help option."});
       }
     }
-    getOptionNum(opt_val, "print-sol", [](double x) -> bool { return x == 0 || x == 1; }, printSol);
-    getOptionNum(opt_val, "verbosity", [](double x) -> bool { return std::abs(x) == x && x >= 0; }, verbosity);
-    getOptionNum(opt_val, "var-decay", [](double x) -> bool { return x >= 0.5 && x < 1; }, v_vsids_decay);
-    getOptionNum(opt_val, "rinc", [](double x) -> bool { return x >= 1; }, rinc);
-    getOptionNum(opt_val, "rfirst", [](double x) -> bool { return std::abs(x) == x && x >= 1; }, rfirst);
-    getOptionNum(opt_val, "original-rto", [](double x) -> bool { return x == 0 || x == 1; }, originalRoundToOne);
+    getOptionNum(
+        opt_val, "print-sol", [](double x) -> bool { return x == 0 || x == 1; }, printSol);
+    getOptionNum(
+        opt_val, "verbosity", [](double x) -> bool { return std::abs(x) == x && x >= 0; }, verbosity);
+    getOptionNum(
+        opt_val, "var-decay", [](double x) -> bool { return x >= 0.5 && x < 1; }, v_vsids_decay);
+    getOptionNum(
+        opt_val, "rinc", [](double x) -> bool { return x >= 1; }, rinc);
+    getOptionNum(
+        opt_val, "rfirst", [](double x) -> bool { return std::abs(x) == x && x >= 1; }, rfirst);
+    getOptionNum(
+        opt_val, "original-rto", [](double x) -> bool { return x == 0 || x == 1; }, originalRoundToOne);
     getOptionEnum(opt_val, "opt-mode", optMode, optModeMap);
-    getOptionNum(opt_val, "prop-counting", [](double x) -> bool { return x >= 0 || x <= 1; }, countingProp);
-    getOptionNum(opt_val, "prop-clause", [](double x) -> bool { return x == 0 || x == 1; }, clauseProp);
-    getOptionNum(opt_val, "prop-card", [](double x) -> bool { return x == 0 || x == 1; }, cardProp);
-    getOptionNum(opt_val, "prop-idx", [](double x) -> bool { return x == 0 || x == 1; }, idxProp);
-    getOptionNum(opt_val, "prop-sup", [](double x) -> bool { return x == 0 || x == 1; }, supProp);
-    getOptionNum(opt_val, "eager-ca", [](double x) -> bool { return x == 0 || x == 1; }, eagerCA);
-    getOptionNum(opt_val, "lp", [](double x) -> bool { return x >= -1; }, lpPivotRatio);
-    getOptionNum(opt_val, "lp-budget", [](double x) -> bool { return std::abs(x) == x && x >= 1; }, rfirst);
+    getOptionNum(
+        opt_val, "prop-counting", [](double x) -> bool { return x >= 0 || x <= 1; }, countingProp);
+    getOptionNum(
+        opt_val, "prop-clause", [](double x) -> bool { return x == 0 || x == 1; }, clauseProp);
+    getOptionNum(
+        opt_val, "prop-card", [](double x) -> bool { return x == 0 || x == 1; }, cardProp);
+    getOptionNum(
+        opt_val, "prop-idx", [](double x) -> bool { return x == 0 || x == 1; }, idxProp);
+    getOptionNum(
+        opt_val, "prop-sup", [](double x) -> bool { return x == 0 || x == 1; }, supProp);
+    getOptionNum(
+        opt_val, "eager-ca", [](double x) -> bool { return x == 0 || x == 1; }, eagerCA);
+    getOptionNum(
+        opt_val, "lp", [](double x) -> bool { return x >= -1; }, lpPivotRatio);
+    getOptionNum(
+        opt_val, "lp-budget", [](double x) -> bool { return std::abs(x) == x && x >= 1; }, rfirst);
+    getOptionNum(
+        opt_val, "lp-add-gomory-cuts", [](double x) -> bool { return x == 0 || x == 1; }, addGomoryCuts);
+    getOptionNum(
+        opt_val, "lp-tolerance", [](double x) -> bool { return x > 0; }, tolerance);
+    getOptionNum(
+        opt_val, "lp-maxcutcos", [](double x) -> bool { return 1 >= x && x >= 0; }, maxCutCos);
     getOptionStr(opt_val, "proof-log", proofLogName);
   }
 };

@@ -699,14 +699,17 @@ CRef Solver::attachConstraint(intConstr& constraint, ConstraintType type) {
 
 // NOTE: backjumps to place where the constraint is not conflicting, as otherwise we might miss propagations
 CRef Solver::learnConstraint() {
+  // TODO: capture unsat case in a more elegant way by just storing the constraint and returning it at the next
+  // propagation call
   assert(tmpConstraint.hasNoUnits(Level));
   tmpConstraint.removeZeroes();
   tmpConstraint.sortInDecreasingCoefOrder();
   int assertionLevel = tmpConstraint.getAssertionLevel(Level, Pos);
   if (assertionLevel < 0) {
-    assert(decisionLevel() == 0);
+    backjumpTo(0);
     assert(tmpConstraint.getSlack(Level) < 0);
     if (logger) tmpConstraint.logInconsistency(Level, Pos, stats);
+    tmpConstraint.reset();
     return CRef_Unsat;
   }
   backjumpTo(assertionLevel);
@@ -716,8 +719,10 @@ CRef Solver::learnConstraint() {
   tmpConstraint.heuristicWeakening(Level, Pos, slk, stats);
   tmpConstraint.postProcess(Level, Pos, false, stats);
   assert(tmpConstraint.isSaturated());
-  if (tmpConstraint.getDegree() <= 0) return CRef_Undef;
-
+  if (tmpConstraint.getDegree() <= 0) {
+    tmpConstraint.reset();
+    return CRef_Undef;
+  }
   CRef cr = attachConstraint(tmpConstraint, ConstraintType::LEARNT);
   tmpConstraint.reset();
   Constr& C = ca[cr];
@@ -730,16 +735,21 @@ ID Solver::addInputConstraint(ConstraintType type, bool addToLP) {
   if (logger) tmpConstraint.logAsInput();
   tmpConstraint.postProcess(Level, Pos, true, stats);
   assert(tmpConstraint.getDegree() < INF);
-  if (tmpConstraint.getDegree() <= 0) return ID_Undef;  // already satisfied.
+  if (tmpConstraint.getDegree() <= 0) {
+    tmpConstraint.reset();
+    return ID_Undef;  // already satisfied.
+  }
 
   if (tmpConstraint.getSlack(Level) < 0) {
     puts("c Inconsistent input constraint");
     if (logger) tmpConstraint.logInconsistency(Level, Pos, stats);
+    tmpConstraint.reset();
     assert(decisionLevel() == 0);
     return ID_Unsat;
   }
 
   CRef cr = attachConstraint(tmpConstraint, type);
+  tmpConstraint.reset();
   if (!runPropagation(true)) {
     puts("c Input conflict");
     if (logger) {
@@ -759,15 +769,12 @@ ID Solver::addConstraint(const intConstr& c, ConstraintType type, bool addToLP) 
   // NOTE: copy to tmpConstraint guarantees original constraint is not changed and does not need logger
   c.copyTo(tmpConstraint);
   ID result = addInputConstraint(type, addToLP);
-  tmpConstraint.reset();
   return result;
 }
 
-ID Solver::addConstraint(const std::vector<Coef>& coefs, const std::vector<Lit>& lits, const Val rhs,
-                         ConstraintType type, bool addToLP) {
-  tmpConstraint.construct(coefs, lits, rhs);
+ID Solver::addConstraint(const SimpleCons& c, ConstraintType type, bool addToLP) {
+  tmpConstraint.construct(c);
   ID result = addInputConstraint(type, addToLP);
-  tmpConstraint.reset();
   return result;
 }
 
@@ -979,8 +986,8 @@ SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector
         assert(conflConstraint.getDegree() < INF);
         assert(conflConstraint.isSaturated());
         conflConstraint.copyTo(tmpConstraint);
-        if (learnConstraint() == CRef_Unsat) return SolveState::UNSAT;
         conflConstraint.reset();
+        if (learnConstraint() == CRef_Unsat) return SolveState::UNSAT;
       } else {
         if (!extractCore(assumptions, core)) return SolveState::INTERRUPTED;
         return SolveState::INCONSISTENT;

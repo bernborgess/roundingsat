@@ -102,7 +102,7 @@ struct Constr {  // internal solver constraint optimized for fast propagation
   }
   double strength() const;
   void undoFalsified(int i);
-  template <class S, class L>
+  template <typename S, typename L>
   inline void toConstraint(Constraint<S, L>& out) const {
     assert(out.isReset());  // don't use a Constraint used by other stuff
     out.addRhs(degree);
@@ -112,6 +112,13 @@ struct Constr {  // internal solver constraint optimized for fast propagation
     }
     out.degree = degree;
     if (out.plogger) out.resetBuffer(id);
+  }
+  inline SimpleCons toSimpleCons() const {
+    SimpleCons result;
+    result.rhs = degree;
+    result.terms.reserve(size());
+    for (unsigned int i = 0; i < size(); ++i) result.terms.push_back({coef(i), lit(i)});
+    return result;
   }
   std::ostream& operator<<(std::ostream& o) {
     for (size_t i = 0; i < size(); ++i) {

@@ -90,51 +90,36 @@ struct LazyVar {
 
   void addAtLeastConstraint() {
     // X >= k + y1 + ... + yi
-    std::vector<Coef> coefs;
-    coefs.reserve(lhs.size() + introducedVars.size());
-    std::vector<Lit> lits;
-    lits.reserve(lhs.size() + introducedVars.size());
-    for (Lit l : lhs) {
-      coefs.push_back(1);
-      lits.push_back(l);
-    }
-    for (Var v : introducedVars) {
-      coefs.push_back(-1);
-      lits.push_back(v);
-    }
+    SimpleCons sc;
+    sc.rhs = rhs;
+    sc.terms.reserve(lhs.size() + introducedVars.size());
+    for (Lit l : lhs) sc.terms.push_back({1, l});
+    for (Var v : introducedVars) sc.terms.push_back({-1, v});
     solver.dropExternal(atLeastID, false,
                         false);  // TODO: dropExternal(atLeastID,true)? Or treat them as learned/implied constraints?
-    atLeastID = solver.addConstraint(coefs, lits, rhs, ConstraintType::EXTERNAL, false);
+    atLeastID = solver.addConstraint(sc, ConstraintType::EXTERNAL, false);
     if (atLeastID == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
   }
 
   void addAtMostConstraint() {
     // X =< k + y1 + ... + yi-1 + (1+n-k-i)yi
-    std::vector<Coef> coefs;
-    coefs.reserve(lhs.size() + introducedVars.size());
-    std::vector<Lit> lits;
-    lits.reserve(lhs.size() + introducedVars.size());
-    for (Lit l : lhs) {
-      coefs.push_back(-1);
-      lits.push_back(l);
-    }
-    for (Var v : introducedVars) {
-      coefs.push_back(1);
-      lits.push_back(v);
-    }
     assert(getCurrentVar() == introducedVars.back());
-    coefs.push_back(lhs.size() - rhs - introducedVars.size());
-    lits.push_back(getCurrentVar());
+    SimpleCons sc;
+    sc.rhs = -rhs;
+    sc.terms.reserve(lhs.size() + introducedVars.size());
+    for (Lit l : lhs) sc.terms.push_back({-1, l});
+    for (Var v : introducedVars) sc.terms.push_back({1, v});
+    sc.terms.push_back({(Coef)(lhs.size() - rhs - introducedVars.size()), getCurrentVar()});
     solver.dropExternal(atMostID, false,
                         false);  // TODO: dropExternal(atMostID,true)? Or treat them as learned/implied constraints?
-    atMostID = solver.addConstraint(coefs, lits, -rhs, ConstraintType::EXTERNAL, false);
+    atMostID = solver.addConstraint(sc, ConstraintType::EXTERNAL, false);
     if (atMostID == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
   }
 
   void addSymBreakingConstraint(Var prevvar) const {
     assert(introducedVars.size() > 1);
     // y-- + ~y >= 1 (equivalent to y-- >= y)
-    if (solver.addConstraint({1, 1}, {prevvar, -getCurrentVar()}, 1, ConstraintType::AUXILIARY, false) == ID_Unsat)
+    if (solver.addConstraint({{{1, prevvar}, {1, -getCurrentVar()}}, 1}, ConstraintType::AUXILIARY, false) == ID_Unsat)
       quit::exit_UNSAT(solution, upper_bound, solver.logger);
   }
 };
@@ -244,7 +229,7 @@ void handleInconsistency(longConstr& reformObj, const intConstr& origObj,
     if (solver.addConstraint(core, ConstraintType::AUXILIARY, false) == ID_Unsat)
       quit::exit_UNSAT(solution, upper_bound, solver.logger);
     for (Var v = oldN + 1; v < newN; ++v) {  // add symmetry breaking constraints
-      if (solver.addConstraint({1, 1}, {v, -v - 1}, 1, ConstraintType::AUXILIARY, false) == ID_Unsat)
+      if (solver.addConstraint({{{1, v}, {1, -v - 1}}, 1}, ConstraintType::AUXILIARY, false) == ID_Unsat)
         quit::exit_UNSAT(solution, upper_bound, solver.logger);
     }
   }

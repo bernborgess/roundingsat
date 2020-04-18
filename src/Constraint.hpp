@@ -38,15 +38,16 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "aux.hpp"
 #include "typedefs.hpp"
 
-// TODO: make below methods part of a Solver object
-inline bool isTrue(const IntVecIt& level, Lit l) { return level[l] != INF; }
-inline bool isFalse(const IntVecIt& level, Lit l) { return level[-l] != INF; }
-inline bool isUnit(const IntVecIt& level, Lit l) { return level[l] == 0; }
-inline bool isUnknown(const std::vector<int>& pos, Lit l) { return pos[std::abs(l)] == INF; }
-
 enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
 
-template <class SMALL, class LARGE>  // LARGE should be able to fit sums of SMALL
+template <typename T>
+inline T mir_coeff(const T& ai, const T& b, const T& d) {
+  assert(d > 0);
+  T bmodd = mod_safe(b, d);
+  return bmodd * floordiv_safe(ai, d) + min(mod_safe(ai, d), bmodd);
+}
+
+template <typename SMALL, typename LARGE>  // LARGE should be able to fit sums of SMALL
 struct Constraint {
   LARGE degree = 0;
   LARGE rhs = 0;
@@ -80,7 +81,7 @@ struct Constraint {
     plogger = l;
     if (plogger) resetBuffer(1);
   }
-  template <class T>
+  template <typename T>
   inline static std::string proofMult(T mult) {
     std::stringstream ss;
     if (mult != 1) ss << mult << " * ";
@@ -248,7 +249,7 @@ struct Constraint {
     return true;
   }
 
-  template <class S, class L>
+  template <typename S, typename L>
   void copyTo(Constraint<S, L>& out) const {
     assert(out.isReset());
     out.rhs = rhs;
@@ -265,11 +266,10 @@ struct Constraint {
     }
   }
 
-  void construct(const std::vector<Coef>& cfs, const std::vector<Lit>& lts, const Val r) {
-    assert(cfs.size() == lts.size());
+  void construct(const SimpleCons& sc) {
     assert(isReset());
-    addRhs(r);
-    for (unsigned int i = 0; i < lts.size(); ++i) addLhs(cfs[i], lts[i]);
+    addRhs(sc.rhs);
+    for (auto& t : sc.terms) addLhs(t.c, t.l);
   }
 
   void invert() {
@@ -278,7 +278,7 @@ struct Constraint {
     degree = _invalid_();
   }
 
-  template <class S, class L>
+  template <typename S, typename L>
   void addUp(const IntVecIt& level, Constraint<S, L>& c, SMALL cmult = 1, SMALL thismult = 1,
              bool saturateAndReduce = true, bool partial = false) {
     assert(!saturateAndReduce || isSaturated());
@@ -469,7 +469,7 @@ struct Constraint {
         slack -= std::abs(coefs[std::abs(*posIt)]);
         ++posIt;
       }
-      assert(slack >= 0);  // NOTE: currently no use case where a falsified constraint is not asserting on some level
+      if (slack < 0) return assertionLevel - 1;
       while (coefIt != vars.cend() && assertionLevel >= level[getLit(*coefIt)]) ++coefIt;
       if (coefIt == vars.cend()) return INF;  // no assertion level
       if (slack < std::abs(coefs[*coefIt])) return assertionLevel;
@@ -485,6 +485,7 @@ struct Constraint {
         weaken(-coefs[v], v);
         ++sts.NWEAKENEDNONIMPLIED;
       }
+    // TODO: always saturate?
   }
   // @post: preserves order after removeZeroes()
   bool weakenNonImplying(const IntVecIt& level, SMALL propCoef, LARGE slack, Stats& sts) {
@@ -501,7 +502,7 @@ struct Constraint {
       }
     }
     bool changed = oldCount != sts.NWEAKENEDNONIMPLYING;
-    if (changed) saturate();
+    if (changed) saturate();  // TODO: always saturate?
     return changed;
   }
   // @post: preserves order after removeZeroes()
@@ -521,6 +522,12 @@ struct Constraint {
     if (weakenNonImplying(level, std::abs(coefs[v_prop]), slk, sts)) slk = getSlack(level);  // slack changed
     assert(getSlack(level) < std::abs(coefs[v_prop]));
     weakenNonImplied(level, slk, sts);
+  }
+
+  // @post: preserves order after removeZeroes()
+  void weakenSmalls(LARGE limit) {
+    for (Var v : vars)
+      if (coefs[v] != 0 && std::abs(coefs[v]) < limit) weaken(-coefs[v], v);
   }
 
   // @post: preserves order of vars
@@ -681,9 +688,18 @@ struct Constraint {
     }
     o << ">= " << getDegree() << "(" << getSlack(level) << ")";
   }
+
+  SimpleCons toSimpleCons() const {
+    SimpleCons result;
+    result.rhs = getRhs();
+    result.terms.reserve(vars.size());
+    for (Var v : vars)
+      if (coefs[v] != 0) result.terms.push_back({(Coef)coefs[v], v});
+    return result;
+  }
 };
 
-template <class S, class L>
+template <typename S, typename L>
 std::ostream& operator<<(std::ostream& o, Constraint<S, L>& C) {
   std::vector<Var> vars = C.vars;
   std::sort(vars.begin(), vars.end(), [](Var v1, Var v2) { return v1 < v2; });

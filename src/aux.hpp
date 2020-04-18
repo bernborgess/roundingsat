@@ -41,17 +41,17 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #define _unused(x) ((void)(x))  // marks variables unused in release mode
 
-template <class T, class U>
+template <typename T, typename U>
 std::ostream& operator<<(std::ostream& os, const std::pair<T, U>& p) {
   os << p.first << "," << p.second;
   return os;
 }
-template <class T, class U>
+template <typename T, typename U>
 std::ostream& operator<<(std::ostream& os, const std::unordered_map<T, U>& m) {
   for (const auto& e : m) os << e << ";";
   return os;
 }
-template <class T>
+template <typename T>
 std::ostream& operator<<(std::ostream& os, const std::vector<T>& m) {
   for (const auto& e : m) os << e << " ";
   return os;
@@ -105,38 +105,43 @@ std::string num2str(T x) {
   return result;
 }
 
-template <class T>
+template <typename T>
 inline void swapErase(T& indexable, size_t index) {
   indexable[index] = indexable.back();
   indexable.pop_back();
 }
 
-template <class T, class U>
+template <typename T, typename U>
 inline bool contains(const T& v, const U& x) {
   return std::find(v.cbegin(), v.cend(), x) != v.cend();
 }
 
-template <class T>
+template <typename T>
 inline T ceildiv(const T& p, const T& q) {
   assert(q > 0);
   assert(p >= 0);
   return (p + q - 1) / q;
 }  // NOTE: potential overflow
-template <class T>
+template <typename T>
 inline T floordiv(const T& p, const T& q) {
   assert(q > 0);
   assert(p >= 0);
   return p / q;
 }
-template <class T>
+template <typename T>
 inline T ceildiv_safe(const T& p, const T& q) {
   assert(q > 0);
   return (p < 0 ? -floordiv(-p, q) : ceildiv(p, q));
 }
-template <class T>
+template <typename T>
 inline T floordiv_safe(const T& p, const T& q) {
   assert(q > 0);
   return (p < 0 ? -ceildiv(-p, q) : floordiv(p, q));
+}
+template <typename T>
+inline T mod_safe(const T& p, const T& q) {
+  assert(q > 0);
+  return p < 0 ? q - (-p % q) : p % q;
 }
 
 unsigned int gcd(unsigned int u, unsigned int v);  // TODO: C++17 provides std::gcd
@@ -148,7 +153,7 @@ static inline double cpuTime() {
   return (double)ru.ru_utime.tv_sec + (double)ru.ru_utime.tv_usec / 1000000;
 }
 
-template <class T>
+template <typename T>
 void resizeIntMap(std::vector<T>& _map, typename std::vector<T>::iterator& map, int size, int resize_factor, T init) {
   assert(size < (1 << 28));
   int oldsize = (_map.size() - 1) / 2;
@@ -163,7 +168,7 @@ void resizeIntMap(std::vector<T>& _map, typename std::vector<T>::iterator& map, 
   for (; i >= 0; --i) _map[i] = init;
 }
 
-template <class T>
+template <typename T>
 T median(std::vector<T>& v) {
   assert(v.size() > 0);
   size_t n = v.size() / 2;
@@ -171,18 +176,18 @@ T median(std::vector<T>& v) {
   return v[n];
 }
 
-template <class T>
+template <typename T>
 double average(const std::vector<T>& v) {
   assert(v.size() > 0);
   return std::accumulate(v.begin(), v.end(), 0.0) / (double)v.size();
 }
 
-template <class T>
+template <typename T>
 T min(const std::vector<T>& v) {
   return *std::min_element(v.begin(), v.end());
 }
 
-template <class T>
+template <typename T>
 T max(const std::vector<T>& v) {
   return *std::max_element(v.begin(), v.end());
 }

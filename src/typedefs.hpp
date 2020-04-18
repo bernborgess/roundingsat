@@ -55,3 +55,18 @@ const ActValV actLimitV = (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 * (Ac
                           (ActValV)1e300;
 using ActValC = float;
 const ActValC actLimitC = 1e30;
+
+struct Term {
+  Coef c;
+  Lit l;
+};
+struct SimpleCons {
+  std::vector<Term> terms;
+  Val rhs;
+};
+
+// TODO: make below methods part of a Solver object that's passed around
+inline bool isTrue(const IntVecIt& level, Lit l) { return level[l] != INF; }
+inline bool isFalse(const IntVecIt& level, Lit l) { return level[-l] != INF; }
+inline bool isUnit(const IntVecIt& level, Lit l) { return level[l] == 0; }
+inline bool isUnknown(const std::vector<int>& pos, Lit l) { return pos[std::abs(l)] == INF; }
