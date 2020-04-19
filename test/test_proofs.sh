@@ -33,7 +33,7 @@ declare -a arr_opt_cg=(
 #"stein45"
 #"lseu"
 #"p0201"
-"sentoy"
+#"sentoy"
 #"p0282"
 #"p0291"
 #"mod008"
