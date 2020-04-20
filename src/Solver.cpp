@@ -416,32 +416,15 @@ bool Solver::analyze() {
     Coef confl_coef_l = conflConstraint.getCoef(-l);
     if (confl_coef_l > 0) {
       assert(conflConstraint.getSlack(Level) < 0);
-      if (options.eagerCA) {
-        AssertionStatus status = conflConstraint.isAssertingBefore(Level, decisionLevel());
-        if (status == AssertionStatus::ASSERTING)
-          break;
-        else if (status == AssertionStatus::FALSIFIED) {
-          backjumpTo(decisionLevel() - 1);
-          assert(conflConstraint.getSlack(Level) < 0);
-          continue;
-        }
-      } else {
-        if (conflConstraint.falsifiedAtLvlisOne(Level, decisionLevel())) {
-          assert(conflConstraint.falsev1 == std::abs(l));
-          if (conflConstraint.getSlack(Level) + confl_coef_l >= 0)
-            break;
-          else {
-            backjumpTo(decisionLevel() - 1);
-            assert(conflConstraint.getSlack(Level) < 0);
-            continue;
-          }
-        }
+      AssertionStatus status = conflConstraint.isAssertingBefore(Level, decisionLevel());
+      if (status == AssertionStatus::ASSERTING)
+        break;
+      else if (status == AssertionStatus::FALSIFIED) {
+        backjumpTo(decisionLevel() - 1);
+        assert(conflConstraint.getSlack(Level) < 0);
+        continue;
       }
       assert(Reason[std::abs(l)] != CRef_Undef);
-      if (options.originalRoundToOne) {
-        conflConstraint.roundToOne(Level, confl_coef_l, false);
-        confl_coef_l = 1;
-      }
       Constr& reasonC = ca[Reason[std::abs(l)]];
       if (reasonC.getType() == ConstraintType::LEARNT) {
         cBumpActivity(reasonC);
@@ -456,17 +439,13 @@ bool Solver::analyze() {
       Coef slk = tmpConstraint.getSlack(Level);
       if (slk > 0) {
         Coef div = slk + 1;
-        if (options.originalRoundToOne) {
-          tmpConstraint.weaken(-(tmpConstraint.getCoef(l) % div), l);
-          tmpConstraint.saturate();
-        }
-        tmpConstraint.roundToOne(Level, div, !options.originalRoundToOne);
+        tmpConstraint.roundToOne(Level, div);
       }
       assert(tmpConstraint.getSlack(Level) <= 0);
       for (Var v : tmpConstraint.vars) actSet.add(tmpConstraint.getLit(v));
       Coef reason_coef_l = tmpConstraint.getCoef(l);
       Coef gcd_coef_l = aux::gcd(reason_coef_l, confl_coef_l);
-      conflConstraint.addUp(Level, tmpConstraint, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
+      conflConstraint.addUpReduced(Level, tmpConstraint, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
       tmpConstraint.reset();
       assert(conflConstraint.getCoef(-l) == 0);
       assert(conflConstraint.getSlack(Level) < 0);
@@ -534,16 +513,12 @@ bool Solver::extractCore(const IntSet& assumptions, intConstr& outCore, Lit l_as
       Coef slk = tmpConstraint.getSlack(Level);
       if (slk > 0) {
         Coef div = slk + 1;
-        if (options.originalRoundToOne) {
-          tmpConstraint.weaken(-(tmpConstraint.getCoef(l) % div), l);
-          tmpConstraint.saturate();
-        }
-        tmpConstraint.roundToOne(Level, div, !options.originalRoundToOne);
+        tmpConstraint.roundToOne(Level, div);
       }
       assert(tmpConstraint.getSlack(Level) <= 0);
       Coef reason_coef_l = tmpConstraint.getCoef(l);
       Coef gcd_coef_l = aux::gcd(reason_coef_l, confl_coef_l);
-      conflConstraint.addUp(Level, tmpConstraint, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
+      conflConstraint.addUpReduced(Level, tmpConstraint, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
       tmpConstraint.reset();
       assert(conflConstraint.getCoef(-l) == 0);
       assert(conflConstraint.getSlack(Level) < 0);
@@ -579,7 +554,7 @@ CRef Solver::attachConstraint(intConstr& constraint, ConstraintType type) {
   assert(constraint.getDegree() < INF);
   assert(constraint.vars.size() > 0);
 
-  if (logger) constraint.logProofLine("a", stats);
+  if (logger) constraint.logProofLine("Attach", stats);
   CRef cr = ca.alloc(constraint, type, logger ? logger->last_proofID : ++crefID);
   constraints.push_back(cr);
   Constr& C = ca[cr];
@@ -701,8 +676,7 @@ CRef Solver::attachConstraint(intConstr& constraint, ConstraintType type) {
 CRef Solver::learnConstraint() {
   // TODO: capture unsat case in a more elegant way by just storing the constraint and returning it at the next
   // propagation call
-  assert(tmpConstraint.hasNoUnits(Level));
-  tmpConstraint.removeZeroes();
+  tmpConstraint.removeUnitsAndZeroes(Level, Pos, true);
   tmpConstraint.sortInDecreasingCoefOrder();
   int assertionLevel = tmpConstraint.getAssertionLevel(Level, Pos);
   if (assertionLevel < 0) {
@@ -713,7 +687,6 @@ CRef Solver::learnConstraint() {
     return CRef_Unsat;
   }
   backjumpTo(assertionLevel);
-  assert(qhead == (int)trail.size());  // jumped back sufficiently far to catch up with qhead
   Val slk = tmpConstraint.getSlack(Level);
   assert(slk >= 0);
   tmpConstraint.heuristicWeakening(Level, Pos, slk, stats);
@@ -761,7 +734,7 @@ ID Solver::addInputConstraint(ConstraintType type, bool addToLP) {
   }
   ID id = ca[cr].id;
   if (type == ConstraintType::EXTERNAL) external[id] = cr;
-  if (addToLP && lpSolver) lpSolver->addConstraint(cr);
+  if (addToLP && lpSolver) lpSolver->addConstraint(cr, false);
   return id;
 }
 
@@ -920,8 +893,7 @@ Lit Solver::pickBranchLit() {
 
 bool Solver::presolve() {
   firstRun = false;
-
-  if (lpSolver) return lpSolver->inProcess();
+  if (lpSolver && !lpSolver->inProcess()) return false;
   return true;
 }
 
@@ -941,15 +913,7 @@ bool Solver::presolve() {
 // TODO: use a coroutine / yield instead of a SolveState return value
 SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector<bool>& solution) {
   backjumpTo(0);  // ensures assumptions are reset
-  if (firstRun) {
-    if (!presolve()) {
-      if (logger) {
-        conflConstraint.logInconsistency(Level, Pos, stats);
-        conflConstraint.reset();
-      }
-      return SolveState::UNSAT;
-    }
-  }
+  if (firstRun && !presolve()) return SolveState::UNSAT;
   std::vector<int> assumptions_lim = {0};
   assumptions_lim.reserve((int)assumptions.size() + 1);
   bool allClear = false;
@@ -998,15 +962,7 @@ SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector
         if (stats.NCONFL >= (stats.NCLEANUP + 1) * nconfl_to_reduce) {
           ++stats.NCLEANUP;
           if (options.verbosity > 0) puts("c INPROCESSING");
-          if (lpSolver) {
-            if (!lpSolver->inProcess()) {
-              if (logger) {
-                conflConstraint.logInconsistency(Level, Pos, stats);
-                conflConstraint.reset();
-              }
-              return SolveState::UNSAT;
-            }
-          }
+          if (lpSolver && !lpSolver->inProcess()) return SolveState::UNSAT;
           reduceDB();
           while (stats.NCONFL >= stats.NCLEANUP * nconfl_to_reduce)
             nconfl_to_reduce += options.incReduceDB * 3;  // TODO: remove *3 when deciding on new stable version

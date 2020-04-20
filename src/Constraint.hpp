@@ -43,8 +43,8 @@ enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
 template <typename T>
 inline T mir_coeff(const T& ai, const T& b, const T& d) {
   assert(d > 0);
-  T bmodd = mod_safe(b, d);
-  return bmodd * floordiv_safe(ai, d) + min(mod_safe(ai, d), bmodd);
+  T bmodd = aux::mod_safe(b, d);
+  return bmodd * aux::floordiv_safe(ai, d) + std::min(aux::mod_safe(ai, d), bmodd);
 }
 
 template <typename SMALL, typename LARGE>  // LARGE should be able to fit sums of SMALL
@@ -129,10 +129,13 @@ struct Constraint {
            (coefs[v] < 0 && !isTrue(level, v)));
     return (coefs[v] > 0 && isFalse(level, v)) || (coefs[v] < 0 && isTrue(level, v));
   }
+  inline bool increasesSlack(const IntVecIt& level, Var v) const {
+    return isTrue(level, v) || (!isFalse(level, v) && coefs[v] > 0);
+  }
   LARGE getSlack(const IntVecIt& level) const {
     LARGE slack = -rhs;
     for (Var v : vars)
-      if (isTrue(level, v) || (!isFalse(level, v) && coefs[v] > 0)) slack += coefs[v];
+      if (increasesSlack(level, v)) slack += coefs[v];
     return slack;
   }
   LARGE getSlack(const IntSet& assumptions) const {
@@ -279,9 +282,7 @@ struct Constraint {
   }
 
   template <typename S, typename L>
-  void addUp(const IntVecIt& level, Constraint<S, L>& c, SMALL cmult = 1, SMALL thismult = 1,
-             bool saturateAndReduce = true, bool partial = false) {
-    assert(!saturateAndReduce || isSaturated());
+  void addUp(Constraint<S, L>& c, SMALL cmult = 1, SMALL thismult = 1) {
     assert(c._unused_() <= _unused_());  // don't add large stuff into small stuff
     assert(cmult >= 0);
     assert(thismult >= 0);
@@ -291,7 +292,6 @@ struct Constraint {
       rhs *= thismult;
       for (Var v : vars) coefs[v] *= thismult;
     }
-    LARGE old_degree = getDegree();
     degree += (LARGE)cmult * (LARGE)c.getDegree();
     rhs += (LARGE)cmult * (LARGE)c.getRhs();
     for (Var v : c.vars) {
@@ -307,51 +307,48 @@ struct Constraint {
         coefs[v] = cf + val;
       }
     }
-    if (!saturateAndReduce) return;
-    if (old_degree > getDegree()) {
-      removeZeroes();
-      saturate();
-    } else
-      saturate(c.vars);  // only saturate changed vars
-    if (getDegree() >= (LARGE)INF) {
-      removeZeroes();
-      roundToOne(level, aux::ceildiv<LARGE>(getDegree(), INF - 1), partial);
-    }
+  }
+
+  template <typename S, typename L>
+  void addUpReduced(const IntVecIt& level, Constraint<S, L>& c, SMALL cmult = 1, SMALL thismult = 1) {
+    addUp(c, cmult, thismult);
+    removeZeroes();
+    saturate();
+    if (getDegree() >= (LARGE)INF) roundToOne(level, aux::ceildiv<LARGE>(getDegree(), INF - 1));
     assert(getDegree() < (LARGE)INF);
     assert(isSaturated());
   }
 
-  void roundToOne(const IntVecIt& level, const SMALL d, bool partial) {
-    assert(isSaturated());
-    assert(d > 0);
-    if (d == 1) return;
+  void divide(const SMALL d) {
+    if (plogger) proofBuffer << d << " d ";
     for (Var v : vars) {
-      assert(!isUnit(level, -v));
-      assert(!isUnit(level, v));
-      if (coefs[v] % d != 0) {
-        if (!falsified(level, v)) {
-          if (partial)
-            weaken(-coefs[v] % d, v);  // partial weakening
-          else
-            weaken(-coefs[v], v);
-        } else {
-          assert((!isTrue(level, v)) == (coefs[v] > 0));
-          if (coefs[v] < 0) {
-            SMALL weakening = d + (coefs[v] % d);
-            coefs[v] -= weakening;
-            rhs -= weakening;
-          } else
-            coefs[v] += d - (coefs[v] % d);
-        }
-      }
       assert(coefs[v] % d == 0);
       coefs[v] /= d;
     }
     // NOTE: as all coefficients are divisible by d, we can aux::ceildiv the rhs instead of the degree
     rhs = aux::ceildiv_safe<LARGE>(rhs, d);
+    if (degree != _invalid_()) degree = aux::ceildiv_safe<LARGE>(degree, d);
+  }
+
+  void roundToOne(const IntVecIt& level, const SMALL d) {
+    assert(isSaturated());
+    assert(hasNoUnits(level));
+    assert(d > 0);
+    if (d == 1) return;
+    for (Var v : vars) {
+      if (coefs[v] % d == 0) continue;
+      weaken((increasesSlack(level, v) ? 0 : d) - aux::mod_safe(coefs[v], d), v);
+    }
     degree = _invalid_();
+    divide(d);
     saturate();  // NOTE: needed, as weakening can change degree significantly
-    if (plogger) proofBuffer << d << " d s ";
+  }
+
+  void applyMIR(SMALL d) {
+    for (Var v : vars) coefs[v] = mir_coeff(coefs[v], rhs, d);
+    rhs = aux::mod_safe(rhs, d) * aux::ceildiv_safe(rhs, d);
+    degree = _invalid_();
+    // TODO: fix logging
   }
 
   bool divideByGCD() {
@@ -367,11 +364,7 @@ struct Constraint {
     }
     assert(_gcd > 1);
     assert(_gcd < (unsigned int)INF);
-    for (Var v : vars) coefs[v] /= (Coef)_gcd;
-    // NOTE: as all coefficients are divisible, we can aux::ceildiv the rhs instead of the degree
-    rhs = aux::ceildiv_safe<LARGE>(rhs, _gcd);
-    if (degree != _invalid_()) degree = aux::ceildiv_safe<LARGE>(degree, _gcd);
-    if (plogger) proofBuffer << _gcd << " d ";
+    divide(_gcd);
     return true;
   }
 
@@ -381,30 +374,6 @@ struct Constraint {
     if (sortFirst) sortInDecreasingCoefOrder();
     if (divideByGCD()) ++sts.NGCD;
     if (simplifyToCardinality(true)) ++sts.NCARDDETECT;
-  }
-
-  inline bool falseAtLevel(const IntVecIt& level, Var v, int lvl) {
-    return (coefs[v] > 0 && level[-v] == lvl) || (coefs[v] < 0 && level[v] == lvl);
-  }
-  Var falsev1 = 0;
-  Var falsev2 = 0;
-  bool falsifiedAtLvlisOne(const IntVecIt& level, int lvl) {
-    if (getLit(falsev1) != 0 && getLit(falsev2) != 0 && falseAtLevel(level, falsev1, lvl) &&
-        falseAtLevel(level, falsev2, lvl))
-      return false;
-    falsev1 = 0;
-    falsev2 = 0;
-    for (Var v : vars) {
-      if (coefs[v] != 0 && falseAtLevel(level, v, lvl)) {
-        if (falsev1 == 0)
-          falsev1 = v;
-        else {
-          falsev2 = v;
-          return false;
-        };
-      }
-    }
-    return falsev1 != 0;
   }
 
   // NOTE: also removes encountered zeroes and changes variable order
@@ -653,14 +622,14 @@ struct Constraint {
       rhs = 0;
     }
     degree = 1;
-    logProofLine("u", sts);
+    logProofLine("Unit", sts);
     plogger->unitIDs.push_back(plogger->last_proofID);
   }
 
   void logInconsistency(const IntVecIt& level, const std::vector<int>& pos, const Stats& sts) {
     assert(plogger);
     removeUnitsAndZeroes(level, pos);
-    logProofLine("i", sts);
+    logProofLine("Inconsistency", sts);
     assert(getSlack(level) < 0);
     plogger->proof_out << "c " << plogger->last_proofID << " 0" << std::endl;
   }
@@ -694,7 +663,7 @@ struct Constraint {
     result.rhs = getRhs();
     result.terms.reserve(vars.size());
     for (Var v : vars)
-      if (coefs[v] != 0) result.terms.push_back({(Coef)coefs[v], v});
+      if (coefs[v] != 0) result.terms.emplace_back((Coef)coefs[v], v);
     return result;
   }
 };

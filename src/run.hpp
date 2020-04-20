@@ -68,7 +68,7 @@ void handleNewSolution(const intConstr& origObj, ID& lastUpperBound) {
 struct LazyVar {
   int mult;  // TODO: add long long to int check?
   Val rhs;
-  std::vector<Lit> lhs;  // TODO: refactor lhs and introducedVars to one Lit vector
+  std::vector<Lit> lhs;  // TODO: refactor lhs and introducedVars to one SimpleCons
   std::vector<Var> introducedVars;
   ID atLeastID = ID_Undef;
   ID atMostID = ID_Undef;
@@ -93,8 +93,8 @@ struct LazyVar {
     SimpleCons sc;
     sc.rhs = rhs;
     sc.terms.reserve(lhs.size() + introducedVars.size());
-    for (Lit l : lhs) sc.terms.push_back({1, l});
-    for (Var v : introducedVars) sc.terms.push_back({-1, v});
+    for (Lit l : lhs) sc.terms.emplace_back(1, l);
+    for (Var v : introducedVars) sc.terms.emplace_back(-1, v);
     solver.dropExternal(atLeastID, false,
                         false);  // TODO: dropExternal(atLeastID,true)? Or treat them as learned/implied constraints?
     atLeastID = solver.addConstraint(sc, ConstraintType::EXTERNAL, false);
@@ -107,9 +107,9 @@ struct LazyVar {
     SimpleCons sc;
     sc.rhs = -rhs;
     sc.terms.reserve(lhs.size() + introducedVars.size());
-    for (Lit l : lhs) sc.terms.push_back({-1, l});
-    for (Var v : introducedVars) sc.terms.push_back({1, v});
-    sc.terms.push_back({(Coef)(lhs.size() - rhs - introducedVars.size()), getCurrentVar()});
+    for (Lit l : lhs) sc.terms.emplace_back(-1, l);
+    for (Var v : introducedVars) sc.terms.emplace_back(1, v);
+    sc.terms.emplace_back((Coef)(lhs.size() - rhs - introducedVars.size()), getCurrentVar());
     solver.dropExternal(atMostID, false,
                         false);  // TODO: dropExternal(atMostID,true)? Or treat them as learned/implied constraints?
     atMostID = solver.addConstraint(sc, ConstraintType::EXTERNAL, false);
@@ -201,7 +201,7 @@ void handleInconsistency(longConstr& reformObj, const intConstr& origObj,
     reformObj.resize(newN + 1);
     // reformulate the objective
     core.invert();
-    reformObj.addUp(solver.getLevel(), core, mult, 1, false);
+    reformObj.addUp(core, mult);
     core.invert();
     reformObj.addLhs(mult, newN);  // add only one variable for now
     assert(lower_bound == -reformObj.getDegree());
@@ -220,7 +220,7 @@ void handleInconsistency(longConstr& reformObj, const intConstr& origObj,
     // reformulate the objective
     for (Var v = oldN + 1; v <= newN; ++v) core.addLhs(-1, v);
     core.invert();
-    reformObj.addUp(solver.getLevel(), core, mult, 1, false);
+    reformObj.addUp(core, mult);
     assert(lower_bound == -reformObj.getDegree());
     // add channeling constraints
     if (solver.addConstraint(core, ConstraintType::AUXILIARY, false) == ID_Unsat)
@@ -318,12 +318,12 @@ void optimize(intConstr& origObj) {
         aux.invert();
         aux.addRhs(1 - upper_bound);
         aux.resetBuffer(lastUpperBound - 1);  // -1 to get the unprocessed formula line
-        coreAggregate.addUp(solver.getLevel(), aux, 1, 1, false);
+        coreAggregate.addUp(aux);
         aux.reset();
         origObj.copyTo(aux);
         aux.addRhs(lower_bound);
         aux.resetBuffer(lastLowerBound - 1);  // -1 to get the unprocessed formula line
-        coreAggregate.addUp(solver.getLevel(), aux, 1, 1, false);
+        coreAggregate.addUp(aux);
         aux.reset();
         assert(coreAggregate.getSlack(solver.getLevel()) < 0);
         assert(solver.decisionLevel() == 0);

@@ -117,7 +117,7 @@ struct Constr {  // internal solver constraint optimized for fast propagation
     SimpleCons result;
     result.rhs = degree;
     result.terms.reserve(size());
-    for (unsigned int i = 0; i < size(); ++i) result.terms.push_back({coef(i), lit(i)});
+    for (unsigned int i = 0; i < size(); ++i) result.terms.emplace_back(coef(i), lit(i));
     return result;
   }
   std::ostream& operator<<(std::ostream& o) {

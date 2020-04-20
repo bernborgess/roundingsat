@@ -30,6 +30,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #pragma once
 
 #include <cassert>
+#include <iostream>
 #include <limits>
 #include <unordered_map>
 #include <vector>
@@ -56,14 +57,24 @@ const ActValV actLimitV = (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 * (Ac
 using ActValC = float;
 const ActValC actLimitC = 1e30;
 
+template <typename CF>
 struct Term {
-  Coef c;
+  Term(const CF& x, Lit y) : c(x), l(y) {}
+  CF c;
   Lit l;
 };
+template <typename CF>
+std::ostream& operator<<(std::ostream& o, const Term<CF>& t) {
+  return o << t.c << "x" << t.l;
+}
 struct SimpleCons {
-  std::vector<Term> terms;
+  std::vector<Term<Coef>> terms;
   Val rhs;
 };
+inline std::ostream& operator<<(std::ostream& o, const SimpleCons& sc) {
+  for (auto& t : sc.terms) o << "+ " << t << " ";
+  return o << ">= " << sc.rhs;
+}
 
 // TODO: make below methods part of a Solver object that's passed around
 inline bool isTrue(const IntVecIt& level, Lit l) { return level[l] != INF; }

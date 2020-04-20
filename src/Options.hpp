@@ -43,14 +43,12 @@ struct Options {
   OPTMODE optMode = LAZYHYBRID;
 
   int verbosity = 1;
-  bool originalRoundToOne = false;
   bool clauseProp = true;
   bool cardProp = true;
   bool idxProp = true;
   bool supProp = true;
   float countingProp = 0.7;
   int resize_factor = 2;
-  bool eagerCA = true;
 
   double rinc = 2;
   long long rfirst = 100;
@@ -84,10 +82,6 @@ struct Options {
     printf("  --var-decay=arg  Set the VSIDS decay factor (0.5<=arg<1; default %lf).\n", v_vsids_decay);
     printf("  --rinc=arg       Set the base of the Luby restart sequence (float >=1; default %lf).\n", rinc);
     printf("  --rfirst=arg     Set the interval of the Luby restart sequence (integer >=1; default %lld).\n", rfirst);
-    printf(
-        "  --original-rto=arg Set whether to use RoundingSat's original round-to-one conflict analysis (0 or 1; "
-        "default %d).\n",
-        originalRoundToOne);
     usageEnum("opt-mode", "Set optimization mode", optModeMap, optMode);
     printf(
         "  --prop-counting=arg Counting propagation instead of watched propagation (float between 0 (no counting) and "
@@ -97,7 +91,6 @@ struct Options {
     printf("  --prop-card=arg  Optimized watched propagation for cardinalities (0 or 1; default %d).\n", cardProp);
     printf("  --prop-idx=arg   Optimize index of watches during propagation (0 or 1; default %d).\n", idxProp);
     printf("  --prop-sup=arg   Avoid superfluous watch checks (0 or 1; default %d).\n", supProp);
-    printf("  --eager-ca=arg   Terminate conflict analysis as soon as possible (0 or 1; default %d).\n", eagerCA);
     printf("  --proof-log=arg  Set a filename for the proof logs (string).\n");
     printf("  --tolerance=arg  Set the tolerance of floating point calculations (float >0; default %e).\n", tolerance);
     printf(
@@ -153,10 +146,10 @@ struct Options {
         exit(0);
       }
     }
-    std::vector<std::string> opts = {"print-sol",    "verbosity",          "var-decay",     "rinc",        "rfirst",
-                                     "original-rto", "opt-mode",           "prop-counting", "prop-clause", "prop-card",
-                                     "prop-idx",     "prop-sup",           "eager-ca",      "proof-log",   "lp",
-                                     "lp-budget",    "lp-add-gomory-cuts", "lp-tolerance",  "lp-maxcutcos"};
+    std::vector<std::string> opts = {"print-sol",    "verbosity",     "var-decay",   "rinc",      "rfirst",
+                                     "opt-mode",     "prop-counting", "prop-clause", "prop-card", "prop-idx",
+                                     "prop-sup",     "proof-log",     "lp",          "lp-budget", "lp-add-gomory-cuts",
+                                     "lp-tolerance", "lp-maxcutcos"};
     std::unordered_map<std::string, std::string> opt_val;
     for (int i = 1; i < argc; i++) {
       if (std::string(argv[i]).substr(0, 2) != "--")
@@ -182,8 +175,6 @@ struct Options {
         opt_val, "rinc", [](double x) -> bool { return x >= 1; }, rinc);
     getOptionNum(
         opt_val, "rfirst", [](double x) -> bool { return std::abs(x) == x && x >= 1; }, rfirst);
-    getOptionNum(
-        opt_val, "original-rto", [](double x) -> bool { return x == 0 || x == 1; }, originalRoundToOne);
     getOptionEnum(opt_val, "opt-mode", optMode, optModeMap);
     getOptionNum(
         opt_val, "prop-counting", [](double x) -> bool { return x >= 0 || x <= 1; }, countingProp);
@@ -195,8 +186,6 @@ struct Options {
         opt_val, "prop-idx", [](double x) -> bool { return x == 0 || x == 1; }, idxProp);
     getOptionNum(
         opt_val, "prop-sup", [](double x) -> bool { return x == 0 || x == 1; }, supProp);
-    getOptionNum(
-        opt_val, "eager-ca", [](double x) -> bool { return x == 0 || x == 1; }, eagerCA);
     getOptionNum(
         opt_val, "lp", [](double x) -> bool { return x >= -1; }, lpPivotRatio);
     getOptionNum(

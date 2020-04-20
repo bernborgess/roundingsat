@@ -49,6 +49,7 @@ struct Stats {
   double LPSOLVETIME = 0;
   long long NLPCALLS = 0, NLPOPTIMAL = 0, NLPINFEAS = 0, NLPFARKAS = 0;
   long long NLPCYCLING = 0, NLPNOPRIMAL = 0, NLPNOFARKAS = 0, NLPSINGULAR = 0, NLPOTHER = 0;
+  long long NLPGOMORYCUTS = 0, NLPLEARNEDCUTS = 0, NLPDELETEDCUTS = 0;
 
   inline long long getDetTime() const {
     return 1 + NADDEDLITERALS + NWATCHLOOKUPS + NWATCHLOOKUPSBJ + NWATCHCHECKS + NPROPCHECKS + NPROP + NTRAILPOPS +
@@ -106,5 +107,8 @@ struct Stats {
     printf("c LP no primal count %lld\n", NLPNOPRIMAL);
     printf("c LP no farkas count %lld\n", NLPNOFARKAS);
     printf("c LP other issue count %lld\n", NLPOTHER);
+    printf("c LP Gomory cuts %lld\n", NLPGOMORYCUTS);
+    printf("c LP learned cuts %lld\n", NLPLEARNEDCUTS);
+    printf("c LP deleted cuts %lld\n", NLPDELETEDCUTS);
   }
 };
