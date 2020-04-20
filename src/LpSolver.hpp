@@ -46,11 +46,17 @@ struct CandidateCut {
   SimpleCons simpcons;
   CRef cr = CRef_Undef;
   double norm = 0;
-  double lpViolation = 0;
+  double ratSlack = 0;
 
-  CandidateCut(){};  // TODO erase
-  CandidateCut(const int128Constr& in, const soplex::DVectorReal& sol);
+  CandidateCut(int128Constr& in, const soplex::DVectorReal& sol);
   double cosOfAngleTo(const CandidateCut& other) const;
+};
+std::ostream& operator<<(std::ostream& o, const CandidateCut& cc);
+
+struct AdditionData {
+  soplex::DSVectorReal lhs;
+  Val rhs;
+  bool removable;
 };
 
 class LpSolver {
@@ -69,9 +75,9 @@ class LpSolver {
   soplex::DSVectorReal lpRow;
 
   std::unordered_map<ID, int> id2row;
-  std::vector<ID> row2id;
+  std::vector<std::pair<ID, bool>> row2data;  // ID and removable bit
   std::unordered_set<ID> toRemove;
-  std::unordered_map<ID, std::pair<soplex::DSVectorReal, Val>> toAdd;
+  std::unordered_map<ID, AdditionData> toAdd;
 
   int128Constr lcc;
   intConstr ic;
@@ -87,22 +93,28 @@ class LpSolver {
   int getNbRows() const;
 
   // @return: false if inconsistency detected, true otherwise
+  // stores inconsistency in solver.conflConstraint
   bool checkFeasibility(bool inProcessing = false);
   // @return: false if inconsistency detected, true otherwise
   bool inProcess();
 
-  void addConstraint(CRef cr);
+  void addConstraint(CRef cr, bool removable);
   void removeConstraint(ID id);
-  void flushConstraints();
 
  private:
+  void flushConstraints();
+
+  bool _checkFeasibility(bool inProcessing);
+  bool _inProcess();
+
   void LP_convertConstraint(CRef cr, soplex::DSVectorReal& row, Val& rhs);  // TODO: remove "LP_" in method names
   void LP_resetBasis();
   void createLinearCombinationFarkas(soplex::DVectorReal& mults);
   CandidateCut createLinearCombinationGomory(soplex::DVectorReal& mults);
-  double getScaleFactor(soplex::DVectorReal& mults);
+  double getScaleFactor(soplex::DVectorReal& mults, bool removeNegatives);
   bool rowToConstraint(int row);
   bool addGomoryCuts();
+  void pruneCuts();
 
   // NOTE: if b is positive, the comparison is more relaxed. If b is negative, the comparison is more strict.
   inline static bool relaxedLT(double a, double b) { return a <= b * (1 + options.tolerance); }

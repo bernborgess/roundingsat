@@ -30,20 +30,26 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "LpSolver.hpp"
 #include "Solver.hpp"
 
-CandidateCut::CandidateCut(const int128Constr& in, const soplex::DVectorReal& sol) {
+CandidateCut::CandidateCut(int128Constr& in, const soplex::DVectorReal& sol) {
+  assert(in.isSaturated());
+  assert(in.getDegree() < INF);
+  if (in.getDegree() <= 0) return;
   simpcons = in.toSimpleCons();
-  double norm = 0;
+  assert(norm == 0);
   for (const auto& p : simpcons.terms) norm += (double)p.c * (double)p.c;
   norm = std::sqrt(norm);
-  lpViolation = -simpcons.rhs;
-  for (auto& p : simpcons.terms) lpViolation += (double)p.c * sol[p.l];
-  lpViolation /= norm;
-  std::sort(simpcons.terms.begin(), simpcons.terms.end(), [](const Term& t1, const Term& t2) { return t1.l < t2.l; });
+  ratSlack = -simpcons.rhs;
+  for (auto& p : simpcons.terms) ratSlack += (double)p.c * sol[p.l];
+  assert(norm != 0);
+  ratSlack /= norm;
+  std::sort(simpcons.terms.begin(), simpcons.terms.end(),
+            [](const Term<Coef>& t1, const Term<Coef>& t2) { return t1.l < t2.l; });
 }
 
 // @pre: simpcons is ordered and norm is calculated
 double CandidateCut::cosOfAngleTo(const CandidateCut& other) const {
-  assert(norm != 0 && other.norm != 0);
+  assert(norm != 0);
+  assert(other.norm != 0);
   double cos = 0;
   int i = 0;
   int j = 0;
@@ -61,6 +67,10 @@ double CandidateCut::cosOfAngleTo(const CandidateCut& other) const {
     }
   }
   return cos / (norm * other.norm);
+}
+
+std::ostream& operator<<(std::ostream& o, const CandidateCut& cc) {
+  return o << cc.simpcons << " norm " << cc.norm << " ratSlack " << cc.ratSlack;
 }
 
 LpSolver::LpSolver(Solver& slvr, const intConstr& o) : solver(slvr) {
@@ -86,7 +96,7 @@ LpSolver::LpSolver(Solver& slvr, const intConstr& o) : solver(slvr) {
 
   // add all formula constraints
   for (CRef cr : solver.constraints)
-    if (solver.ca[cr].getType() == ConstraintType::FORMULA) addConstraint(cr);
+    if (solver.ca[cr].getType() == ConstraintType::FORMULA) addConstraint(cr, false);
 
   // How does RoundingSat perform branch-and-bound minimization?
   // - F is the objective function, with a trivial lower bound L and trivial upper bound U
@@ -122,7 +132,7 @@ LpSolver::LpSolver(Solver& slvr, const intConstr& o) : solver(slvr) {
 }
 
 void LpSolver::setNbVariables(int n) {
-  lpSolution = soplex::DVectorReal(n);
+  lpSolution.reDim(n);
   lcc.resize(n);
   ic.resize(n);
   lowerBounds.reDim(n);
@@ -134,36 +144,97 @@ int LpSolver::getNbRows() const { return lp.numRowsReal(); }
 // BITWISE: -
 void LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
   assert(lcc.isReset());
-  double mult = getScaleFactor(mults);
+  double mult = getScaleFactor(mults, true);
 
   for (int r = 0; r < mults.dim(); ++r) {
     if (mults[r] == 0) continue;
     assert(mults[r] > 0);
+    assert(lp.lhsReal(r) != INFTY);
     rowToConstraint(r);
-    lcc.addUp(solver.getLevel(), ic, mults[r] * mult, 1, false);
+    lcc.addUp(ic, mults[r] * mult);
     ic.reset();
   }
   lcc.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
-  if (lcc.getDegree() >= INF) lcc.roundToOne(solver.getLevel(), aux::ceildiv<__int128>(lcc.getDegree(), INF - 1), true);
+  if (lcc.getDegree() >= INF) lcc.roundToOne(solver.getLevel(), aux::ceildiv<__int128>(lcc.getDegree(), INF - 1));
   assert(lcc.getDegree() < INF);
   assert(lcc.isSaturated());
 }
 
 CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults) {
-  // TODO
-  return CandidateCut();
+  assert(lcc.isReset());
+  double mult = getScaleFactor(mults, false);
+  std::vector<std::pair<__int128, int>> slacks;
+
+  for (int r = 0; r < mults.dim(); ++r) {
+    __int128 factor = mults[r] * mult;
+    if (factor == 0) continue;
+    rowToConstraint(r);
+    if (factor < 0) ic.invert();
+    lcc.addUp(ic, std::abs(factor));
+    ic.reset();
+    slacks.emplace_back(-factor, r);
+  }
+
+  for (Var v : lcc.vars) {
+    if (lpSolution[v] <= 0.5) continue;
+    lcc.coefs[v] = -lcc.coefs[v];
+    lcc.addRhs(lcc.coefs[v]);
+  }
+
+  __int128 b = lcc.getRhs();
+  if (b == 0) {
+    lcc.reset();
+    return CandidateCut(lcc, lpSolution);
+  }
+
+  assert(mult > 0);
+  __int128 divisor = mult;
+  while ((b % divisor) == 0) ++divisor;
+  lcc.applyMIR(divisor);
+
+  for (Var v : lcc.vars) {
+    if (lpSolution[v] <= 0.5) continue;
+    lcc.coefs[v] = -lcc.coefs[v];
+    lcc.addRhs(lcc.coefs[v]);
+  }
+
+  // round up the slack variables MIR style and cancel out the slack variables
+  for (unsigned i = 0; i < slacks.size(); ++i) {
+    __int128 factor = mir_coeff(slacks[i].first, b, divisor);
+    if (factor == 0) continue;
+    rowToConstraint(slacks[i].second);
+    if (factor < 0) ic.invert();
+    lcc.addUp(ic, std::abs(factor));
+    ic.reset();
+  }
+
+  lcc.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
+  if (lcc.getDegree() >= INF) {
+    divisor = aux::ceildiv<__int128>(lcc.getDegree(), INF - 1);
+    for (Var v : lcc.vars) {
+      __int128 rem = aux::mod_safe(lcc.coefs[v], divisor);
+      if (rem == 0) continue;
+      assert(rem > 0);
+      if ((double)divisor * lpSolution[v] < rem)
+        lcc.weaken(divisor - rem, v);
+      else
+        lcc.weaken(-rem, v);
+    }
+    lcc.divide(divisor);
+    lcc.saturate();
+  }
+  return CandidateCut(lcc, lpSolution);
 }
 
 bool LpSolver::addGomoryCuts() {
   std::vector<int> indices;
-  indices.resize(lp.numRowsReal());
+  indices.resize(getNbRows());
   lp.getBasisInd(indices.data());
-  lpMultipliers.reDim(lp.numRowsReal());
 
   std::vector<CandidateCut> candidateCuts;
   std::vector<double> normalization;
 
-  for (int row = 0; row < lp.numRowsReal(); ++row) {
+  for (int row = 0; row < getNbRows(); ++row) {
     double fractionality = 0;
     if (indices[row] >= 0)  // basic original variable / column
       fractionality = nonIntegrality(lpSolution[indices[row]]);
@@ -173,14 +244,20 @@ bool LpSolver::addGomoryCuts() {
 
     lp.getBasisInverseRowReal(row, lpMultipliers.get_ptr());
     candidateCuts.push_back(createLinearCombinationGomory(lpMultipliers));
-    if (candidateCuts.back().lpViolation < options.tolerance) candidateCuts.pop_back();
+    lcc.reset();
+    if (candidateCuts.back().ratSlack >= -options.tolerance) candidateCuts.pop_back();
     for (int i = 0; i < lpMultipliers.dim(); ++i) lpMultipliers[i] = -lpMultipliers[i];
     candidateCuts.push_back(createLinearCombinationGomory(lpMultipliers));
-    if (candidateCuts.back().lpViolation < options.tolerance) candidateCuts.pop_back();
+    lcc.reset();
+    if (candidateCuts.back().ratSlack >= -options.tolerance) candidateCuts.pop_back();
+  }
+  for (const auto& cc : candidateCuts) {
+    _unused(cc);
+    assert(cc.norm != 0);
   }
   std::sort(candidateCuts.begin(), candidateCuts.end(), [](const CandidateCut& x1, const CandidateCut& x2) {
-    return x1.lpViolation > x2.lpViolation ||
-           (x1.lpViolation == x2.lpViolation && x1.simpcons.terms.size() < x2.simpcons.terms.size());
+    return x1.ratSlack > x2.ratSlack ||
+           (x1.ratSlack == x2.ratSlack && x1.simpcons.terms.size() < x2.simpcons.terms.size());
   });
 
   // filter the candidate cuts
@@ -196,36 +273,47 @@ bool LpSolver::addGomoryCuts() {
     auto& cc = candidateCuts[i];
     if (cc.cr == CRef_Undef) {
       solver.tmpConstraint.construct(cc.simpcons);
+      if (solver.logger) solver.tmpConstraint.logAsInput();  // TODO: fix
       cc.cr = solver.learnConstraint();
-    }
+      ++stats.NLPGOMORYCUTS;
+    } else
+      ++stats.NLPLEARNEDCUTS;
     assert(cc.cr != CRef_Undef);
     if (cc.cr == CRef_Unsat) return false;
-    addConstraint(cc.cr);
+    addConstraint(cc.cr, true);
   }
-
   return true;
+}
+
+void LpSolver::pruneCuts() {
+  assert(getNbRows() == (int)row2data.size());
+  lpMultipliers.clear();
+  lp.getDual(lpMultipliers);
+  for (int r = 0; r < getNbRows(); ++r)
+    if (row2data[r].second && lpMultipliers[r] == 0) {
+      ++stats.NLPDELETEDCUTS;
+      removeConstraint(row2data[r].first);
+    }
 }
 
 // BITWISE: +log2(maxMult)+log2(1e9) // TODO: check BITWISE
 // @return: multiplier fitting in positive bigint range, s.t. multiplier*largestV <= max128*INF/nbMults
 // @post: no NaN or negative mults (if onlyPositive)
 // NOTE: it is possible that mults are negative (e.g., when calculating Gomory cuts)
-double LpSolver::getScaleFactor(soplex::DVectorReal& mults) {
-  const double max128 = 1e37;  // NOTE: std::numeric_limits<bigint>::max() // TODO: 1e38?
+double LpSolver::getScaleFactor(soplex::DVectorReal& mults, bool removeNegatives) {
+  const double max128 = 1e37;  // NOTE: std::numeric_limits<bigint>::max() // TODO: 1e38? Check bits, also for cuts
   int nbMults = 0;
-  double largestV = maxMult / max128;
-  assert(maxMult / largestV <= max128);
+  double largest = maxMult / max128;
+  assert(maxMult / largest <= max128);
   for (int i = 0; i < mults.dim(); ++i) {
     // TODO: check opposite construction of Farkas constraint, inverting in case multiplier>0
-    if (std::isnan(mults[i]) || (mults[i] < 0 && lp.rhsReal(i) == INFTY) || (mults[i] > 0 && lp.lhsReal(i) == -INFTY))
-      mults[i] = 0;  // TODO: report NaN to Ambros?
-    if (mults[i] != 0) {
-      ++nbMults;
-      if (std::abs(mults[i]) > largestV) largestV = std::abs(mults[i]);
-    }
+    if (std::isnan(mults[i]) || (removeNegatives && mults[i] < 0)) mults[i] = 0;  // TODO: report NaN to Ambros?
+    if (mults[i] == 0) continue;
+    ++nbMults;
+    largest = std::max(std::abs(mults[i]), largest);
   }
   assert(nbMults < INF);
-  double mult = maxMult / largestV / nbMults * INF;
+  double mult = maxMult / largest / nbMults * INF;
   assert(mult > 0);
   assert(mult <= max128);
   return mult;
@@ -247,11 +335,25 @@ bool LpSolver::rowToConstraint(int row) {
     assert(el.val != 0);
     ic.addLhs((Coef)el.val, el.idx);
   }
-  if (ic.plogger) ic.resetBuffer(row2id[row]);
+  if (ic.plogger) ic.resetBuffer(row2data[row].first);
   return true;
 }
 
 bool LpSolver::checkFeasibility(bool inProcessing) {
+  double startTime = aux::cpuTime();
+  bool result = _checkFeasibility(inProcessing);
+  stats.LPTOTALTIME += aux::cpuTime() - startTime;
+  return result;
+}
+
+bool LpSolver::inProcess() {
+  double startTime = aux::cpuTime();
+  bool result = _inProcess();
+  stats.LPTOTALTIME += aux::cpuTime() - startTime;
+  return result;
+}
+
+bool LpSolver::_checkFeasibility(bool inProcessing) {
   if (options.lpPivotRatio < 0)
     lp.setIntParam(soplex::SoPlex::ITERLIMIT, -1);  // no pivot limit
   else {
@@ -305,22 +407,11 @@ bool LpSolver::checkFeasibility(bool inProcessing) {
 
   if (stat == soplex::SPxSolver::Status::OPTIMAL) {
     ++stats.NLPOPTIMAL;
-    if (inProcessing && lp.hasSol()) {
-      lp.getPrimal(lpSolution);
-      assert((int)solver.phase.size() >= getNbVariables());
-      for (Var v = 1; v < getNbVariables(); ++v) solver.phase[v] = (lpSolution[v] <= 0.5) ? -v : v;
-      std::cout << "c rational objective " << lp.objValueReal() << std::endl;
-      // if (options.addGomoryCuts) addGomoryCuts();
-    }
-    if (lp.numIterations() == 0) {
-      ++stats.NLPNOPIVOT;
-      return true;
-    }  // no use calculating solution if it is not changed
     if (!lp.hasSol()) {
       ++stats.NLPNOPRIMAL;
       LP_resetBasis();
-      return true;
     }
+    if (lp.numIterations() == 0) ++stats.NLPNOPIVOT;
     return true;
   }
 
@@ -344,14 +435,11 @@ bool LpSolver::checkFeasibility(bool inProcessing) {
   ++stats.NLPINFEAS;
 
   // To prove that we have an inconsistency, let's build the Farkas proof
-  if (!lp.hasDualFarkas()) {
+  if (!lp.getDualFarkas(lpMultipliers)) {
     ++stats.NLPNOFARKAS;
     LP_resetBasis();
     return true;
   }
-
-  lpMultipliers.reDim(lp.numRowsReal());
-  lp.getDualFarkas(lpMultipliers);
 
   createLinearCombinationFarkas(lpMultipliers);
   // TODO: asserting case and postprocessing?
@@ -368,9 +456,25 @@ bool LpSolver::checkFeasibility(bool inProcessing) {
   }
 }
 
-bool LpSolver::inProcess() {
-  return checkFeasibility(true);
-  // TODO: implement cut generation
+bool LpSolver::_inProcess() {
+  assert(solver.decisionLevel() == 0);
+  if (!checkFeasibility(true)) {
+    assert(solver.conflConstraint.getSlack(solver.getLevel()) < 0);
+    solver.conflConstraint.logInconsistency(solver.getLevel(), solver.getPos(), stats);
+    return false;
+  }
+  if (lp.hasSol()) {
+    lp.getPrimal(lpSolution);
+    lp.getSlacksReal(lpSlackSolution);
+    assert((int)solver.phase.size() >= getNbVariables());
+    for (Var v = 1; v < getNbVariables(); ++v) solver.phase[v] = (lpSolution[v] <= 0.5) ? -v : v;
+    std::cout << "c rational objective " << lp.objValueReal() << std::endl;
+    if (options.addGomoryCuts) {
+      if (!addGomoryCuts()) return false;
+      pruneCuts();
+    }
+  }
+  return true;
 }
 
 void LpSolver::LP_resetBasis() {
@@ -395,14 +499,14 @@ void LpSolver::LP_convertConstraint(CRef cr, soplex::DSVectorReal& row, Val& rhs
   assert(validRhs(rhs));
 }
 
-void LpSolver::addConstraint(CRef cr) {
+void LpSolver::addConstraint(CRef cr, bool removable) {
   ID id = solver.ca[cr].id;
   toRemove.erase(id);
   if (!id2row.count(id) && !toAdd.count(id)) {
     soplex::DSVectorReal row(solver.ca[cr].size());
     Val rhs;
     LP_convertConstraint(cr, row, rhs);
-    toAdd[id] = {row, rhs};
+    toAdd[id] = {row, rhs, removable};
   }
 }
 
@@ -414,20 +518,20 @@ void LpSolver::removeConstraint(ID id) {
 // TODO: exploit lp.changeRowReal for more efficiency, e.g. when replacing the upper and lower bound on the objective
 void LpSolver::flushConstraints() {
   if (toRemove.size() > 0) {  // first remove rows
-    std::vector<int> rowsToRemove(row2id.size(), 0);
+    std::vector<int> rowsToRemove(getNbRows(), 0);
     for (ID id : toRemove) {
       ++stats.NLPDELETEDROWS;
       rowsToRemove[id2row[id]] = -1;
       id2row.erase(id);
     }
     lp.removeRowsReal(rowsToRemove.data());
-    row2id.resize(id2row.size());
+    row2data.resize(id2row.size());
     for (auto& p : id2row) {
       int newrow = rowsToRemove[p.second];
       assert(newrow >= 0);
-      assert(newrow < lp.numRowsReal());
+      assert(newrow <= id2row[p.first]);
+      row2data[newrow] = row2data[id2row[p.first]];
       id2row[p.first] = newrow;
-      row2id[newrow] = p.first;
     }
     toRemove.clear();
   }
@@ -435,15 +539,18 @@ void LpSolver::flushConstraints() {
   if (toAdd.size() > 0) {  // then add rows
     soplex::LPRowSetReal rowsToAdd;
     rowsToAdd.reMax(toAdd.size());
-    row2id.reserve(row2id.size() + toAdd.size());
+    row2data.reserve(row2data.size() + toAdd.size());
     id2row.reserve(id2row.size() + toAdd.size());
     for (auto& p : toAdd) {
-      rowsToAdd.add(soplex::LPRowReal(p.second.first, soplex::LPRowReal::Type::GREATER_EQUAL, p.second.second));
-      id2row[p.first] = row2id.size();
-      row2id.push_back(p.first);
+      rowsToAdd.add(soplex::LPRowReal(p.second.lhs, soplex::LPRowReal::Type::GREATER_EQUAL, p.second.rhs));
+      id2row[p.first] = row2data.size();
+      row2data.emplace_back(p.first, p.second.removable);
       ++stats.NLPADDEDROWS;
     }
     lp.addRowsReal(rowsToAdd);
     toAdd.clear();
   }
+
+  lpSlackSolution.reDim(getNbRows());
+  lpMultipliers.reDim(getNbRows());
 }

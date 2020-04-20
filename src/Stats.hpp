@@ -46,7 +46,7 @@ struct Stats {
 
   long long NLPADDEDROWS = 0, NLPDELETEDROWS = 0;
   long long NLPPIVOTSINTERNAL = 0, NLPPIVOTSROOT = 0, NLPNOPIVOT = 0, NLPRESETBASIS = 0;
-  double LPSOLVETIME = 0;
+  double LPSOLVETIME = 0, LPTOTALTIME = 0;
   long long NLPCALLS = 0, NLPOPTIMAL = 0, NLPINFEAS = 0, NLPFARKAS = 0;
   long long NLPCYCLING = 0, NLPNOPRIMAL = 0, NLPNOFARKAS = 0, NLPSINGULAR = 0, NLPOTHER = 0;
   long long NLPGOMORYCUTS = 0, NLPLEARNEDCUTS = 0, NLPDELETEDCUTS = 0;
@@ -59,7 +59,7 @@ struct Stats {
   // TODO: track LP time again
 
   void print() const {
-    printf("c CPU time			  : %g s\n", aux::cpuTime() - STARTTIME);
+    printf("c cpu time %g s\n", aux::cpuTime() - STARTTIME);
     printf("c deterministic time %lld %.2e\n", getDetTime(), (double)getDetTime());
     printf("c propagations %lld\n", NPROP);
     printf("c decisions %lld\n", NDECIDE);
@@ -91,6 +91,7 @@ struct Stats {
     printf("c propagation checks %lld\n", NPROPCHECKS);
     printf("c constraint additions %lld\n", NADDEDLITERALS);
     printf("c trail pops %lld\n", NTRAILPOPS);
+    printf("c LP total time %g s\n", LPTOTALTIME);
     printf("c LP solve time %g s\n", LPSOLVETIME);
     printf("c LP constraints added %lld\n", NLPADDEDROWS);
     printf("c LP constraints removed %lld\n", NLPDELETEDROWS);
