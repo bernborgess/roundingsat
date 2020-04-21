@@ -37,19 +37,24 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "soplex/soplex.h"
 #pragma GCC diagnostic pop
 
+#include "SimpleCons.hpp"
 #include "SolverStructs.hpp"
 #include "aux.hpp"
 #include "globals.hpp"
 #include "typedefs.hpp"
 
 struct CandidateCut {
-  SimpleCons simpcons;
+  SimpleCons<Coef> simpcons;
   CRef cr = CRef_Undef;
   double norm = 0;
   double ratSlack = 0;
 
   CandidateCut(int128Constr& in, const soplex::DVectorReal& sol);
+  CandidateCut(const Constr& in, const soplex::DVectorReal& sol);
   double cosOfAngleTo(const CandidateCut& other) const;
+
+ private:
+  void initialize(const soplex::DVectorReal& sol);
 };
 std::ostream& operator<<(std::ostream& o, const CandidateCut& cc);
 
@@ -79,6 +84,8 @@ class LpSolver {
   std::unordered_set<ID> toRemove;
   std::unordered_map<ID, AdditionData> toAdd;
 
+  std::vector<CandidateCut> candidateCuts;
+
   int128Constr lcc;
   intConstr ic;
   // NOTE: 2^59 is the maximum possible, given the 64 bits needed for other calculations
@@ -94,7 +101,7 @@ class LpSolver {
 
   // @return: false if inconsistency detected, true otherwise
   // stores inconsistency in solver.conflConstraint
-  bool checkFeasibility(bool inProcessing = false); // TODO: don't use objective function here?
+  bool checkFeasibility(bool inProcessing = false);  // TODO: don't use objective function here?
   // @return: false if inconsistency detected, true otherwise
   bool inProcess();
 
@@ -113,7 +120,9 @@ class LpSolver {
   CandidateCut createLinearCombinationGomory(soplex::DVectorReal& mults);
   double getScaleFactor(soplex::DVectorReal& mults, bool removeNegatives);
   bool rowToConstraint(int row);
-  bool addGomoryCuts();
+  void constructGomoryCandidates();
+  void constructLearnedCandidates();
+  bool addFilteredCuts();
   void pruneCuts();
 
   // NOTE: if b is positive, the comparison is more relaxed. If b is negative, the comparison is more strict.

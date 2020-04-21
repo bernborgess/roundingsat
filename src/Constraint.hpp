@@ -34,6 +34,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <sstream>
 #include "IntSet.hpp"
 #include "Logger.hpp"
+#include "SimpleCons.hpp"
 #include "Stats.hpp"
 #include "aux.hpp"
 #include "typedefs.hpp"
@@ -269,7 +270,8 @@ struct Constraint {
     }
   }
 
-  void construct(const SimpleCons& sc) {
+  template <typename CF>
+  void construct(const SimpleCons<CF>& sc) {
     assert(isReset());
     addRhs(sc.rhs);
     for (auto& t : sc.terms) addLhs(t.c, t.l);
@@ -658,8 +660,9 @@ struct Constraint {
     o << ">= " << getDegree() << "(" << getSlack(level) << ")";
   }
 
-  SimpleCons toSimpleCons() const {
-    SimpleCons result;
+  template <typename CF>
+  SimpleCons<CF> toSimpleCons() const {
+    SimpleCons<CF> result;
     result.rhs = getRhs();
     result.terms.reserve(vars.size());
     for (Var v : vars)

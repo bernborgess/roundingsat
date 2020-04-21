@@ -113,8 +113,9 @@ struct Constr {  // internal solver constraint optimized for fast propagation
     out.degree = degree;
     if (out.plogger) out.resetBuffer(id);
   }
-  inline SimpleCons toSimpleCons() const {
-    SimpleCons result;
+  template <typename CF>
+  SimpleCons<CF> toSimpleCons() const {
+    SimpleCons<CF> result;
     result.rhs = degree;
     result.terms.reserve(size());
     for (unsigned int i = 0; i < size(); ++i) result.terms.emplace_back(coef(i), lit(i));

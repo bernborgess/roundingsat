@@ -4,7 +4,7 @@ Copyright (c) 2019-2020, Jo Devriendt
 
 Parts of the code were copied or adapted from MiniSat.
 
-MiniSAT -- Copyright (c) 2003-2006, Niklas Een, Niklas Sorensson
+MiniSat -- Copyright (c) 2003-2006, Niklas Een, Niklas Sorensson
            Copyright (c) 2007-2010  Niklas Sorensson
 
 Permission is hereby granted, free of charge, to any person obtaining a
@@ -29,36 +29,50 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include <cassert>
 #include <iostream>
-#include <limits>
-#include <unordered_map>
 #include <vector>
+#include "typedefs.hpp"
 
-using ID = uint64_t;
-const ID ID_Undef = std::numeric_limits<ID>::max();
-const ID ID_Unsat = ID_Undef - 1;
+template <typename CF>
+struct Term {
+  Term(const CF& x, Lit y) : c(x), l(y) {}
+  CF c;
+  Lit l;
+};
 
-using Var = int;
-using Lit = int;
-using Coef = int;
-using Val = long long;
+template <typename CF>
+std::ostream& operator<<(std::ostream& o, const Term<CF>& t) {
+  return o << t.c << "x" << t.l;
+}
 
-const Coef INF = 1e9 + 1;       // based on max value of int that still allows addition of two ints
-const Val INF_long = 1e15 + 1;  // based on max long range captured by double
+template <typename CF>
+struct SimpleCons {
+  std::vector<Term<CF>> terms;
+  CF rhs;
 
-using IntVecIt = std::vector<int>::iterator;
+  void toNormalFormLit() {
+    for (auto& t : terms) {
+      if (t.c < 0) {
+        rhs -= t.c;
+        t.c = -t.c;
+        t.l = -t.l;
+      }
+    }
+  }
 
-using ActValV = __float128;
-const ActValV actLimitV = (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 *
-                          (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 *
-                          (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 *
-                          (ActValV)1e300;
-using ActValC = float;
-const ActValC actLimitC = 1e30;
+  void toNormalFormVar() {
+    for (auto& t : terms) {
+      if (t.l < 0) {
+        rhs -= t.c;
+        t.c = -t.c;
+        t.l = -t.l;
+      }
+    }
+  }
+};
 
-// TODO: make below methods part of a Solver object that's passed around
-inline bool isTrue(const IntVecIt& level, Lit l) { return level[l] != INF; }
-inline bool isFalse(const IntVecIt& level, Lit l) { return level[-l] != INF; }
-inline bool isUnit(const IntVecIt& level, Lit l) { return level[l] == 0; }
-inline bool isUnknown(const std::vector<int>& pos, Lit l) { return pos[std::abs(l)] == INF; }
+template <typename CF>
+inline std::ostream& operator<<(std::ostream& o, const SimpleCons<CF>& sc) {
+  for (auto& t : sc.terms) o << "+ " << t << " ";
+  return o << ">= " << sc.rhs;
+}

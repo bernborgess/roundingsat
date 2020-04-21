@@ -34,7 +34,21 @@ CandidateCut::CandidateCut(int128Constr& in, const soplex::DVectorReal& sol) {
   assert(in.isSaturated());
   assert(in.getDegree() < INF);
   if (in.getDegree() <= 0) return;
-  simpcons = in.toSimpleCons();
+  simpcons = in.toSimpleCons<Coef>();
+  // NOTE: simpcons is already in var-normal form
+  initialize(sol);
+}
+
+CandidateCut::CandidateCut(const Constr& in, const soplex::DVectorReal& sol) {
+  assert(in.degree > 0);
+  simpcons = in.toSimpleCons<Coef>();
+  simpcons.toNormalFormVar();
+  initialize(sol);
+}
+
+void CandidateCut::initialize(const soplex::DVectorReal& sol) {
+  std::sort(simpcons.terms.begin(), simpcons.terms.end(),
+            [](const Term<Coef>& t1, const Term<Coef>& t2) { return t1.l < t2.l; });
   assert(norm == 0);
   for (const auto& p : simpcons.terms) norm += (double)p.c * (double)p.c;
   norm = std::sqrt(norm);
@@ -42,8 +56,6 @@ CandidateCut::CandidateCut(int128Constr& in, const soplex::DVectorReal& sol) {
   for (auto& p : simpcons.terms) ratSlack += (double)p.c * sol[p.l];
   assert(norm != 0);
   ratSlack /= norm;
-  std::sort(simpcons.terms.begin(), simpcons.terms.end(),
-            [](const Term<Coef>& t1, const Term<Coef>& t2) { return t1.l < t2.l; });
 }
 
 // @pre: simpcons is ordered and norm is calculated
@@ -160,6 +172,14 @@ void LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
   assert(lcc.isSaturated());
 }
 
+void flipLits(int128Constr& ic, const soplex::DVectorReal& lpSol) {
+  for (Var v : ic.vars) {
+    if (lpSol[v] <= 0.5) continue;
+    ic.coefs[v] = -ic.coefs[v];
+    ic.addRhs(ic.coefs[v]);
+  }
+}
+
 CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults) {
   assert(lcc.isReset());
   double mult = getScaleFactor(mults, false);
@@ -175,11 +195,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     slacks.emplace_back(-factor, r);
   }
 
-  for (Var v : lcc.vars) {
-    if (lpSolution[v] <= 0.5) continue;
-    lcc.coefs[v] = -lcc.coefs[v];
-    lcc.addRhs(lcc.coefs[v]);
-  }
+  flipLits(lcc, lpSolution);
 
   __int128 b = lcc.getRhs();
   if (b == 0) {
@@ -192,11 +208,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   while ((b % divisor) == 0) ++divisor;
   lcc.applyMIR(divisor);
 
-  for (Var v : lcc.vars) {
-    if (lpSolution[v] <= 0.5) continue;
-    lcc.coefs[v] = -lcc.coefs[v];
-    lcc.addRhs(lcc.coefs[v]);
-  }
+  flipLits(lcc, lpSolution);
 
   // round up the slack variables MIR style and cancel out the slack variables
   for (unsigned i = 0; i < slacks.size(); ++i) {
@@ -226,13 +238,10 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   return CandidateCut(lcc, lpSolution);
 }
 
-bool LpSolver::addGomoryCuts() {
+void LpSolver::constructGomoryCandidates() {
   std::vector<int> indices;
   indices.resize(getNbRows());
   lp.getBasisInd(indices.data());
-
-  std::vector<CandidateCut> candidateCuts;
-  std::vector<double> normalization;
 
   for (int row = 0; row < getNbRows(); ++row) {
     double fractionality = 0;
@@ -251,6 +260,19 @@ bool LpSolver::addGomoryCuts() {
     lcc.reset();
     if (candidateCuts.back().ratSlack >= -options.tolerance) candidateCuts.pop_back();
   }
+}
+
+void LpSolver::constructLearnedCandidates() {
+  for (CRef cr : solver.constraints) {
+    const Constr& c = solver.ca[cr];
+    if (id2row.count(c.id) == 0) {
+      candidateCuts.emplace_back(c, lpSolution);
+      if (candidateCuts.back().ratSlack >= -options.tolerance) candidateCuts.pop_back();
+    }
+  }
+}
+
+bool LpSolver::addFilteredCuts() {
   for (const auto& cc : candidateCuts) {
     _unused(cc);
     assert(cc.norm != 0);
@@ -282,6 +304,7 @@ bool LpSolver::addGomoryCuts() {
     if (cc.cr == CRef_Unsat) return false;
     addConstraint(cc.cr, true);
   }
+  candidateCuts.clear();
   return true;
 }
 
@@ -356,8 +379,8 @@ bool LpSolver::inProcess() {
 bool LpSolver::_checkFeasibility(bool inProcessing) {
   if (options.lpPivotRatio < 0)
     lp.setIntParam(soplex::SoPlex::ITERLIMIT, -1);  // no pivot limit
-  else if (options.lpPivotRatio * stats.NCONFL < (inProcessing?stats.NLPPIVOTSROOT:stats.NLPPIVOTSINTERNAL))
-    return true; // pivot ratio exceeded
+  else if (options.lpPivotRatio * stats.NCONFL < (inProcessing ? stats.NLPPIVOTSROOT : stats.NLPPIVOTSINTERNAL))
+    return true;  // pivot ratio exceeded
   else
     lp.setIntParam(soplex::SoPlex::ITERLIMIT, options.lpPivotBudget * lpPivotMult);
   flushConstraints();
@@ -454,10 +477,11 @@ bool LpSolver::_inProcess() {
     assert((int)solver.phase.size() >= getNbVariables());
     for (Var v = 1; v < getNbVariables(); ++v) solver.phase[v] = (lpSolution[v] <= 0.5) ? -v : v;
     std::cout << "c rational objective " << lp.objValueReal() << std::endl;
-    if (options.addGomoryCuts) {
-      if (!addGomoryCuts()) return false;
-      pruneCuts();
-    }
+    assert(candidateCuts.size() == 0);
+    if (options.addGomoryCuts) constructGomoryCandidates();
+    if (options.addLearnedCuts) constructLearnedCandidates();
+    if (!addFilteredCuts()) return false;
+    pruneCuts();
   }
   return true;
 }

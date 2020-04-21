@@ -745,7 +745,7 @@ ID Solver::addConstraint(const intConstr& c, ConstraintType type, bool addToLP) 
   return result;
 }
 
-ID Solver::addConstraint(const SimpleCons& c, ConstraintType type, bool addToLP) {
+ID Solver::addConstraint(const SimpleCons<Coef>& c, ConstraintType type, bool addToLP) {
   tmpConstraint.construct(c);
   ID result = addInputConstraint(type, addToLP);
   return result;

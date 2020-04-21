@@ -98,7 +98,7 @@ class Solver {
   int decisionLevel() const { return trail_lim.size(); }
 
   ID addConstraint(const intConstr& c, ConstraintType type, bool addToLP);
-  ID addConstraint(const SimpleCons& c, ConstraintType type, bool addToLP);
+  ID addConstraint(const SimpleCons<Coef>& c, ConstraintType type, bool addToLP);
   void dropExternal(ID id, bool forceDelete, bool removeFromLP);
   int getNbConstraints() const { return constraints.size(); }
   void getIthConstraint(int i, intConstr& out) const { return ca[constraints[i]].toConstraint(out); }
