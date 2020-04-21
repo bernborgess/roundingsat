@@ -94,7 +94,7 @@ class LpSolver {
 
   // @return: false if inconsistency detected, true otherwise
   // stores inconsistency in solver.conflConstraint
-  bool checkFeasibility(bool inProcessing = false);
+  bool checkFeasibility(bool inProcessing = false); // TODO: don't use objective function here?
   // @return: false if inconsistency detected, true otherwise
   bool inProcess();
 

@@ -356,25 +356,10 @@ bool LpSolver::inProcess() {
 bool LpSolver::_checkFeasibility(bool inProcessing) {
   if (options.lpPivotRatio < 0)
     lp.setIntParam(soplex::SoPlex::ITERLIMIT, -1);  // no pivot limit
-  else {
-    long long allowed = 0;
-    if (inProcessing)
-      allowed = options.lpPivotRatio * (1 + stats.NCONFL) - stats.NLPPIVOTSROOT;
-    else {
-      // explanation of formula:
-      // start at 1 to allow initial LP search
-      // allow as many (total) pivots as weighted conflict count
-      // subtract total pivots so far
-      // each call to LP solver also counts as a pivot, to reduce number of feasibility calls (that have 0 pivot count)
-      allowed = ceil(options.lpPivotRatio * (1 + stats.NCONFL) - stats.NLPPIVOTSINTERNAL - stats.NLPCALLS);
-      // NOTE: when triggered, allow the LP at least 100 pivots to run.
-      // This value is conservative: in benchmarks, SCIP has 382 (median) and 1391 (average) pivots / soplex call.
-    }
-    if (allowed <= 0)
-      return true;  // no pivot budget available
-    else
-      lp.setIntParam(soplex::SoPlex::ITERLIMIT, allowed + options.lpPivotBudget * lpPivotMult);
-  }
+  else if (options.lpPivotRatio * stats.NCONFL < (inProcessing?stats.NLPPIVOTSROOT:stats.NLPPIVOTSINTERNAL))
+    return true; // pivot ratio exceeded
+  else
+    lp.setIntParam(soplex::SoPlex::ITERLIMIT, options.lpPivotBudget * lpPivotMult);
   flushConstraints();
 
   // Set the  LP's bounds based on the current trail
