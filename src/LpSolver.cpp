@@ -34,16 +34,17 @@ CandidateCut::CandidateCut(int128Constr& in, const soplex::DVectorReal& sol) {
   assert(in.isSaturated());
   assert(in.getDegree() < INF);
   if (in.getDegree() <= 0) return;
-  simpcons = in.toSimpleCons<Coef>();
+  simpcons = in.toSimpleCons<Coef,Val>();
   // NOTE: simpcons is already in var-normal form
   initialize(sol);
 }
 
-CandidateCut::CandidateCut(const Constr& in, const soplex::DVectorReal& sol) {
+CandidateCut::CandidateCut(const Constr& in, CRef cref, const soplex::DVectorReal& sol)
+    : simpcons(in.toSimpleCons<Coef,Val>()), cr(cref) {
   assert(in.degree > 0);
-  simpcons = in.toSimpleCons<Coef>();
   simpcons.toNormalFormVar();
   initialize(sol);
+  assert(cr!=CRef_Undef);
 }
 
 void CandidateCut::initialize(const soplex::DVectorReal& sol) {
@@ -98,13 +99,7 @@ LpSolver::LpSolver(Solver& slvr, const intConstr& o) : solver(slvr) {
   lp.setIntParam(soplex::SoPlex::VERBOSITY, options.verbosity);
   // NOTE: alternative "crash basis" only helps on few instances, according to Ambros, so we don't adjust that parameter
 
-  // add variables
-  // NOTE: batch version is more efficient than adding them one by one
-  soplex::LPColSetReal allCols;
-  allCols.reMax(getNbVariables());
-  soplex::DSVectorReal dummycol(0);
-  for (Var v = 0; v < getNbVariables(); ++v) allCols.add(soplex::LPColReal(0, dummycol, 1, 0));
-  lp.addColsReal(allCols);
+  setNbVariables(slvr.getNbVars());
 
   // add all formula constraints
   for (CRef cr : solver.constraints)
@@ -144,14 +139,25 @@ LpSolver::LpSolver(Solver& slvr, const intConstr& o) : solver(slvr) {
 }
 
 void LpSolver::setNbVariables(int n) {
+  if (n <= getNbVariables()) return;
+  soplex::LPColSetReal allCols;
+  allCols.reMax(n - getNbVariables());
+  soplex::DSVectorReal dummycol(0);
+  for (Var v = getNbVariables(); v < n; ++v) {
+    allCols.add(soplex::LPColReal(0, dummycol, 1, 0));
+  }
+  lp.addColsReal(allCols);
+
   lpSolution.reDim(n);
   lcc.resize(n);
   ic.resize(n);
   lowerBounds.reDim(n);
   upperBounds.reDim(n);
+  assert(getNbVariables() == n);
 }
-int LpSolver::getNbVariables() const { return lpSolution.dim(); }
-int LpSolver::getNbRows() const { return lp.numRowsReal(); }
+
+int LpSolver::getNbVariables() const { return lp.numCols(); }
+int LpSolver::getNbRows() const { return lp.numRows(); }
 
 // BITWISE: -
 void LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
@@ -178,6 +184,7 @@ void flipLits(int128Constr& ic, const soplex::DVectorReal& lpSol) {
     ic.coefs[v] = -ic.coefs[v];
     ic.addRhs(ic.coefs[v]);
   }
+  ic.degree=ic._invalid_();
 }
 
 CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults) {
@@ -221,6 +228,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   }
 
   lcc.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
+  if(lcc.getDegree()<=0) lcc.reset();
   if (lcc.getDegree() >= INF) {
     divisor = aux::ceildiv<__int128>(lcc.getDegree(), INF - 1);
     for (Var v : lcc.vars) {
@@ -235,6 +243,8 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     lcc.divide(divisor);
     lcc.saturate();
   }
+  assert(lcc.getDegree()<INF);
+  assert(lcc.isSaturated());
   return CandidateCut(lcc, lpSolution);
 }
 
@@ -266,7 +276,7 @@ void LpSolver::constructLearnedCandidates() {
   for (CRef cr : solver.constraints) {
     const Constr& c = solver.ca[cr];
     if (id2row.count(c.id) == 0) {
-      candidateCuts.emplace_back(c, lpSolution);
+      candidateCuts.emplace_back(c, cr, lpSolution);
       if (candidateCuts.back().ratSlack >= -options.tolerance) candidateCuts.pop_back();
     }
   }
@@ -295,6 +305,7 @@ bool LpSolver::addFilteredCuts() {
     auto& cc = candidateCuts[i];
     if (cc.cr == CRef_Undef) {
       solver.tmpConstraint.construct(cc.simpcons);
+      cc.simpcons.toNormalFormLit();
       if (solver.logger) solver.tmpConstraint.logAsInput();  // TODO: fix
       cc.cr = solver.learnConstraint();
       ++stats.NLPGOMORYCUTS;
@@ -474,7 +485,7 @@ bool LpSolver::_inProcess() {
   if (lp.hasSol()) {
     lp.getPrimal(lpSolution);
     lp.getSlacksReal(lpSlackSolution);
-    assert((int)solver.phase.size() >= getNbVariables());
+    assert((int)solver.phase.size() == getNbVariables());
     for (Var v = 1; v < getNbVariables(); ++v) solver.phase[v] = (lpSolution[v] <= 0.5) ? -v : v;
     std::cout << "c rational objective " << lp.objValueReal() << std::endl;
     assert(candidateCuts.size() == 0);

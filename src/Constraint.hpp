@@ -270,11 +270,16 @@ struct Constraint {
     }
   }
 
-  template <typename CF>
-  void construct(const SimpleCons<CF>& sc) {
+  template <typename CF, typename DG>
+  void construct(const SimpleCons<CF,DG>& sc) {
     assert(isReset());
+    assert(std::abs(sc.rhs)<std::numeric_limits<LARGE>::max());
     addRhs(sc.rhs);
-    for (auto& t : sc.terms) addLhs(t.c, t.l);
+    for (auto& t : sc.terms) {
+      assert(std::abs(t.c)<std::numeric_limits<SMALL>::max());
+      addLhs(t.c, t.l);
+    }
+    degree = _invalid_();
   }
 
   void invert() {
@@ -285,20 +290,19 @@ struct Constraint {
 
   template <typename S, typename L>
   void addUp(Constraint<S, L>& c, SMALL cmult = 1, SMALL thismult = 1) {
-    assert(c._unused_() <= _unused_());  // don't add large stuff into small stuff
     assert(cmult >= 0);
     assert(thismult >= 0);
     if (plogger) proofBuffer << proofMult(thismult) << c.proofBuffer.str() << proofMult(cmult) << "+ ";
     if (thismult != 1) {
-      degree = thismult * getDegree();
       rhs *= thismult;
       for (Var v : vars) coefs[v] *= thismult;
     }
-    degree += (LARGE)cmult * (LARGE)c.getDegree();
+    assert(std::abs(c.getRhs())<std::numeric_limits<LARGE>::max());
     rhs += (LARGE)cmult * (LARGE)c.getRhs();
     for (Var v : c.vars) {
       assert(v < (Var)coefs.size());
       assert(v > 0);
+      assert(std::abs(c.coefs[v])<std::numeric_limits<SMALL>::max());
       SMALL val = cmult * c.coefs[v];
       if (coefs[v] == _unused_()) {
         vars.push_back(v);
@@ -309,6 +313,7 @@ struct Constraint {
         coefs[v] = cf + val;
       }
     }
+    degree=_invalid_();
   }
 
   template <typename S, typename L>
@@ -660,9 +665,9 @@ struct Constraint {
     o << ">= " << getDegree() << "(" << getSlack(level) << ")";
   }
 
-  template <typename CF>
-  SimpleCons<CF> toSimpleCons() const {
-    SimpleCons<CF> result;
+  template <typename CF, typename DG>
+  SimpleCons<CF,DG> toSimpleCons() const {
+    SimpleCons<CF,DG> result;
     result.rhs = getRhs();
     result.terms.reserve(vars.size());
     for (Var v : vars)

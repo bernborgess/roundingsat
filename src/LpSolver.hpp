@@ -44,13 +44,13 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "typedefs.hpp"
 
 struct CandidateCut {
-  SimpleCons<Coef> simpcons;
+  SimpleCons<Coef,Val> simpcons;
   CRef cr = CRef_Undef;
   double norm = 0;
   double ratSlack = 0;
 
   CandidateCut(int128Constr& in, const soplex::DVectorReal& sol);
-  CandidateCut(const Constr& in, const soplex::DVectorReal& sol);
+  CandidateCut(const Constr& in, CRef cr, const soplex::DVectorReal& sol);
   double cosOfAngleTo(const CandidateCut& other) const;
 
  private:
@@ -68,9 +68,11 @@ class LpSolver {
   soplex::SoPlex lp;
   Solver& solver;
 
-  constexpr static double INFTY = 1e100;
-
   double lpPivotMult = 1;
+  constexpr static double INFTY = 1e100;
+  // NOTE: 2^59 is the maximum possible, given the 64 bits needed for other calculations
+  constexpr static long long maxMult =
+      576460752303423488;  // 2^50: 1125899906842624 | 2^55: 36028797018963968 | 2^59: 576460752303423488
 
   soplex::DVectorReal lpSolution;
   soplex::DVectorReal lpSlackSolution;
@@ -88,9 +90,6 @@ class LpSolver {
 
   int128Constr lcc;
   intConstr ic;
-  // NOTE: 2^59 is the maximum possible, given the 64 bits needed for other calculations
-  constexpr static long long maxMult =
-      576460752303423488;  // 2^50: 1125899906842624 | 2^55: 36028797018963968 | 2^59: 576460752303423488
 
  public:
   LpSolver(Solver& solver, const intConstr& objective);

@@ -90,7 +90,7 @@ struct LazyVar {
 
   void addAtLeastConstraint() {
     // X >= k + y1 + ... + yi
-    SimpleCons<Coef> sc;
+    SimpleCons<Coef,Val> sc;
     sc.rhs = rhs;
     sc.terms.reserve(lhs.size() + introducedVars.size());
     for (Lit l : lhs) sc.terms.emplace_back(1, l);
@@ -104,7 +104,7 @@ struct LazyVar {
   void addAtMostConstraint() {
     // X =< k + y1 + ... + yi-1 + (1+n-k-i)yi
     assert(getCurrentVar() == introducedVars.back());
-    SimpleCons<Coef> sc;
+    SimpleCons<Coef,Val> sc;
     sc.rhs = -rhs;
     sc.terms.reserve(lhs.size() + introducedVars.size());
     for (Lit l : lhs) sc.terms.emplace_back(-1, l);

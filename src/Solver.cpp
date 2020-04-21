@@ -58,6 +58,7 @@ void Solver::setNbVars(long long nvars) {
   logConstraint.resize(nvars + 1);
   order_heap.resize(nvars + 1);
   for (Var v = n + 1; v <= nvars; ++v) phase[v] = -v, order_heap.insert(v);
+  if (lpSolver) lpSolver->setNbVariables(nvars + 1);
   n = nvars;
   stats.NAUXVARS = n - orig_n;
 }
@@ -745,7 +746,7 @@ ID Solver::addConstraint(const intConstr& c, ConstraintType type, bool addToLP) 
   return result;
 }
 
-ID Solver::addConstraint(const SimpleCons<Coef>& c, ConstraintType type, bool addToLP) {
+ID Solver::addConstraint(const SimpleCons<Coef,Val>& c, ConstraintType type, bool addToLP) {
   tmpConstraint.construct(c);
   ID result = addInputConstraint(type, addToLP);
   return result;
