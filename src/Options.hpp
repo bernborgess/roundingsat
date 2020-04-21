@@ -59,84 +59,45 @@ struct Options {
   float lpPivotRatio = 1;
   long long lpPivotBudget = 1000;
   bool addGomoryCuts = true;
+  bool addLearnedCuts = true;
   double tolerance = 1e-6;
   double maxCutCos = 0.9;
 
-  void usageEnum(const std::string& option, const std::string& explanation, const std::vector<std::string>& optMap,
-                 int def) {
-    std::cout << "  --" << option << "=arg ";
-    for (unsigned int i = option.size(); i < 10; ++i) std::cout << " ";
-    std::cout << explanation << ": ";
-    for (std::string s : optMap) std::cout << s << " ";
-    std::cout << "(default " << optMap[def].c_str() << ")\n";
-  }
-
-  void usage(char* name) {
-    printf("Usage: %s [OPTION] instance.(opb|cnf|wcnf)\n", name);
-    printf("\n");
-    printf("Options:\n");
-    printf("  --help           Prints this help message.\n");
-    printf("  --print-sol=arg  Prints the solution if found (0 or 1; default %d).\n", printSol);
-    printf("  --verbosity=arg  Set the verbosity of the output (integer >=0; default %d).\n", verbosity);
-    printf("\n");
-    printf("  --var-decay=arg  Set the VSIDS decay factor (0.5<=arg<1; default %lf).\n", v_vsids_decay);
-    printf("  --rinc=arg       Set the base of the Luby restart sequence (float >=1; default %lf).\n", rinc);
-    printf("  --rfirst=arg     Set the interval of the Luby restart sequence (integer >=1; default %lld).\n", rfirst);
-    usageEnum("opt-mode", "Set optimization mode", optModeMap, optMode);
-    printf(
-        "  --prop-counting=arg Counting propagation instead of watched propagation (float between 0 (no counting) and "
-        "1 (always counting)); default %lf).\n",
-        countingProp);
-    printf("  --prop-clause=arg Optimized two-watched propagation for clauses (0 or 1; default %d).\n", clauseProp);
-    printf("  --prop-card=arg  Optimized watched propagation for cardinalities (0 or 1; default %d).\n", cardProp);
-    printf("  --prop-idx=arg   Optimize index of watches during propagation (0 or 1; default %d).\n", idxProp);
-    printf("  --prop-sup=arg   Avoid superfluous watch checks (0 or 1; default %d).\n", supProp);
-    printf("  --proof-log=arg  Set a filename for the proof logs (string).\n");
-    printf("  --tolerance=arg  Set the tolerance of floating point calculations (float >0; default %e).\n", tolerance);
-    printf(
-        "  --lp=arg         Set the ratio of #pivots/#conflicts to limiting the LP solver's calls (negative means "
-        "infinite, 0 means no LP solving) (float >=-1; default %lf).\n",
-        lpPivotRatio);
-    printf("  --lp-budget=arg  Set the minimum LP call pivot budget (integer >=1; default %lld).\n", lpPivotBudget);
-    printf("  --lp-add-gomory-cuts=arg Generate Gomory cuts (0 or 1; default %d).\n", addGomoryCuts);
-    printf(
-        "  --lp-maxcutcos=arg Set upper bound on cosine of angle between cuts added in one round. Higher means cuts "
-        "can be more parallel (float between 0 and 1; default %e).\n",
-        maxCutCos);
-  }
+  std::vector<std::string> opts = {"help",          "print-sol",      "verbosity",     "var-decay",   "rinc",
+                                   "rfirst",        "opt-mode",       "prop-counting", "prop-clause", "prop-card",
+                                   "prop-idx",      "prop-sup",       "proof-log",     "lp",          "lp-budget",
+                                   "lp-cut-gomory", "lp-cut-learned", "lp-tolerance",  "lp-maxcutcos"};
 
   typedef bool (*func)(double);
-
   template <typename T>
   void getOptionNum(const std::unordered_map<std::string, std::string>& opt_val, const std::string& option, func test,
                     T& val) {
-    if (opt_val.count(option)) {
-      double v = atof(opt_val.at(option).c_str());
-      if (test(v))
-        val = v;
-      else
-        quit::exit_ERROR(
-            {"Invalid value for ", option, ": ", opt_val.at(option), ".\nCheck usage with --help option."});
-    }
+    if (!opt_val.count(option)) return;
+    double v = atof(opt_val.at(option).c_str());
+    if (test(v))
+      val = v;
+    else
+      quit::exit_ERROR({"Invalid value for ", option, ": ", opt_val.at(option), ".\nCheck usage with --help option."});
   }
 
   void getOptionStr(const std::unordered_map<std::string, std::string>& opt_val, const std::string& option,
                     std::string& val) {
-    if (opt_val.count(option)) val = opt_val.at(option);
+    if (!opt_val.count(option)) return;
+    val = opt_val.at(option);
+    std::cout << "LOG FILE " << val << std::endl;
   }
 
   template <typename ENUM>
   void getOptionEnum(const std::unordered_map<std::string, std::string>& opt_val, const std::string& option, ENUM& val,
                      const std::vector<std::string>& map) {
-    if (opt_val.count(option)) {
-      std::string s = opt_val.at(option);
-      for (unsigned int i = 0; i < map.size(); ++i)
-        if (map[i] == s) {
-          val = static_cast<ENUM>(i);
-          return;
-        }
-      quit::exit_ERROR({"Invalid value for ", option, ": ", opt_val.at(option), ".\nCheck usage with --help option."});
-    }
+    if (!opt_val.count(option)) return;
+    std::string s = opt_val.at(option);
+    for (unsigned int i = 0; i < map.size(); ++i)
+      if (map[i] == s) {
+        val = static_cast<ENUM>(i);
+        return;
+      }
+    quit::exit_ERROR({"Invalid value for ", option, ": ", opt_val.at(option), ".\nCheck usage with --help option."});
   }
 
   void parseCommandLine(int argc, char** argv) {
@@ -146,10 +107,7 @@ struct Options {
         exit(0);
       }
     }
-    std::vector<std::string> opts = {"print-sol",    "verbosity",     "var-decay",   "rinc",      "rfirst",
-                                     "opt-mode",     "prop-counting", "prop-clause", "prop-card", "prop-idx",
-                                     "prop-sup",     "proof-log",     "lp",          "lp-budget", "lp-add-gomory-cuts",
-                                     "lp-tolerance", "lp-maxcutcos"};
+
     std::unordered_map<std::string, std::string> opt_val;
     for (int i = 1; i < argc; i++) {
       if (std::string(argv[i]).substr(0, 2) != "--")
@@ -166,36 +124,93 @@ struct Options {
       }
     }
     getOptionNum(
-        opt_val, "print-sol", [](double x) -> bool { return x == 0 || x == 1; }, printSol);
+        opt_val, opts[1], [](double x) -> bool { return x == 0 || x == 1; }, printSol);
     getOptionNum(
-        opt_val, "verbosity", [](double x) -> bool { return std::abs(x) == x && x >= 0; }, verbosity);
+        opt_val, opts[2], [](double x) -> bool { return std::abs(x) == x && x >= 0; }, verbosity);
     getOptionNum(
-        opt_val, "var-decay", [](double x) -> bool { return x >= 0.5 && x < 1; }, v_vsids_decay);
+        opt_val, opts[3], [](double x) -> bool { return x >= 0.5 && x < 1; }, v_vsids_decay);
     getOptionNum(
-        opt_val, "rinc", [](double x) -> bool { return x >= 1; }, rinc);
+        opt_val, opts[4], [](double x) -> bool { return x >= 1; }, rinc);
     getOptionNum(
-        opt_val, "rfirst", [](double x) -> bool { return std::abs(x) == x && x >= 1; }, rfirst);
-    getOptionEnum(opt_val, "opt-mode", optMode, optModeMap);
+        opt_val, opts[5], [](double x) -> bool { return std::abs(x) == x && x >= 1; }, rfirst);
+    getOptionEnum(opt_val, opts[6], optMode, optModeMap);
     getOptionNum(
-        opt_val, "prop-counting", [](double x) -> bool { return x >= 0 || x <= 1; }, countingProp);
+        opt_val, opts[7], [](double x) -> bool { return x >= 0 || x <= 1; }, countingProp);
     getOptionNum(
-        opt_val, "prop-clause", [](double x) -> bool { return x == 0 || x == 1; }, clauseProp);
+        opt_val, opts[8], [](double x) -> bool { return x == 0 || x == 1; }, clauseProp);
     getOptionNum(
-        opt_val, "prop-card", [](double x) -> bool { return x == 0 || x == 1; }, cardProp);
+        opt_val, opts[9], [](double x) -> bool { return x == 0 || x == 1; }, cardProp);
     getOptionNum(
-        opt_val, "prop-idx", [](double x) -> bool { return x == 0 || x == 1; }, idxProp);
+        opt_val, opts[10], [](double x) -> bool { return x == 0 || x == 1; }, idxProp);
     getOptionNum(
-        opt_val, "prop-sup", [](double x) -> bool { return x == 0 || x == 1; }, supProp);
+        opt_val, opts[11], [](double x) -> bool { return x == 0 || x == 1; }, supProp);
+    getOptionStr(opt_val, opts[12], proofLogName);
     getOptionNum(
-        opt_val, "lp", [](double x) -> bool { return x >= -1; }, lpPivotRatio);
+        opt_val, opts[13], [](double x) -> bool { return x >= -1; }, lpPivotRatio);
     getOptionNum(
-        opt_val, "lp-budget", [](double x) -> bool { return std::abs(x) == x && x >= 1; }, rfirst);
+        opt_val, opts[14], [](double x) -> bool { return std::abs(x) == x && x >= 1; }, lpPivotBudget);
     getOptionNum(
-        opt_val, "lp-add-gomory-cuts", [](double x) -> bool { return x == 0 || x == 1; }, addGomoryCuts);
+        opt_val, opts[15], [](double x) -> bool { return x == 0 || x == 1; }, addGomoryCuts);
     getOptionNum(
-        opt_val, "lp-tolerance", [](double x) -> bool { return x > 0; }, tolerance);
+        opt_val, opts[16], [](double x) -> bool { return x == 0 || x == 1; }, addLearnedCuts);
     getOptionNum(
-        opt_val, "lp-maxcutcos", [](double x) -> bool { return 1 >= x && x >= 0; }, maxCutCos);
-    getOptionStr(opt_val, "proof-log", proofLogName);
+        opt_val, opts[17], [](double x) -> bool { return x > 0; }, tolerance);
+    getOptionNum(
+        opt_val, opts[18], [](double x) -> bool { return 1 >= x && x >= 0; }, maxCutCos);
+  }
+
+  constexpr static int colwidth = 14;
+
+  void usageEnum(const std::string& option, const std::string& explanation, const std::vector<std::string>& optMap,
+                 int def) {
+    std::cout << " --" << option << "=? ";
+    for (unsigned int i = option.size(); i < colwidth; ++i) std::cout << " ";
+    std::cout << explanation << " (";
+    for (std::string s : optMap)
+      std::cout << (s == optMap[def].c_str() ? "default=" : "") << s << (s == optMap.back() ? "" : ", ");
+    std::cout << ")\n";
+  }
+
+  template <typename T>
+  void usageVal(const std::string& option, const std::string& explanation, const std::string& bounds,
+                const T& variable) {
+    std::cout << " --" << option << "=? ";
+    for (unsigned int i = option.size(); i < colwidth; ++i) std::cout << " ";
+    std::cout << explanation << " (" << bounds << "; default " << variable << ")\n";
+  }
+
+  void usageVoid(const std::string& option, const std::string& explanation) {
+    std::cout << " --" << option << " ";
+    for (unsigned int i = option.size(); i < colwidth + 2; ++i) std::cout << " ";
+    std::cout << explanation << "\n";
+  }
+
+  void usage(char* name) {
+    printf("Usage: %s [OPTION] instance.(opb|cnf|wcnf)\n", name);
+    printf("\n");
+    printf("Options:\n");
+    usageVoid(opts[0], "Print this help message");
+    usageVal(opts[1], "Print the solution if found", "0 or 1", printSol);
+    usageVal(opts[2], "Verbosity of the output", "int >= 0", verbosity);
+    usageVal(opts[3], "VSIDS decay factor", "0.5 <= float < 1", v_vsids_decay);
+    usageVal(opts[4], "Base of the Luby restart sequence", "float >= 1", rinc);
+    usageVal(opts[5], "Interval of the Luby restart sequence", "int >= 1", rfirst);
+    usageEnum(opts[6], "Optimization mode", optModeMap, optMode);
+    usageVal(opts[7], "Counting propagation instead of watched propagation",
+             "float between 0 (no counting) and 1 (always counting)", countingProp);
+    usageVal(opts[8], "Optimized two-watched propagation for clauses", "0 or 1", clauseProp);
+    usageVal(opts[9], "Optimized watched propagation for cardinalities", "0 or 1", cardProp);
+    usageVal(opts[10], "Optimize index of watches during propagation", "0 or 1", idxProp);
+    usageVal(opts[11], "Avoid superfluous watch checks", "0 or 1", supProp);
+    usageVal(opts[12], "Filename for the proof logs", "filepath", "off");
+    usageVal(opts[13], "Ratio of #pivots/#conflicts limiting LP calls (negative means infinite, 0 means no LP solving)",
+             "float >= -1", lpPivotRatio);
+    usageVal(opts[14], "Base LP call pivot budget", "int >= 1", lpPivotBudget);
+    usageVal(opts[15], "Generate Gomory cuts", "0 or 1", addGomoryCuts);
+    usageVal(opts[16], "Use learned constraints as cuts", "0 or 1", addLearnedCuts);
+    usageVal(opts[17], "Tolerance for floating point calculations", "float > 0", tolerance);
+    usageVal(opts[18],
+             "Upper bound on cosine of angle between cuts added in one round. Higher means cuts can be more parallel",
+             "float between 0 and 1", maxCutCos);
   }
 };
