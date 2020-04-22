@@ -5,9 +5,16 @@ make debug
 #g++ -o roundingsat_debug roundingsat.cc -g -O3
 cd test
 
-time=1
+time=$1
 
 errors=0
+tested=0
+completed=0
+
+echo "###########################"
+echo "########## START ##########"
+echo "###########################"
+echo ""
 
 i="maxsat"
 echo "running $i"
@@ -16,9 +23,10 @@ rm $i.formula
 bzcat /home/jod/workspace/instances/maxsat/mse19-complete-weighted-benchmarks/planning/driverlog01c.wcsp.dir.wcnf.bz2 | ../roundingsat_debug --proof-log=$i > /dev/null
 echo "verifying $i"
 wc -l $i.proof
-veripb $i.formula $i.proof -d --arbitraryPrecision $1
+veripb $i.formula $i.proof -d --arbitraryPrecision
 errors=`expr $? + $errors`
 echo $errors
+tested=`expr 1 + $tested`
 echo ""
 
 i="cnf"
@@ -28,17 +36,15 @@ rm $i.formula
 bzcat /home/jod/workspace/instances/dec/CNF/even_colouring/ec_rand4regsplit-v030-n1.cnf.bz2 | ../roundingsat_debug --proof-log=$i > /dev/null
 echo "verifying $i"
 wc -l $i.proof
-veripb $i.formula $i.proof -d --arbitraryPrecision $1
+veripb $i.formula $i.proof -d --arbitraryPrecision
 errors=`expr $? + $errors`
 echo $errors
+tested=`expr 1 + $tested`
 echo ""
 
 declare -a arr_dec=(
-"diamond"
 "stein9"
 "stein15"
-"stein27"
-"stein29"
 "p0040"
 "pipex"
 "bm23"
@@ -48,7 +54,6 @@ declare -a arr_dec=(
 "cracpb1"
 "air01"
 "air02"
-"air03"
 "air06"
 )
 
@@ -63,9 +68,10 @@ do
     timeout $time ../roundingsat_debug $i.opb --proof-log=$i > /dev/null
     echo "verifying $i"
     wc -l $i.proof
-    veripb $i.formula $i.proof -d --arbitraryPrecision $1
+    veripb $i.formula $i.proof -d --arbitraryPrecision
     errors=`expr $? + $errors`
     echo $errors
+    tested=`expr 1 + $tested`
     echo ""
 done
 
@@ -78,7 +84,7 @@ declare -a arr_opt=(
 "p0033_3089"
 "p0040_62027"
 "p0201_7615"
-"p0282_254811"
+"p0282_258411"
 "p0291_7609041"
 "p0548_8691"
 "mod008_307"
@@ -98,6 +104,8 @@ declare -a arr_opt=(
 
 declare -a arr_modes=(
 "linear"
+"core-guided"
+"lazy-core-guided"
 "hybrid"
 "lazy-hybrid"
 )
@@ -119,10 +127,12 @@ for mode in "${arr_modes[@]}"; do
         fi
         echo "verifying $i"
         wc -l $i.proof
-        veripb $i.formula $i.proof -d --arbitraryPrecision $1
+        veripb $i.formula $i.proof -d --arbitraryPrecision
         errors=`expr $? + $errors`
         echo $errors
+        tested=`expr 1 + $tested`
         echo ""
     done
 done
 
+echo "tested: $tested"
