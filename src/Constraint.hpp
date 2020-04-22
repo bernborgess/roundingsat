@@ -37,6 +37,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "SimpleCons.hpp"
 #include "Stats.hpp"
 #include "aux.hpp"
+#include "globals.hpp"
 #include "typedefs.hpp"
 
 enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
@@ -271,12 +272,12 @@ struct Constraint {
   }
 
   template <typename CF, typename DG>
-  void construct(const SimpleCons<CF,DG>& sc) {
+  void construct(const SimpleCons<CF, DG>& sc) {
     assert(isReset());
-    assert(std::abs(sc.rhs)<std::numeric_limits<LARGE>::max());
+    assert(std::abs(sc.rhs) < std::numeric_limits<LARGE>::max());
     addRhs(sc.rhs);
     for (auto& t : sc.terms) {
-      assert(std::abs(t.c)<std::numeric_limits<SMALL>::max());
+      assert(std::abs(t.c) < std::numeric_limits<SMALL>::max());
       addLhs(t.c, t.l);
     }
     degree = _invalid_();
@@ -297,12 +298,12 @@ struct Constraint {
       rhs *= thismult;
       for (Var v : vars) coefs[v] *= thismult;
     }
-    assert(std::abs(c.getRhs())<std::numeric_limits<LARGE>::max());
+    assert(std::abs(c.getRhs()) < std::numeric_limits<LARGE>::max());
     rhs += (LARGE)cmult * (LARGE)c.getRhs();
     for (Var v : c.vars) {
       assert(v < (Var)coefs.size());
       assert(v > 0);
-      assert(std::abs(c.coefs[v])<std::numeric_limits<SMALL>::max());
+      assert(std::abs(c.coefs[v]) < std::numeric_limits<SMALL>::max());
       SMALL val = cmult * c.coefs[v];
       if (coefs[v] == _unused_()) {
         vars.push_back(v);
@@ -313,7 +314,7 @@ struct Constraint {
         coefs[v] = cf + val;
       }
     }
-    degree=_invalid_();
+    degree = _invalid_();
   }
 
   template <typename S, typename L>
@@ -504,6 +505,7 @@ struct Constraint {
   void weakenSmalls(LARGE limit) {
     for (Var v : vars)
       if (coefs[v] != 0 && std::abs(coefs[v]) < limit) weaken(-coefs[v], v);
+    degree = _invalid_();
   }
 
   // @post: preserves order of vars
@@ -592,11 +594,6 @@ struct Constraint {
     resetBuffer(++plogger->last_proofID);  // ensure consistent proofBuffer
   }
 
-  void logCommentLine(std::string&& info, const Stats& sts) {
-    assert(plogger);
-    plogger->proof_out << "* " << sts.getDetTime() << " " << info << "\n";
-  }
-
   void logProofLine(std::string&& info, const Stats& sts) {
     assert(plogger);
     _unused(info);
@@ -604,7 +601,7 @@ struct Constraint {
     plogger->proof_out << "p " << proofBuffer.str() << "0\n";
     resetBuffer(++plogger->last_proofID);  // ensure consistent proofBuffer
 #if !NDEBUG
-    plogger->proof_out << "* " << sts.getDetTime() << " " << info << "\n";
+    plogger->logComment(info, sts);
     plogger->proof_out << "e " << plogger->last_proofID << " ";
     toStreamAsOPB(plogger->proof_out);
 #endif
@@ -666,8 +663,8 @@ struct Constraint {
   }
 
   template <typename CF, typename DG>
-  SimpleCons<CF,DG> toSimpleCons() const {
-    SimpleCons<CF,DG> result;
+  SimpleCons<CF, DG> toSimpleCons() const {
+    SimpleCons<CF, DG> result;
     result.rhs = getRhs();
     result.terms.reserve(vars.size());
     for (Var v : vars)

@@ -44,7 +44,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "typedefs.hpp"
 
 struct CandidateCut {
-  SimpleCons<Coef,Val> simpcons;
+  SimpleCons<Coef, Val> simpcons;
   CRef cr = CRef_Undef;
   double norm = 0;
   double ratSlack = 0;
@@ -62,6 +62,13 @@ struct AdditionData {
   soplex::DSVectorReal lhs;
   Val rhs;
   bool removable;
+};
+
+struct RowData {
+  ID id;
+  bool removable;
+  RowData(){};
+  RowData(ID i, bool r) : id(i), removable(r){};
 };
 
 class LpSolver {
@@ -82,13 +89,14 @@ class LpSolver {
   soplex::DSVectorReal lpRow;
 
   std::unordered_map<ID, int> id2row;
-  std::vector<std::pair<ID, bool>> row2data;  // ID and removable bit
+  std::vector<RowData> row2data;
   std::unordered_set<ID> toRemove;
   std::unordered_map<ID, AdditionData> toAdd;
 
   std::vector<CandidateCut> candidateCuts;
 
   int128Constr lcc;
+  int128Constr lcc_unlogged;  // TODO: remove when logging Gomory cut generation
   intConstr ic;
 
  public:

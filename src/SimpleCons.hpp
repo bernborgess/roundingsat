@@ -72,7 +72,7 @@ struct SimpleCons {
 };
 
 template <typename CF, typename DG>
-inline std::ostream& operator<<(std::ostream& o, const SimpleCons<CF,DG>& sc) {
+inline std::ostream& operator<<(std::ostream& o, const SimpleCons<CF, DG>& sc) {
   for (auto& t : sc.terms) o << "+ " << t << " ";
   return o << ">= " << sc.rhs;
 }

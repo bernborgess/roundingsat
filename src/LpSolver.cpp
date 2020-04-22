@@ -34,17 +34,17 @@ CandidateCut::CandidateCut(int128Constr& in, const soplex::DVectorReal& sol) {
   assert(in.isSaturated());
   assert(in.getDegree() < INF);
   if (in.getDegree() <= 0) return;
-  simpcons = in.toSimpleCons<Coef,Val>();
+  simpcons = in.toSimpleCons<Coef, Val>();
   // NOTE: simpcons is already in var-normal form
   initialize(sol);
 }
 
 CandidateCut::CandidateCut(const Constr& in, CRef cref, const soplex::DVectorReal& sol)
-    : simpcons(in.toSimpleCons<Coef,Val>()), cr(cref) {
+    : simpcons(in.toSimpleCons<Coef, Val>()), cr(cref) {
   assert(in.degree > 0);
   simpcons.toNormalFormVar();
   initialize(sol);
-  assert(cr!=CRef_Undef);
+  assert(cr != CRef_Undef);
 }
 
 void CandidateCut::initialize(const soplex::DVectorReal& sol) {
@@ -150,6 +150,7 @@ void LpSolver::setNbVariables(int n) {
 
   lpSolution.reDim(n);
   lcc.resize(n);
+  lcc_unlogged.resize(n);
   ic.resize(n);
   lowerBounds.reDim(n);
   upperBounds.reDim(n);
@@ -184,11 +185,11 @@ void flipLits(int128Constr& ic, const soplex::DVectorReal& lpSol) {
     ic.coefs[v] = -ic.coefs[v];
     ic.addRhs(ic.coefs[v]);
   }
-  ic.degree=ic._invalid_();
+  ic.degree = ic._invalid_();
 }
 
 CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults) {
-  assert(lcc.isReset());
+  assert(lcc_unlogged.isReset());
   double mult = getScaleFactor(mults, false);
   std::vector<std::pair<__int128, int>> slacks;
 
@@ -197,25 +198,25 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     if (factor == 0) continue;
     rowToConstraint(r);
     if (factor < 0) ic.invert();
-    lcc.addUp(ic, std::abs(factor));
+    lcc_unlogged.addUp(ic, std::abs(factor));
     ic.reset();
     slacks.emplace_back(-factor, r);
   }
 
-  flipLits(lcc, lpSolution);
+  flipLits(lcc_unlogged, lpSolution);
 
-  __int128 b = lcc.getRhs();
+  __int128 b = lcc_unlogged.getRhs();
   if (b == 0) {
-    lcc.reset();
-    return CandidateCut(lcc, lpSolution);
+    lcc_unlogged.reset();
+    return CandidateCut(lcc_unlogged, lpSolution);
   }
 
   assert(mult > 0);
   __int128 divisor = mult;
   while ((b % divisor) == 0) ++divisor;
-  lcc.applyMIR(divisor);
+  lcc_unlogged.applyMIR(divisor);
 
-  flipLits(lcc, lpSolution);
+  flipLits(lcc_unlogged, lpSolution);
 
   // round up the slack variables MIR style and cancel out the slack variables
   for (unsigned i = 0; i < slacks.size(); ++i) {
@@ -223,29 +224,29 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     if (factor == 0) continue;
     rowToConstraint(slacks[i].second);
     if (factor < 0) ic.invert();
-    lcc.addUp(ic, std::abs(factor));
+    lcc_unlogged.addUp(ic, std::abs(factor));
     ic.reset();
   }
 
-  lcc.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
-  if(lcc.getDegree()<=0) lcc.reset();
-  if (lcc.getDegree() >= INF) {
-    divisor = aux::ceildiv<__int128>(lcc.getDegree(), INF - 1);
-    for (Var v : lcc.vars) {
-      __int128 rem = aux::mod_safe(lcc.coefs[v], divisor);
+  lcc_unlogged.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
+  if (lcc_unlogged.getDegree() <= 0) lcc_unlogged.reset();
+  if (lcc_unlogged.getDegree() >= INF) {
+    divisor = aux::ceildiv<__int128>(lcc_unlogged.getDegree(), INF - 1);
+    for (Var v : lcc_unlogged.vars) {
+      __int128 rem = aux::mod_safe(lcc_unlogged.coefs[v], divisor);
       if (rem == 0) continue;
       assert(rem > 0);
       if ((double)divisor * lpSolution[v] < rem)
-        lcc.weaken(divisor - rem, v);
+        lcc_unlogged.weaken(divisor - rem, v);
       else
-        lcc.weaken(-rem, v);
+        lcc_unlogged.weaken(-rem, v);
     }
-    lcc.divide(divisor);
-    lcc.saturate();
+    lcc_unlogged.divide(divisor);
+    lcc_unlogged.saturate();
   }
-  assert(lcc.getDegree()<INF);
-  assert(lcc.isSaturated());
-  return CandidateCut(lcc, lpSolution);
+  assert(lcc_unlogged.getDegree() < INF);
+  assert(lcc_unlogged.isSaturated());
+  return CandidateCut(lcc_unlogged, lpSolution);
 }
 
 void LpSolver::constructGomoryCandidates() {
@@ -263,11 +264,11 @@ void LpSolver::constructGomoryCandidates() {
 
     lp.getBasisInverseRowReal(row, lpMultipliers.get_ptr());
     candidateCuts.push_back(createLinearCombinationGomory(lpMultipliers));
-    lcc.reset();
+    lcc_unlogged.reset();
     if (candidateCuts.back().ratSlack >= -options.tolerance) candidateCuts.pop_back();
     for (int i = 0; i < lpMultipliers.dim(); ++i) lpMultipliers[i] = -lpMultipliers[i];
     candidateCuts.push_back(createLinearCombinationGomory(lpMultipliers));
-    lcc.reset();
+    lcc_unlogged.reset();
     if (candidateCuts.back().ratSlack >= -options.tolerance) candidateCuts.pop_back();
   }
 }
@@ -305,7 +306,6 @@ bool LpSolver::addFilteredCuts() {
     auto& cc = candidateCuts[i];
     if (cc.cr == CRef_Undef) {
       solver.tmpConstraint.construct(cc.simpcons);
-      cc.simpcons.toNormalFormLit();
       if (solver.logger) solver.tmpConstraint.logAsInput();  // TODO: fix
       cc.cr = solver.learnConstraint();
       ++stats.NLPGOMORYCUTS;
@@ -324,9 +324,9 @@ void LpSolver::pruneCuts() {
   lpMultipliers.clear();
   lp.getDual(lpMultipliers);
   for (int r = 0; r < getNbRows(); ++r)
-    if (row2data[r].second && lpMultipliers[r] == 0) {
+    if (row2data[r].removable && lpMultipliers[r] == 0) {
       ++stats.NLPDELETEDCUTS;
-      removeConstraint(row2data[r].first);
+      removeConstraint(row2data[r].id);
     }
 }
 
@@ -369,11 +369,12 @@ bool LpSolver::rowToConstraint(int row) {
     assert(el.val != 0);
     ic.addLhs((Coef)el.val, el.idx);
   }
-  if (ic.plogger) ic.resetBuffer(row2data[row].first);
+  if (ic.plogger) ic.resetBuffer(row2data[row].id);
   return true;
 }
 
 bool LpSolver::checkFeasibility(bool inProcessing) {
+  if (solver.logger) solver.logger->logComment("checking LP", stats);
   double startTime = aux::cpuTime();
   bool result = _checkFeasibility(inProcessing);
   stats.LPTOTALTIME += aux::cpuTime() - startTime;
@@ -489,6 +490,7 @@ bool LpSolver::_inProcess() {
     for (Var v = 1; v < getNbVariables(); ++v) solver.phase[v] = (lpSolution[v] <= 0.5) ? -v : v;
     std::cout << "c rational objective " << lp.objValueReal() << std::endl;
     assert(candidateCuts.size() == 0);
+    if (solver.logger && (options.addGomoryCuts || options.addLearnedCuts)) solver.logger->logComment("cutting", stats);
     if (options.addGomoryCuts) constructGomoryCandidates();
     if (options.addLearnedCuts) constructLearnedCandidates();
     if (!addFilteredCuts()) return false;
@@ -544,16 +546,17 @@ void LpSolver::flushConstraints() {
       rowsToRemove[id2row[id]] = -1;
       id2row.erase(id);
     }
-    lp.removeRowsReal(rowsToRemove.data());
-    row2data.resize(id2row.size());
-    for (auto& p : id2row) {
-      int newrow = rowsToRemove[p.second];
-      assert(newrow >= 0);
-      assert(newrow <= id2row[p.first]);
-      row2data[newrow] = row2data[id2row[p.first]];
-      id2row[p.first] = newrow;
+    lp.removeRowsReal(rowsToRemove.data());  // TODO: use other removeRowsReal method?
+    for (int r = 0; r < (int)rowsToRemove.size(); ++r) {
+      int newrow = rowsToRemove[r];
+      if (newrow < 0 || newrow == r) continue;
+      row2data[newrow] = row2data[r];
+      id2row[row2data[newrow].id] = newrow;
     }
+    row2data.resize(getNbRows());
     toRemove.clear();
+    assert((int)id2row.size() == getNbRows());
+    for (int r = 0; r < (int)row2data.size(); ++r) assert(id2row[row2data[r].id] == r);
   }
 
   if (toAdd.size() > 0) {  // then add rows
@@ -573,4 +576,5 @@ void LpSolver::flushConstraints() {
 
   lpSlackSolution.reDim(getNbRows());
   lpMultipliers.reDim(getNbRows());
+  assert((int)row2data.size() == getNbRows());
 }

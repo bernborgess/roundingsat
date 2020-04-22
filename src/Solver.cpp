@@ -405,6 +405,7 @@ void Solver::recomputeLBD(Constr& C) {
 }
 
 bool Solver::analyze() {
+  if (logger) logger->logComment("analyzing", stats);
   assert(conflConstraint.getSlack(Level) < 0);
   stats.NADDEDLITERALS += conflConstraint.vars.size();
   conflConstraint.removeUnitsAndZeroes(Level, Pos);
@@ -746,7 +747,7 @@ ID Solver::addConstraint(const intConstr& c, ConstraintType type, bool addToLP) 
   return result;
 }
 
-ID Solver::addConstraint(const SimpleCons<Coef,Val>& c, ConstraintType type, bool addToLP) {
+ID Solver::addConstraint(const SimpleCons<Coef, Val>& c, ConstraintType type, bool addToLP) {
   tmpConstraint.construct(c);
   ID result = addInputConstraint(type, addToLP);
   return result;

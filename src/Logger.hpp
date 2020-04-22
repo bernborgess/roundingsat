@@ -30,6 +30,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #pragma once
 
 #include <fstream>
+#include "Stats.hpp"
 #include "typedefs.hpp"
 
 struct Logger {
@@ -53,5 +54,13 @@ struct Logger {
   void flush() {
     formula_out.flush();
     proof_out.flush();
+  }
+
+  void logComment(const std::string& comment, const Stats& sts) {
+    _unused(comment);
+    _unused(sts);
+#if !NDEBUG
+    proof_out << "* " << sts.getDetTime() << " " << comment << "\n";
+#endif
   }
 };
