@@ -118,18 +118,11 @@ LpSolver::LpSolver(Solver& slvr, const intConstr& o) : solver(slvr) {
   // If all auxiliary variables are false, Y==UU, so F is forced on its trivial lower bound L.
   soplex::DVectorReal objective;
   objective.reDim(getNbVariables());  // NOTE: automatically set to zero
-  if (o.vars.size() > 0) {            // add objective function
-    soplex::DSVectorReal objRow(o.vars.size());
-    for (Var v : o.vars) {
-      Coef c = std::abs(o.coefs[v]);
-      objective[v] = c;
-      objRow.add(v, c);
-    }
-    lp.changeObjReal(objective);
-  } else {  // add default objective function
-    for (int v = 1; v < getNbVariables(); ++v) objective[v] = 1;
-    lp.changeObjReal(objective);
-  }
+  if (o.vars.size() > 0)
+    for (Var v : o.vars) objective[v] = o.coefs[v];
+  else
+    for (int v = 1; v < getNbVariables(); ++v) objective[v] = 1;  // add default objective function
+  lp.changeObjReal(objective);
 
   if (options.verbosity > 1) std::cout << "c Finished initializing LP" << std::endl;
   if (solver.logger) {
