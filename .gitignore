@@ -48,7 +48,6 @@ roundingsat*_info
 .idea/*
 
 # proof logging
-*.formula
-*.proof
-/roundingsat_alpha
-/roundingsat_master
+test/*.formula
+test/*.proof
+test/*.opb
