@@ -169,7 +169,7 @@ struct Constraint {
       else
         proofBuffer << (l < 0 ? "x" : "~x") << std::abs(l) << " " << proofMult(-m) << "+ ";
     }
-    addLhs(m, l);  // resets degree // TODO: optimize this method by not calling addLhs
+    addLhs(m, l);  // resets degree // TODO: optimize this method by not calling addLhs and not resetting degree
     if (m < 0) addRhs(m);
   }
 
@@ -347,7 +347,7 @@ struct Constraint {
       if (coefs[v] % d == 0) continue;
       weaken((increasesSlack(level, v) ? 0 : d) - aux::mod_safe(coefs[v], d), v);
     }
-    degree = _invalid_();
+    degree = _invalid_();  // TODO: not needed, as weaken already invalidates degree
     divide(d);
     saturate();  // NOTE: needed, as weakening can change degree significantly
   }
@@ -501,11 +501,18 @@ struct Constraint {
     weakenNonImplied(level, slk, sts);
   }
 
-  // @post: preserves order after removeZeroes()
-  void weakenSmalls(LARGE limit) {
+  // @post: preserves order
+  template <typename T>
+  void weakenSmalls(T limit) {
     for (Var v : vars)
-      if (coefs[v] != 0 && std::abs(coefs[v]) < limit) weaken(-coefs[v], v);
-    degree = _invalid_();
+      if (std::abs(coefs[v]) < limit) weaken(-coefs[v], v);
+    saturate();
+  }
+
+  LARGE absCoeffSum() const {
+    LARGE result = 0;
+    for (Var v : vars) result += std::abs(coefs[v]);
+    return result;
   }
 
   // @post: preserves order of vars

@@ -79,7 +79,9 @@ class LpSolver {
   constexpr static double INFTY = 1e100;
   // NOTE: 2^59 is the maximum possible, given the 64 bits needed for other calculations
   constexpr static long long maxMult =
-      576460752303423488;  // 2^50: 1125899906842624 | 2^55: 36028797018963968 | 2^59: 576460752303423488
+      36028797018963968;  // 2^50: 1125899906842624 | 2^55: 36028797018963968 | 2^59: 576460752303423488
+  // TODO: properly decide for Gomory cuts
+  constexpr static double sanitizeLinCombs = 1e-6;
 
   soplex::DVectorReal lpSolution;
   soplex::DVectorReal lpSlackSolution;

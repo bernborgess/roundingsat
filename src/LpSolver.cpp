@@ -97,7 +97,7 @@ LpSolver::LpSolver(Solver& slvr, const intConstr& o) : solver(slvr) {
   lp.setIntParam(soplex::SoPlex::SIMPLIFIER, soplex::SoPlex::SIMPLIFIER_OFF);
   lp.setIntParam(soplex::SoPlex::OBJSENSE, soplex::SoPlex::OBJSENSE_MINIMIZE);
   lp.setIntParam(soplex::SoPlex::VERBOSITY, options.verbosity);
-  // NOTE: alternative "crash basis" only helps on few instances, according to Ambros, so we don't adjust that parameter
+  lp.setRandomSeed(0);
 
   setNbVariables(slvr.getNbVars());
 
@@ -167,6 +167,8 @@ void LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
     ic.reset();
   }
   lcc.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
+  assert(lcc_unlogged.hasNoZeroes());
+  lcc_unlogged.weakenSmalls(lcc_unlogged.absCoeffSum() / (double)lcc_unlogged.vars.size() * sanitizeLinCombs);
   if (lcc.getDegree() >= INF) lcc.roundToOne(solver.getLevel(), aux::ceildiv<__int128>(lcc.getDegree(), INF - 1));
   assert(lcc.getDegree() < INF);
   assert(lcc.isSaturated());
@@ -223,6 +225,8 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
 
   lcc_unlogged.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
   if (lcc_unlogged.getDegree() <= 0) lcc_unlogged.reset();
+  assert(lcc_unlogged.hasNoZeroes());
+  lcc_unlogged.weakenSmalls(lcc_unlogged.absCoeffSum() / (double)lcc_unlogged.vars.size() * sanitizeLinCombs);
   if (lcc_unlogged.getDegree() >= INF) {
     divisor = aux::ceildiv<__int128>(lcc_unlogged.getDegree(), INF - 1);
     for (Var v : lcc_unlogged.vars) {
@@ -248,6 +252,7 @@ void LpSolver::constructGomoryCandidates() {
   lp.getBasisInd(indices.data());
 
   for (int row = 0; row < getNbRows(); ++row) {
+    if (asynch_interrupt) return;
     double fractionality = 0;
     if (indices[row] >= 0)  // basic original variable / column
       fractionality = nonIntegrality(lpSolution[indices[row]]);
@@ -268,6 +273,7 @@ void LpSolver::constructGomoryCandidates() {
 
 void LpSolver::constructLearnedCandidates() {
   for (CRef cr : solver.constraints) {
+    if (asynch_interrupt) return;
     const Constr& c = solver.ca[cr];
     if (id2row.count(c.id) == 0) {
       candidateCuts.emplace_back(c, cr, lpSolution);
@@ -290,8 +296,10 @@ bool LpSolver::addFilteredCuts() {
   std::vector<int> keptCuts;  // indices
   for (unsigned int i = 0; i < candidateCuts.size(); ++i) {
     bool parallel = false;
-    for (unsigned int j = 0; j < keptCuts.size() && !parallel; ++j)
+    for (unsigned int j = 0; j < keptCuts.size() && !parallel; ++j) {
+      if (asynch_interrupt) return true;
       parallel = candidateCuts[keptCuts[j]].cosOfAngleTo(candidateCuts[i]) > options.maxCutCos;
+    }
     if (!parallel) keptCuts.push_back(i);
   }
 
@@ -301,6 +309,7 @@ bool LpSolver::addFilteredCuts() {
       solver.tmpConstraint.construct(cc.simpcons);
       if (solver.logger) solver.tmpConstraint.logAsInput();  // TODO: fix
       cc.cr = solver.learnConstraint();
+      if (cc.cr == CRef_Undef) continue;
       ++stats.NLPGOMORYCUTS;
     } else
       ++stats.NLPLEARNEDCUTS;
@@ -308,7 +317,6 @@ bool LpSolver::addFilteredCuts() {
     if (cc.cr == CRef_Unsat) return false;
     addConstraint(cc.cr, true);
   }
-  candidateCuts.clear();
   return true;
 }
 
@@ -473,7 +481,7 @@ bool LpSolver::_inProcess() {
   assert(solver.decisionLevel() == 0);
   if (!checkFeasibility(true)) {
     assert(solver.conflConstraint.getSlack(solver.getLevel()) < 0);
-    solver.conflConstraint.logInconsistency(solver.getLevel(), solver.getPos(), stats);
+    if (solver.logger) solver.conflConstraint.logInconsistency(solver.getLevel(), solver.getPos(), stats);
     return false;
   }
   if (lp.hasSol()) {
@@ -482,7 +490,7 @@ bool LpSolver::_inProcess() {
     assert((int)solver.phase.size() == getNbVariables());
     for (Var v = 1; v < getNbVariables(); ++v) solver.phase[v] = (lpSolution[v] <= 0.5) ? -v : v;
     std::cout << "c rational objective " << lp.objValueReal() << std::endl;
-    assert(candidateCuts.size() == 0);
+    candidateCuts.clear();
     if (solver.logger && (options.addGomoryCuts || options.addLearnedCuts)) solver.logger->logComment("cutting", stats);
     if (options.addGomoryCuts) constructGomoryCandidates();
     if (options.addLearnedCuts) constructLearnedCandidates();
@@ -515,6 +523,8 @@ void LpSolver::LP_convertConstraint(CRef cr, soplex::DSVectorReal& row, Val& rhs
 }
 
 void LpSolver::addConstraint(CRef cr, bool removable) {
+  assert(cr != CRef_Undef);
+  assert(cr != CRef_Unsat);
   ID id = solver.ca[cr].id;
   toRemove.erase(id);
   if (!id2row.count(id) && !toAdd.count(id)) {

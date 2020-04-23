@@ -84,7 +84,6 @@ struct Options {
                     std::string& val) {
     if (!opt_val.count(option)) return;
     val = opt_val.at(option);
-    std::cout << "LOG FILE " << val << std::endl;
   }
 
   template <typename ENUM>
