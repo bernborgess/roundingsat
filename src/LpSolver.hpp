@@ -46,9 +46,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 struct CandidateCut {
   SimpleCons<Coef, Val> simpcons;
   CRef cr = CRef_Undef;
-  double norm = 0;
+  double norm = 1;
   double ratSlack = 0;
 
+  CandidateCut(){};
   CandidateCut(int128Constr& in, const soplex::DVectorReal& sol);
   CandidateCut(const Constr& in, CRef cr, const soplex::DVectorReal& sol);
   double cosOfAngleTo(const CandidateCut& other) const;

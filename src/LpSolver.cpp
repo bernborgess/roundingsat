@@ -50,12 +50,14 @@ CandidateCut::CandidateCut(const Constr& in, CRef cref, const soplex::DVectorRea
 void CandidateCut::initialize(const soplex::DVectorReal& sol) {
   std::sort(simpcons.terms.begin(), simpcons.terms.end(),
             [](const Term<Coef>& t1, const Term<Coef>& t2) { return t1.l < t2.l; });
-  assert(norm == 0);
+  assert(norm == 1);
+  norm = 0;
   for (const auto& p : simpcons.terms) norm += (double)p.c * (double)p.c;
   norm = std::sqrt(norm);
   ratSlack = -simpcons.rhs;
   for (auto& p : simpcons.terms) ratSlack += (double)p.c * sol[p.l];
-  assert(norm != 0);
+  assert(norm >= 0);
+  if (norm == 0) norm = 1;
   ratSlack /= norm;
 }
 
@@ -157,6 +159,7 @@ int LpSolver::getNbRows() const { return lp.numRows(); }
 void LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
   assert(lcc.isReset());
   double mult = getScaleFactor(mults, true);
+  if (mult == 0) return;
 
   for (int r = 0; r < mults.dim(); ++r) {
     if (mults[r] == 0) continue;
@@ -186,8 +189,9 @@ void flipLits(int128Constr& ic, const soplex::DVectorReal& lpSol) {
 CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults) {
   assert(lcc_unlogged.isReset());
   double mult = getScaleFactor(mults, false);
-  std::vector<std::pair<__int128, int>> slacks;
+  if (mult == 0) return CandidateCut();
 
+  std::vector<std::pair<__int128, int>> slacks;
   for (int r = 0; r < mults.dim(); ++r) {
     __int128 factor = mults[r] * mult;
     if (factor == 0) continue;
@@ -201,10 +205,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   flipLits(lcc_unlogged, lpSolution);
 
   __int128 b = lcc_unlogged.getRhs();
-  if (b == 0) {
-    lcc_unlogged.reset();
-    return CandidateCut(lcc_unlogged, lpSolution);
-  }
+  if (b == 0) return CandidateCut();
 
   assert(mult > 0);
   __int128 divisor = mult;
@@ -347,7 +348,7 @@ double LpSolver::getScaleFactor(soplex::DVectorReal& mults, bool removeNegatives
     ++nbMults;
     largest = std::max(std::abs(mults[i]), largest);
   }
-  if (nbMults == 0) return 1;
+  if (nbMults == 0) return 0;
   assert(nbMults < INF);
   double mult = maxMult / largest / nbMults * INF;
   assert(mult > 0);
