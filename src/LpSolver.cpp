@@ -347,6 +347,7 @@ double LpSolver::getScaleFactor(soplex::DVectorReal& mults, bool removeNegatives
     ++nbMults;
     largest = std::max(std::abs(mults[i]), largest);
   }
+  if (nbMults == 0) return 1;
   assert(nbMults < INF);
   double mult = maxMult / largest / nbMults * INF;
   assert(mult > 0);
