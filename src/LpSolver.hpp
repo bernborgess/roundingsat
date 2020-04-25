@@ -135,14 +135,9 @@ class LpSolver {
   bool addFilteredCuts();
   void pruneCuts();
 
-  // NOTE: if b is positive, the comparison is more relaxed. If b is negative, the comparison is more strict.
-  inline static bool relaxedLT(double a, double b) { return a <= b * (1 + options.tolerance); }
-  // NOTE: if a is negative, the comparison is more relaxed. If a is positive, the comparison is more strict.
-  inline static bool strictLT(double a, double b) { return !relaxedLT(b, a); }
-
-  inline static double nonIntegrality(double a) { return abs(round(a) - a); }
-  inline static bool validCoeff(double a) { return round(a) == a && std::abs(a) < INF; }
+  inline static double nonIntegrality(double a) { return std::abs(std::round(a) - a); }
+  inline static bool validCoeff(double a) { return std::round(a) == a && std::abs(a) < INF; }
   inline static bool validRhs(double a) {
-    return round(a) == a && a < INF_long && a > -INF_long;
+    return std::round(a) == a && a < INF_long && a > -INF_long;
   }  // NOTE: double type can only store ranges of integers up to ~9e15
 };

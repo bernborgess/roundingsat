@@ -42,7 +42,7 @@ void Constr::undoFalsified(int i) {
   assert(!isSimple());
   assert(isCounting() || isWatched(i));
   ++stats.NWATCHLOOKUPSBJ;
-  slack += abs(data[i]);
+  slack += std::abs(data[i]);
 }
 
 void ConstraintAllocator::capacity(uint32_t min_cap) {

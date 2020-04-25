@@ -252,15 +252,21 @@ void LpSolver::constructGomoryCandidates() {
   indices.resize(getNbRows());
   lp.getBasisInd(indices.data());
 
+  assert(lpSlackSolution.dim() == getNbRows());
   for (int row = 0; row < getNbRows(); ++row) {
     if (asynch_interrupt) return;
     double fractionality = 0;
-    if (indices[row] >= 0)  // basic original variable / column
+    if (indices[row] >= 0) {  // basic original variable / column
+      assert(indices[row] < lpSolution.dim());
       fractionality = nonIntegrality(lpSolution[indices[row]]);
-    else  // basic slack variable / row
+    } else {  // basic slack variable / row
+      assert(-indices[row] - 1 < lpSlackSolution.dim());
       fractionality = nonIntegrality(lpSlackSolution[-indices[row] - 1]);
+    }
     if (fractionality == 0) continue;
 
+    assert(lpMultipliers.dim() == getNbRows());
+    lpMultipliers.clear();
     lp.getBasisInverseRowReal(row, lpMultipliers.get_ptr());
     candidateCuts.push_back(createLinearCombinationGomory(lpMultipliers));
     lcc_unlogged.reset();
@@ -324,7 +330,7 @@ bool LpSolver::addFilteredCuts() {
 void LpSolver::pruneCuts() {
   assert(getNbRows() == (int)row2data.size());
   lpMultipliers.clear();
-  lp.getDual(lpMultipliers);
+  if (!lp.getDual(lpMultipliers)) return;
   for (int r = 0; r < getNbRows(); ++r)
     if (row2data[r].removable && lpMultipliers[r] == 0) {
       ++stats.NLPDELETEDCUTS;
