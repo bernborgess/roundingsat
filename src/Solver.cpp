@@ -696,12 +696,14 @@ CRef Solver::learnConstraint() {
   assert(tmpConstraint.isSaturated());
   if (tmpConstraint.getDegree() <= 0) {
     tmpConstraint.reset();
+    if (lpSolver && lpSolver->addMissingFarkas() == CRef_Unsat) return CRef_Unsat;
     return CRef_Undef;
   }
   CRef cr = attachConstraint(tmpConstraint, ConstraintType::LEARNT);
   tmpConstraint.reset();
   Constr& C = ca[cr];
   recomputeLBD(C);
+  if (lpSolver && lpSolver->addMissingFarkas() == CRef_Unsat) return CRef_Unsat;
   return cr;
 }
 
@@ -966,8 +968,7 @@ SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector
           if (options.verbosity > 0) puts("c INPROCESSING");
           if (lpSolver && !lpSolver->inProcess()) return SolveState::UNSAT;
           reduceDB();
-          while (stats.NCONFL >= stats.NCLEANUP * nconfl_to_reduce)
-            nconfl_to_reduce += options.incReduceDB * 3;  // TODO: remove *3 when deciding on new stable version
+          while (stats.NCONFL >= stats.NCLEANUP * nconfl_to_reduce) nconfl_to_reduce += options.incReduceDB;
           return SolveState::INPROCESSED;
         }
         double rest_base = luby(options.rinc, ++stats.NRESTARTS);

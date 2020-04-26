@@ -35,7 +35,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "parsing.hpp"
 #include "run.hpp"
 
-bool asynch_interrupt;  // TODO: erase?
+bool asynch_interrupt;
 Options options;
 Stats stats;
 

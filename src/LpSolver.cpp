@@ -159,6 +159,10 @@ int LpSolver::getNbRows() const { return lp.numRows(); }
 // BITWISE: -
 void LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
   assert(lcc.isReset());
+  if (addFarkas) {  // TODO: replace by assert(ic.isReset());
+    ic.reset();
+    addFarkas = false;
+  }
   double mult = getScaleFactor(mults, true);
   if (mult == 0) return;
 
@@ -361,7 +365,6 @@ double LpSolver::getScaleFactor(soplex::DVectorReal& mults, bool removeNegatives
   double largest = maxMult / max128;
   assert(maxMult / largest <= max128);
   for (int i = 0; i < mults.dim(); ++i) {
-    // TODO: check opposite construction of Farkas constraint, inverting in case multiplier>0
     if (std::isnan(mults[i]) || (removeNegatives && mults[i] < 0)) mults[i] = 0;  // TODO: report NaN to Ambros?
     if (mults[i] == 0) continue;
     ++nbMults;
@@ -451,7 +454,7 @@ bool LpSolver::_checkFeasibility(bool inProcessing) {
     ++stats.NLPOPTIMAL;
     if (!lp.hasSol()) {
       ++stats.NLPNOPRIMAL;
-      LP_resetBasis();
+      resetBasis();
     }
     if (lp.numIterations() == 0) ++stats.NLPNOPIVOT;
     return true;
@@ -459,17 +462,17 @@ bool LpSolver::_checkFeasibility(bool inProcessing) {
 
   if (stat == soplex::SPxSolver::Status::ABORT_CYCLING) {
     ++stats.NLPCYCLING;
-    LP_resetBasis();
+    resetBasis();
     return true;
   }
   if (stat == soplex::SPxSolver::Status::SINGULAR) {
     ++stats.NLPSINGULAR;
-    LP_resetBasis();
+    resetBasis();
     return true;
   }
   if (stat != soplex::SPxSolver::Status::INFEASIBLE) {
     ++stats.NLPOTHER;
-    LP_resetBasis();
+    resetBasis();
     return true;
   }
 
@@ -479,7 +482,7 @@ bool LpSolver::_checkFeasibility(bool inProcessing) {
   // To prove that we have an inconsistency, let's build the Farkas proof
   if (!lp.getDualFarkas(lpMultipliers)) {
     ++stats.NLPNOFARKAS;
-    LP_resetBasis();
+    resetBasis();
     return true;
   }
 
@@ -492,6 +495,8 @@ bool LpSolver::_checkFeasibility(bool inProcessing) {
     return true;
   } else {
     lcc.copyTo(solver.conflConstraint);
+    lcc.copyTo(ic);  // TODO: erase after PB+LP paper
+    addFarkas = true;
     lcc.reset();
     ++stats.NLPFARKAS;
     return false;
@@ -521,12 +526,12 @@ bool LpSolver::_inProcess() {
   return true;
 }
 
-void LpSolver::LP_resetBasis() {
+void LpSolver::resetBasis() {
   ++stats.NLPRESETBASIS;
   lp.clearBasis();  // and hope next iteration works fine
 }
 
-void LpSolver::LP_convertConstraint(CRef cr, soplex::DSVectorReal& row, Val& rhs) {
+void LpSolver::convertConstraint(CRef cr, soplex::DSVectorReal& row, Val& rhs) {
   Constr& C = solver.ca[cr];
   assert(row.max() == (int)C.size());
   rhs = C.degree;
@@ -551,7 +556,7 @@ void LpSolver::addConstraint(CRef cr, bool removable) {
   if (!id2row.count(id) && !toAdd.count(id)) {
     soplex::DSVectorReal row(solver.ca[cr].size());
     Val rhs;
-    LP_convertConstraint(cr, row, rhs);
+    convertConstraint(cr, row, rhs);
     toAdd[id] = {row, rhs, removable};
   }
 }
@@ -559,6 +564,14 @@ void LpSolver::addConstraint(CRef cr, bool removable) {
 void LpSolver::removeConstraint(ID id) {
   toAdd.erase(id);
   if (id2row.count(id)) toRemove.insert(id);
+}
+
+CRef LpSolver::addMissingFarkas() {  // TODO: erase after paper submission
+  if (!addFarkas) return CRef_Undef;
+  ic.copyTo(solver.tmpConstraint);
+  ic.reset();
+  addFarkas = false;
+  return solver.learnConstraint();
 }
 
 // TODO: exploit lp.changeRowReal for more efficiency, e.g. when replacing the upper and lower bound on the objective

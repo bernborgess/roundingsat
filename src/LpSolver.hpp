@@ -101,6 +101,8 @@ class LpSolver {
   int128Constr lcc_unlogged;  // TODO: remove when logging Gomory cut generation
   intConstr ic;
 
+  bool addFarkas = false;
+
  public:
   LpSolver(Solver& solver, const intConstr& objective);
 
@@ -117,14 +119,16 @@ class LpSolver {
   void addConstraint(CRef cr, bool removable);
   void removeConstraint(ID id);
 
+  CRef addMissingFarkas();  // TODO: erase after paper submission
+
  private:
   void flushConstraints();
 
   bool _checkFeasibility(bool inProcessing);
   bool _inProcess();
 
-  void LP_convertConstraint(CRef cr, soplex::DSVectorReal& row, Val& rhs);  // TODO: remove "LP_" in method names
-  void LP_resetBasis();
+  void convertConstraint(CRef cr, soplex::DSVectorReal& row, Val& rhs);
+  void resetBasis();
   void createLinearCombinationFarkas(soplex::DVectorReal& mults);
   CandidateCut createLinearCombinationGomory(soplex::DVectorReal& mults);
   double getScaleFactor(soplex::DVectorReal& mults, bool removeNegatives);
