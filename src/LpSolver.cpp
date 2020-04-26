@@ -258,8 +258,7 @@ void LpSolver::constructGomoryCandidates() {
   lp.getBasisInd(indices.data());
 
   assert(lpSlackSolution.dim() == getNbRows());
-  std::priority_queue<std::pair<double, int>, std::vector<std::pair<double, int>>, std::less<std::pair<double, int>>>
-      fracrows;
+  std::vector<std::pair<double, int>> fracrowvec;
   for (int row = 0; row < getNbRows(); ++row) {
     if (asynch_interrupt) return;
     double fractionality = 0;
@@ -271,8 +270,9 @@ void LpSolver::constructGomoryCandidates() {
       fractionality = nonIntegrality(lpSlackSolution[-indices[row] - 1]);
     }
     assert(fractionality >= 0);
-    if (fractionality > 0) fracrows.emplace(fractionality, row);
+    if (fractionality > 0) fracrowvec.emplace_back(fractionality, row);
   }
+  std::priority_queue<std::pair<double, int>> fracrows(std::less<std::pair<double, int>>(), fracrowvec);
 
   double last = 0.5;
   _unused(last);
