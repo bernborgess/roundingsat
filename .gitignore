@@ -51,3 +51,4 @@ roundingsat*_info
 test/*.formula
 test/*.proof
 test/*.opb
+/massif.out.*
