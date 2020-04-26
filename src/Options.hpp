@@ -60,13 +60,14 @@ struct Options {
   long long lpPivotBudget = 1000;
   bool addGomoryCuts = true;
   bool addLearnedCuts = true;
-  double tolerance = 1e-6;
-  double maxCutCos = 0.9;
+  double intolerance = 1e-6;
+  double maxCutCos = 0.1;
+  int gomoryCutLimit = 100;
 
-  std::vector<std::string> opts = {"help",          "print-sol",      "verbosity",     "var-decay",   "rinc",
-                                   "rfirst",        "opt-mode",       "prop-counting", "prop-clause", "prop-card",
-                                   "prop-idx",      "prop-sup",       "proof-log",     "lp",          "lp-budget",
-                                   "lp-cut-gomory", "lp-cut-learned", "lp-tolerance",  "lp-maxcutcos"};
+  std::vector<std::string> opts = {"help",          "print-sol",      "verbosity",      "var-decay",    "rinc",
+                                   "rfirst",        "opt-mode",       "prop-counting",  "prop-clause",  "prop-card",
+                                   "prop-idx",      "prop-sup",       "proof-log",      "lp",           "lp-budget",
+                                   "lp-cut-gomory", "lp-cut-learned", "lp-intolerance", "lp-maxcutcos", "lp-gomcutlim"};
 
   typedef bool (*func)(double);
   template <typename T>
@@ -153,9 +154,11 @@ struct Options {
     getOptionNum(
         opt_val, opts[16], [](double x) -> bool { return x == 0 || x == 1; }, addLearnedCuts);
     getOptionNum(
-        opt_val, opts[17], [](double x) -> bool { return x > 0; }, tolerance);
+        opt_val, opts[17], [](double x) -> bool { return x > 0; }, intolerance);
     getOptionNum(
         opt_val, opts[18], [](double x) -> bool { return 1 >= x && x >= 0; }, maxCutCos);
+    getOptionNum(
+        opt_val, opts[19], [](double x) -> bool { return x >= 1; }, gomoryCutLimit);
   }
 
   constexpr static int colwidth = 14;
@@ -207,9 +210,10 @@ struct Options {
     usageVal(opts[14], "Base LP call pivot budget", "int >= 1", lpPivotBudget);
     usageVal(opts[15], "Generate Gomory cuts", "0 or 1", addGomoryCuts);
     usageVal(opts[16], "Use learned constraints as cuts", "0 or 1", addLearnedCuts);
-    usageVal(opts[17], "Tolerance for floating point calculations", "float > 0", tolerance);
+    usageVal(opts[17], "Intolerance for floating point artifacts", "float > 0", intolerance);
     usageVal(opts[18],
-             "Upper bound on cosine of angle between cuts added in one round. Higher means cuts can be more parallel",
+             "Upper bound on cosine of angle between cuts added in one round, higher means cuts can be more parallel",
              "float between 0 and 1", maxCutCos);
+    usageVal(opts[19], "Max number of rows considered for Gomory cuts in one round", "int >= 1", gomoryCutLimit);
   }
 };

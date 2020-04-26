@@ -28,6 +28,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ***********************************************************************/
 
 #include "LpSolver.hpp"
+#include <queue>
 #include "Solver.hpp"
 
 CandidateCut::CandidateCut(int128Constr& in, const soplex::DVectorReal& sol) {
@@ -171,7 +172,7 @@ void LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
   }
   lcc.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
   assert(lcc_unlogged.hasNoZeroes());
-  lcc_unlogged.weakenSmalls(lcc_unlogged.absCoeffSum() / (double)lcc_unlogged.vars.size() * sanitizeLinCombs);
+  lcc_unlogged.weakenSmalls(lcc_unlogged.absCoeffSum() / (double)lcc_unlogged.vars.size() * options.intolerance);
   if (lcc.getDegree() >= INF) lcc.roundToOne(solver.getLevel(), aux::ceildiv<__int128>(lcc.getDegree(), INF - 1));
   assert(lcc.getDegree() < INF);
   assert(lcc.isSaturated());
@@ -227,7 +228,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   lcc_unlogged.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
   if (lcc_unlogged.getDegree() <= 0) lcc_unlogged.reset();
   assert(lcc_unlogged.hasNoZeroes());
-  lcc_unlogged.weakenSmalls(lcc_unlogged.absCoeffSum() / (double)lcc_unlogged.vars.size() * sanitizeLinCombs);
+  lcc_unlogged.weakenSmalls(lcc_unlogged.absCoeffSum() / (double)lcc_unlogged.vars.size() * options.intolerance);
   if (lcc_unlogged.getDegree() >= INF) {
     divisor = aux::ceildiv<__int128>(lcc_unlogged.getDegree(), INF - 1);
     for (Var v : lcc_unlogged.vars) {
@@ -253,6 +254,8 @@ void LpSolver::constructGomoryCandidates() {
   lp.getBasisInd(indices.data());
 
   assert(lpSlackSolution.dim() == getNbRows());
+  std::priority_queue<std::pair<double, int>, std::vector<std::pair<double, int>>, std::less<std::pair<double, int>>>
+      fracrows;
   for (int row = 0; row < getNbRows(); ++row) {
     if (asynch_interrupt) return;
     double fractionality = 0;
@@ -263,18 +266,28 @@ void LpSolver::constructGomoryCandidates() {
       assert(-indices[row] - 1 < lpSlackSolution.dim());
       fractionality = nonIntegrality(lpSlackSolution[-indices[row] - 1]);
     }
-    if (fractionality == 0) continue;
+    assert(fractionality >= 0);
+    if (fractionality > 0) fracrows.emplace(fractionality, row);
+  }
+
+  double last = 0.5;
+  _unused(last);
+  for (int i = 0; i < options.gomoryCutLimit && !fracrows.empty(); ++i) {
+    assert(last >= fracrows.top().first);
+    last = fracrows.top().first;
+    int row = fracrows.top().second;
+    fracrows.pop();
 
     assert(lpMultipliers.dim() == getNbRows());
     lpMultipliers.clear();
     lp.getBasisInverseRowReal(row, lpMultipliers.get_ptr());
     candidateCuts.push_back(createLinearCombinationGomory(lpMultipliers));
     lcc_unlogged.reset();
-    if (candidateCuts.back().ratSlack >= -options.tolerance) candidateCuts.pop_back();
+    if (candidateCuts.back().ratSlack >= -options.intolerance) candidateCuts.pop_back();
     for (int i = 0; i < lpMultipliers.dim(); ++i) lpMultipliers[i] = -lpMultipliers[i];
     candidateCuts.push_back(createLinearCombinationGomory(lpMultipliers));
     lcc_unlogged.reset();
-    if (candidateCuts.back().ratSlack >= -options.tolerance) candidateCuts.pop_back();
+    if (candidateCuts.back().ratSlack >= -options.intolerance) candidateCuts.pop_back();
   }
 }
 
@@ -284,7 +297,7 @@ void LpSolver::constructLearnedCandidates() {
     const Constr& c = solver.ca[cr];
     if (id2row.count(c.id) == 0) {
       candidateCuts.emplace_back(c, cr, lpSolution);
-      if (candidateCuts.back().ratSlack >= -options.tolerance) candidateCuts.pop_back();
+      if (candidateCuts.back().ratSlack >= -options.intolerance) candidateCuts.pop_back();
     }
   }
 }
