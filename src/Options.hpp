@@ -40,7 +40,7 @@ struct Options {
   bool printSol = false;
   enum OPTMODE { LINEAR, COREGUIDED, LAZYCOREGUIDED, HYBRID, LAZYHYBRID };
   std::vector<std::string> optModeMap = {"linear", "core-guided", "lazy-core-guided", "hybrid", "lazy-hybrid"};
-  OPTMODE optMode = LAZYHYBRID;
+  OPTMODE optMode = LINEAR;
 
   int verbosity = 1;
   bool clauseProp = true;
@@ -58,8 +58,8 @@ struct Options {
 
   float lpPivotRatio = 1;
   long long lpPivotBudget = 1000;
-  bool addGomoryCuts = true;
-  bool addLearnedCuts = true;
+  bool addGomoryCuts = false;
+  bool addLearnedCuts = false;
   double intolerance = 1e-6;
   double maxCutCos = 0.1;
   int gomoryCutLimit = 100;
