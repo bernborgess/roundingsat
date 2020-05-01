@@ -696,14 +696,12 @@ CRef Solver::learnConstraint() {
   assert(tmpConstraint.isSaturated());
   if (tmpConstraint.getDegree() <= 0) {
     tmpConstraint.reset();
-    if (lpSolver && lpSolver->addMissingFarkas() == CRef_Unsat) return CRef_Unsat;
     return CRef_Undef;
   }
   CRef cr = attachConstraint(tmpConstraint, ConstraintType::LEARNT);
   tmpConstraint.reset();
   Constr& C = ca[cr];
   recomputeLBD(C);
-  if (lpSolver && lpSolver->addMissingFarkas() == CRef_Unsat) return CRef_Unsat;
   return cr;
 }
 

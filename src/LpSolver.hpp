@@ -101,8 +101,6 @@ class LpSolver {
   int128Constr lcc_unlogged;  // TODO: remove when logging Gomory cut generation
   intConstr ic;
 
-  bool addFarkas = false;
-
  public:
   LpSolver(Solver& solver, const intConstr& objective);
 
@@ -118,8 +116,6 @@ class LpSolver {
 
   void addConstraint(CRef cr, bool removable);
   void removeConstraint(ID id);
-
-  CRef addMissingFarkas();  // TODO: erase after paper submission
 
  private:
   void flushConstraints();

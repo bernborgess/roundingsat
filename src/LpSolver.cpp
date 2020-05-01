@@ -159,10 +159,7 @@ int LpSolver::getNbRows() const { return lp.numRows(); }
 // BITWISE: -
 void LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
   assert(lcc.isReset());
-  if (addFarkas) {  // TODO: replace by assert(ic.isReset());
-    ic.reset();
-    addFarkas = false;
-  }
+  assert(ic.isReset());
   double mult = getScaleFactor(mults, true);
   if (mult == 0) return;
 
@@ -495,8 +492,6 @@ bool LpSolver::_checkFeasibility(bool inProcessing) {
     return true;
   } else {
     lcc.copyTo(solver.conflConstraint);
-    lcc.copyTo(ic);  // TODO: erase after PB+LP paper
-    addFarkas = true;
     lcc.reset();
     ++stats.NLPFARKAS;
     return false;
@@ -564,14 +559,6 @@ void LpSolver::addConstraint(CRef cr, bool removable) {
 void LpSolver::removeConstraint(ID id) {
   toAdd.erase(id);
   if (id2row.count(id)) toRemove.insert(id);
-}
-
-CRef LpSolver::addMissingFarkas() {  // TODO: erase after paper submission
-  if (!addFarkas) return CRef_Undef;
-  ic.copyTo(solver.tmpConstraint);
-  ic.reset();
-  addFarkas = false;
-  return solver.learnConstraint();
 }
 
 // TODO: exploit lp.changeRowReal for more efficiency, e.g. when replacing the upper and lower bound on the objective
