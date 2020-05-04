@@ -204,7 +204,7 @@ bool Solver::runPropagation(bool onlyUnitPropagation) {
         Constr& C = ca[cr];
         if (C.getType() == ConstraintType::LEARNT) {
           cBumpActivity(C);
-          recomputeLBD(C);
+          recomputeLBD(C, false);
         }
         C.toConstraint(conflConstraint);
         return false;
@@ -394,13 +394,12 @@ WatchStatus Solver::checkForPropagation(CRef cr, int& idx, Lit p) {
 // ---------------------------------------------------------------------
 // Conflict analysis
 
-void Solver::recomputeLBD(Constr& C) {
+void Solver::recomputeLBD(Constr& C, bool asserting) {
   if (C.lbd() <= 2) return;
   assert(tmpSet.size() == 0);
   for (int i = 0; i < (int)C.size(); i++)
     if (isFalse(Level, C.lit(i))) tmpSet.add(Level[-C.lit(i)]);
-  C.setLBD(1 +
-           tmpSet.size());  // +1 because, e.g., a binary learned clause contains 1 false literal but should have LBD 2
+  C.setLBD(asserting + tmpSet.size());  // asserting constraints have at least 1 true literal to take into account
   tmpSet.reset();
 }
 
@@ -430,7 +429,7 @@ bool Solver::analyze() {
       Constr& reasonC = ca[Reason[std::abs(l)]];
       if (reasonC.getType() == ConstraintType::LEARNT) {
         cBumpActivity(reasonC);
-        recomputeLBD(reasonC);
+        recomputeLBD(reasonC, true);
       }
       reasonC.toConstraint(tmpConstraint);
       stats.NADDEDLITERALS += tmpConstraint.vars.size();
@@ -701,7 +700,7 @@ CRef Solver::learnConstraint() {
   CRef cr = attachConstraint(tmpConstraint, ConstraintType::LEARNT);
   tmpConstraint.reset();
   Constr& C = ca[cr];
-  recomputeLBD(C);
+  if (assertionLevel < INF) recomputeLBD(C, true);  // some constraints are not asserting so their LBD's are unknown
   return cr;
 }
 
