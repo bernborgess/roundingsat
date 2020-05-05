@@ -963,9 +963,9 @@ SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector
         if (stats.NCONFL >= (stats.NCLEANUP + 1) * nconfl_to_reduce) {
           ++stats.NCLEANUP;
           if (options.verbosity > 0) puts("c INPROCESSING");
-          if (lpSolver && !lpSolver->inProcess()) return SolveState::UNSAT;
           reduceDB();
           while (stats.NCONFL >= stats.NCLEANUP * nconfl_to_reduce) nconfl_to_reduce += options.incReduceDB;
+          if (lpSolver && !lpSolver->inProcess()) return SolveState::UNSAT;
           return SolveState::INPROCESSED;
         }
         double rest_base = luby(options.rinc, ++stats.NRESTARTS);
