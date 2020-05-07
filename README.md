@@ -7,6 +7,11 @@ RoundingSat is a pseudo-Boolean SAT solver for optimization and decision problem
 In the root directory:
 
     cmake .
+    make release_single
+
+On newer systems, the following command uses 4 threads to compile:
+
+    cmake .
     make release
 
 ## Usage
