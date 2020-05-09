@@ -38,6 +38,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 using ID = uint64_t;
 const ID ID_Undef = std::numeric_limits<ID>::max();
 const ID ID_Unsat = ID_Undef - 1;
+const ID ID_Trivial = 1;  // represents constraint 0 >= 0
 
 using Var = int;
 using Lit = int;

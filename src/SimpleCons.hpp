@@ -48,7 +48,8 @@ std::ostream& operator<<(std::ostream& o, const Term<CF>& t) {
 template <typename CF, typename DG>
 struct SimpleCons {
   std::vector<Term<CF>> terms;
-  DG rhs;
+  DG rhs = 0;
+  ID id = ID_Trivial;
 
   void toNormalFormLit() {
     for (auto& t : terms) {
@@ -73,6 +74,9 @@ struct SimpleCons {
 
 template <typename CF, typename DG>
 inline std::ostream& operator<<(std::ostream& o, const SimpleCons<CF, DG>& sc) {
+  o << sc.id << ": ";
   for (auto& t : sc.terms) o << "+ " << t << " ";
   return o << ">= " << sc.rhs;
 }
+
+using SimpleConsInt = SimpleCons<int, long long>;

@@ -80,6 +80,7 @@ class Solver {
   bool firstRun = true;
 
   std::shared_ptr<LpSolver> lpSolver;
+  std::vector<SimpleConsInt> learnedStack;
 
  public:
   std::shared_ptr<Logger> logger;
@@ -98,7 +99,7 @@ class Solver {
   int decisionLevel() const { return trail_lim.size(); }
 
   ID addConstraint(const intConstr& c, ConstraintType type, bool addToLP);
-  ID addConstraint(const SimpleCons<Coef, Val>& c, ConstraintType type, bool addToLP);
+  ID addConstraint(const SimpleConsInt& c, ConstraintType type, bool addToLP);
   void dropExternal(ID id, bool forceDelete, bool removeFromLP);
   int getNbConstraints() const { return constraints.size(); }
   void getIthConstraint(int i, intConstr& out) const { return ca[constraints[i]].toConstraint(out); }
@@ -118,7 +119,7 @@ class Solver {
   SolveState solve(const IntSet& assumptions, intConstr& core, std::vector<bool>& solution);
 
  private:
-  bool presolve();
+  void presolve();
 
   // ---------------------------------------------------------------------
   // VSIDS
@@ -155,7 +156,8 @@ class Solver {
   // Constraint management
 
   CRef attachConstraint(intConstr& constraint, ConstraintType type);
-  CRef learnConstraint();
+  void learnConstraint(SimpleConsInt&&);
+  CRef processLearnedStack();
   ID addInputConstraint(ConstraintType type, bool addToLP);
   void removeConstraint(Constr& C);
 

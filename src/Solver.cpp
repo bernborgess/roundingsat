@@ -558,7 +558,7 @@ CRef Solver::attachConstraint(intConstr& constraint, ConstraintType type) {
   assert(constraint.getDegree() < INF);
   assert(constraint.vars.size() > 0);
 
-  if (logger) constraint.logProofLine("Attach", stats);
+  if (logger) constraint.logProofLineWithInfo("Attach", stats);
   CRef cr = ca.alloc(constraint, type, logger ? logger->last_proofID : ++crefID);
   constraints.push_back(cr);
   Constr& C = ca[cr];
@@ -676,35 +676,42 @@ CRef Solver::attachConstraint(intConstr& constraint, ConstraintType type) {
   return cr;
 }
 
+void Solver::learnConstraint(SimpleConsInt&& sc) { learnedStack.push_back(sc); }
+
 // NOTE: backjumps to place where the constraint is not conflicting, as otherwise we might miss propagations
-CRef Solver::learnConstraint() {
-  // TODO: capture unsat case in a more elegant way by just storing the constraint and returning it at the next
-  // propagation call
-  tmpConstraint.removeUnitsAndZeroes(Level, Pos, true);
-  tmpConstraint.sortInDecreasingCoefOrder();
-  int assertionLevel = tmpConstraint.getAssertionLevel(Level, Pos);
-  if (assertionLevel < 0) {
-    backjumpTo(0);
-    assert(tmpConstraint.getSlack(Level) < 0);
-    if (logger) tmpConstraint.logInconsistency(Level, Pos, stats);
+CRef Solver::processLearnedStack() {
+  // loop back to front as the last constraint in the queue is a result of conflict analysis
+  // and we want to first check this constraint to backjump.
+  while (learnedStack.size() > 0) {
+    tmpConstraint.construct(learnedStack.back());
+    learnedStack.pop_back();
+    tmpConstraint.removeUnitsAndZeroes(Level, Pos, true);
+    tmpConstraint.sortInDecreasingCoefOrder();
+    int assertionLevel = tmpConstraint.getAssertionLevel(Level, Pos);
+    if (assertionLevel < 0) {
+      backjumpTo(0);
+      assert(tmpConstraint.getSlack(Level) < 0);
+      if (logger) tmpConstraint.logInconsistency(Level, Pos, stats);
+      tmpConstraint.reset();
+      return CRef_Unsat;
+    }
+    backjumpTo(assertionLevel);
+    Val slk = tmpConstraint.getSlack(Level);
+    assert(slk >= 0);
+    tmpConstraint.heuristicWeakening(Level, Pos, slk, stats);  // TODO: don't always weaken heuristically?
+    tmpConstraint.postProcess(Level, Pos, false, stats);
+    assert(tmpConstraint.isSaturated());
+    if (tmpConstraint.getDegree() <= 0) {
+      tmpConstraint.reset();
+      continue;
+    }
+    CRef cr = attachConstraint(tmpConstraint, ConstraintType::LEARNT);
+    assert(cr != CRef_Unsat);
     tmpConstraint.reset();
-    return CRef_Unsat;
+    Constr& C = ca[cr];
+    if (assertionLevel < INF) recomputeLBD(C, true);  // some constraints are not asserting so their LBD's are unknown
   }
-  backjumpTo(assertionLevel);
-  Val slk = tmpConstraint.getSlack(Level);
-  assert(slk >= 0);
-  tmpConstraint.heuristicWeakening(Level, Pos, slk, stats);
-  tmpConstraint.postProcess(Level, Pos, false, stats);
-  assert(tmpConstraint.isSaturated());
-  if (tmpConstraint.getDegree() <= 0) {
-    tmpConstraint.reset();
-    return CRef_Undef;
-  }
-  CRef cr = attachConstraint(tmpConstraint, ConstraintType::LEARNT);
-  tmpConstraint.reset();
-  Constr& C = ca[cr];
-  if (assertionLevel < INF) recomputeLBD(C, true);  // some constraints are not asserting so their LBD's are unknown
-  return cr;
+  return CRef_Undef;
 }
 
 ID Solver::addInputConstraint(ConstraintType type, bool addToLP) {
@@ -749,7 +756,7 @@ ID Solver::addConstraint(const intConstr& c, ConstraintType type, bool addToLP) 
   return result;
 }
 
-ID Solver::addConstraint(const SimpleCons<Coef, Val>& c, ConstraintType type, bool addToLP) {
+ID Solver::addConstraint(const SimpleConsInt& c, ConstraintType type, bool addToLP) {
   tmpConstraint.construct(c);
   ID result = addInputConstraint(type, addToLP);
   return result;
@@ -895,10 +902,9 @@ Lit Solver::pickBranchLit() {
   return phase[next];
 }
 
-bool Solver::presolve() {
+void Solver::presolve() {
   firstRun = false;
-  if (lpSolver && !lpSolver->inProcess()) return false;
-  return true;
+  if (lpSolver) lpSolver->inProcess();
 }
 
 /**
@@ -917,13 +923,14 @@ bool Solver::presolve() {
 // TODO: use a coroutine / yield instead of a SolveState return value
 SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector<bool>& solution) {
   backjumpTo(0);  // ensures assumptions are reset
-  if (firstRun && !presolve()) return SolveState::UNSAT;
+  if (firstRun) presolve();
   std::vector<int> assumptions_lim = {0};
   assumptions_lim.reserve((int)assumptions.size() + 1);
   bool allClear = false;
   while (true) {
     if (asynch_interrupt) return SolveState::INTERRUPTED;
     assert(conflConstraint.isReset());
+    if (processLearnedStack() == CRef_Unsat) return SolveState::UNSAT;
     allClear = runPropagation(allClear);
     if (!allClear) {
       assert(!conflConstraint.isReset());
@@ -953,9 +960,8 @@ SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector
         assert(conflConstraint.getDegree() > 0);
         assert(conflConstraint.getDegree() < INF);
         assert(conflConstraint.isSaturated());
-        conflConstraint.copyTo(tmpConstraint);
+        learnConstraint(conflConstraint.toSimpleCons<Coef, Val>());
         conflConstraint.reset();
-        if (learnConstraint() == CRef_Unsat) return SolveState::UNSAT;
       } else {
         if (!extractCore(assumptions, core)) return SolveState::INTERRUPTED;
         return SolveState::INCONSISTENT;
@@ -968,7 +974,7 @@ SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector
           if (options.verbosity > 0) puts("c INPROCESSING");
           reduceDB();
           while (stats.NCONFL >= stats.NCLEANUP * nconfl_to_reduce) nconfl_to_reduce += options.incReduceDB;
-          if (lpSolver && !lpSolver->inProcess()) return SolveState::UNSAT;
+          if (lpSolver) lpSolver->inProcess();
           return SolveState::INPROCESSED;
         }
         double rest_base = luby(options.rinc, ++stats.NRESTARTS);

@@ -44,7 +44,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "typedefs.hpp"
 
 struct CandidateCut {
-  SimpleCons<Coef, Val> simpcons;
+  SimpleConsInt simpcons;
   CRef cr = CRef_Undef;
   double norm = 1;
   double ratSlack = 0;
@@ -112,8 +112,9 @@ class LpSolver {
   // stores inconsistency in solver.conflConstraint
   bool checkFeasibility(bool inProcessing = false);  // TODO: don't use objective function here?
   // @return: false if inconsistency detected, true otherwise
-  bool inProcess();
+  void inProcess();
 
+  void addConstraint(intConstr& c, bool removable);
   void addConstraint(CRef cr, bool removable);
   void removeConstraint(ID id);
 
@@ -121,17 +122,17 @@ class LpSolver {
   void flushConstraints();
 
   bool _checkFeasibility(bool inProcessing);
-  bool _inProcess();
+  void _inProcess();
 
-  void convertConstraint(CRef cr, soplex::DSVectorReal& row, Val& rhs);
+  void convertConstraint(intConstr& c, soplex::DSVectorReal& row, Val& rhs);
   void resetBasis();
   void createLinearCombinationFarkas(soplex::DVectorReal& mults);
   CandidateCut createLinearCombinationGomory(soplex::DVectorReal& mults);
   double getScaleFactor(soplex::DVectorReal& mults, bool removeNegatives);
-  bool rowToConstraint(int row);
+  void rowToConstraint(int row);
   void constructGomoryCandidates();
   void constructLearnedCandidates();
-  bool addFilteredCuts();
+  void addFilteredCuts();
   void pruneCuts();
 
   inline static double nonIntegrality(double a) { return std::abs(std::round(a) - a); }

@@ -24,9 +24,10 @@ bzcat /home/jod/workspace/instances/maxsat/mse19-complete-weighted-benchmarks/pl
 echo "verifying $i"
 wc -l $i.proof
 veripb $i.formula $i.proof -d --arbitraryPrecision
+tested=`expr 1 + $tested`
+echo $tested
 errors=`expr $? + $errors`
 echo $errors
-tested=`expr 1 + $tested`
 echo ""
 
 i="cnf"
@@ -37,9 +38,10 @@ bzcat /home/jod/workspace/instances/dec/CNF/even_colouring/ec_rand4regsplit-v030
 echo "verifying $i"
 wc -l $i.proof
 veripb $i.formula $i.proof -d --arbitraryPrecision
+tested=`expr 1 + $tested`
+echo $tested
 errors=`expr $? + $errors`
 echo $errors
-tested=`expr 1 + $tested`
 echo ""
 
 declare -a arr_dec=(
@@ -69,9 +71,10 @@ do
     echo "verifying $i"
     wc -l $i.proof
     veripb $i.formula $i.proof -d --arbitraryPrecision
+    tested=`expr 1 + $tested`
+    echo $tested
     errors=`expr $? + $errors`
     echo $errors
-    tested=`expr 1 + $tested`
     echo ""
 done
 
@@ -128,9 +131,10 @@ for mode in "${arr_modes[@]}"; do
         echo "verifying $i"
         wc -l $i.proof
         veripb $i.formula $i.proof -d --arbitraryPrecision
+        tested=`expr 1 + $tested`
+        echo $tested
         errors=`expr $? + $errors`
         echo $errors
-        tested=`expr 1 + $tested`
         echo ""
     done
 done

@@ -90,7 +90,7 @@ struct LazyVar {
 
   void addAtLeastConstraint() {
     // X >= k + y1 + ... + yi
-    SimpleCons<Coef, Val> sc;
+    SimpleConsInt sc;
     sc.rhs = rhs;
     sc.terms.reserve(lhs.size() + introducedVars.size());
     for (Lit l : lhs) sc.terms.emplace_back(1, l);
@@ -104,7 +104,7 @@ struct LazyVar {
   void addAtMostConstraint() {
     // X =< k + y1 + ... + yi-1 + (1+n-k-i)yi
     assert(getCurrentVar() == introducedVars.back());
-    SimpleCons<Coef, Val> sc;
+    SimpleConsInt sc;
     sc.rhs = -rhs;
     sc.terms.reserve(lhs.size() + introducedVars.size());
     for (Lit l : lhs) sc.terms.emplace_back(-1, l);
@@ -317,12 +317,14 @@ void optimize(intConstr& origObj) {
         origObj.copyTo(aux);
         aux.invert();
         aux.addRhs(1 - upper_bound);
-        aux.resetBuffer(lastUpperBound - 1);  // -1 to get the unprocessed formula line
+        aux.id = lastUpperBound - 1;  // -1 to get the unprocessed formula line
+        aux.resetBuffer(aux.id);
         coreAggregate.addUp(aux);
         aux.reset();
         origObj.copyTo(aux);
         aux.addRhs(lower_bound);
-        aux.resetBuffer(lastLowerBound - 1);  // -1 to get the unprocessed formula line
+        aux.id = lastLowerBound - 1;  // -1 to get the unprocessed formula line
+        aux.resetBuffer(aux.id);
         coreAggregate.addUp(aux);
         aux.reset();
         assert(coreAggregate.getSlack(solver.getLevel()) < 0);

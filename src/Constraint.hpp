@@ -53,6 +53,7 @@ template <typename SMALL, typename LARGE>  // LARGE should be able to fit sums o
 struct Constraint {
   LARGE degree = 0;
   LARGE rhs = 0;
+  ID id = ID_Trivial;
   std::vector<Var> vars;
   std::vector<SMALL> coefs;
   std::stringstream proofBuffer;
@@ -70,7 +71,7 @@ struct Constraint {
     if (s > coefs.size()) coefs.resize(s, _unused_());
   }
 
-  void resetBuffer(ID proofID) {
+  void resetBuffer(ID proofID = ID_Trivial) {
     assert(plogger);
     assert(proofID != ID_Undef);
     assert(proofID != ID_Unsat);
@@ -81,7 +82,7 @@ struct Constraint {
   void initializeLogging(std::shared_ptr<Logger>& l) {
     assert(isReset());
     plogger = l;
-    if (plogger) resetBuffer(1);
+    if (plogger) resetBuffer();
   }
   template <typename T>
   inline static std::string proofMult(T mult) {
@@ -96,7 +97,8 @@ struct Constraint {
     vars.clear();
     rhs = 0;
     degree = 0;
-    if (plogger) resetBuffer(1);  // NOTE: proofID 1 equals the constraint 0 >= 0
+    id = ID_Trivial;
+    if (plogger) resetBuffer();
   }
 
   inline void addRhs(LARGE r) {
@@ -258,6 +260,7 @@ struct Constraint {
   void copyTo(Constraint<S, L>& out) const {
     assert(out.isReset());
     out.rhs = rhs;
+    out.id = id;
     out.vars = vars;
     out.resize(coefs.size());
     for (Var v : vars) out.coefs[v] = coefs[v];
@@ -281,6 +284,8 @@ struct Constraint {
       addLhs(t.c, t.l);
     }
     degree = _invalid_();
+    id = sc.id;
+    if (plogger) resetBuffer(id);
   }
 
   void invert() {
@@ -615,20 +620,29 @@ struct Constraint {
     assert(plogger);
     toStreamAsOPB(plogger->formula_out);
     plogger->proof_out << "l " << ++plogger->last_formID << "\n";
-    resetBuffer(++plogger->last_proofID);  // ensure consistent proofBuffer
+    id = ++plogger->last_proofID;
+    resetBuffer(id);  // ensure consistent proofBuffer
   }
 
-  void logProofLine(std::string&& info, const Stats& sts) {
+  void logProofLine() {
+    assert(plogger);
+    plogger->proof_out << "p " << proofBuffer.str() << "0\n";
+    id = ++plogger->last_proofID;
+    resetBuffer(id);  // ensure consistent proofBuffer
+#if !NDEBUG
+    plogger->proof_out << "e " << id << " ";
+    toStreamAsOPB(plogger->proof_out);
+#endif
+  }
+
+  void logProofLineWithInfo(std::string&& info, const Stats& sts) {
     assert(plogger);
     _unused(info);
     _unused(sts);
-    plogger->proof_out << "p " << proofBuffer.str() << "0\n";
-    resetBuffer(++plogger->last_proofID);  // ensure consistent proofBuffer
 #if !NDEBUG
     plogger->logComment(info, sts);
-    plogger->proof_out << "e " << plogger->last_proofID << " ";
-    toStreamAsOPB(plogger->proof_out);
 #endif
+    logProofLine();
   }
 
   // @pre: reducible to unit over v
@@ -650,16 +664,16 @@ struct Constraint {
       rhs = 0;
     }
     degree = 1;
-    logProofLine("Unit", sts);
-    plogger->unitIDs.push_back(plogger->last_proofID);
+    logProofLineWithInfo("Unit", sts);
+    plogger->unitIDs.push_back(id);
   }
 
   void logInconsistency(const IntVecIt& level, const std::vector<int>& pos, const Stats& sts) {
     assert(plogger);
     removeUnitsAndZeroes(level, pos);
-    logProofLine("Inconsistency", sts);
+    logProofLineWithInfo("Inconsistency", sts);
     assert(getSlack(level) < 0);
-    plogger->proof_out << "c " << plogger->last_proofID << " 0" << std::endl;
+    plogger->proof_out << "c " << id << " 0" << std::endl;
   }
 
   void toStreamAsOPB(std::ofstream& o) {
@@ -687,12 +701,14 @@ struct Constraint {
   }
 
   template <typename CF, typename DG>
-  SimpleCons<CF, DG> toSimpleCons() const {
+  SimpleCons<CF, DG> toSimpleCons() {
     SimpleCons<CF, DG> result;
     result.rhs = getRhs();
     result.terms.reserve(vars.size());
     for (Var v : vars)
       if (coefs[v] != 0) result.terms.emplace_back((Coef)coefs[v], v);
+    if (plogger) logProofLine();
+    result.id = id;
     return result;
   }
 };
