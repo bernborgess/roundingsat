@@ -416,6 +416,7 @@ bool Solver::analyze() {
     assert(std::abs(conflConstraint.getCoef(-l)) < INF);
     Coef confl_coef_l = conflConstraint.getCoef(-l);
     if (confl_coef_l > 0) {
+      ++stats.NRESOLVESTEPS;
       assert(conflConstraint.getSlack(Level) < 0);
       AssertionStatus status = conflConstraint.isAssertingBefore(Level, decisionLevel());
       if (status == AssertionStatus::ASSERTING)

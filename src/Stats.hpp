@@ -34,7 +34,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 struct Stats {
   long long NTRAILPOPS = 0, NWATCHLOOKUPS = 0, NWATCHLOOKUPSBJ = 0, NWATCHCHECKS = 0, NPROPCHECKS = 0,
             NADDEDLITERALS = 0;
-  long long NCONFL = 0, NDECIDE = 0, NPROP = 0, NPROPCLAUSE = 0, NPROPCARD = 0, NPROPWATCH = 0, NPROPCOUNTING = 0;
+  long long NCONFL = 0, NDECIDE = 0, NPROP = 0, NPROPCLAUSE = 0, NPROPCARD = 0, NPROPWATCH = 0, NPROPCOUNTING = 0,
+            NRESOLVESTEPS = 0;
   long long NWATCHED = 0, NCOUNTING = 0;
   __int128 LEARNEDLENGTHSUM = 0, LEARNEDDEGREESUM = 0;
   long long NCLAUSESLEARNED = 0, NCARDINALITIESLEARNED = 0, NGENERALSLEARNED = 0;
@@ -62,6 +63,7 @@ struct Stats {
     printf("c cpu time %g s\n", aux::cpuTime() - STARTTIME);
     printf("c deterministic time %lld %.2e\n", getDetTime(), (double)getDetTime());
     printf("c propagations %lld\n", NPROP);
+    printf("c resolve steps %lld\n", NRESOLVESTEPS);
     printf("c decisions %lld\n", NDECIDE);
     printf("c conflicts %lld\n", NCONFL);
     printf("c restarts %lld\n", NRESTARTS);
