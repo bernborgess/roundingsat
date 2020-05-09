@@ -447,7 +447,8 @@ bool Solver::analyze() {
       for (Var v : tmpConstraint.vars) actSet.add(tmpConstraint.getLit(v));
       Coef reason_coef_l = tmpConstraint.getCoef(l);
       Coef gcd_coef_l = aux::gcd(reason_coef_l, confl_coef_l);
-      conflConstraint.addUpReduced(Level, tmpConstraint, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
+      conflConstraint.addUp(tmpConstraint, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
+      conflConstraint.saturateAndFixOverflow(getLevel());
       tmpConstraint.reset();
       assert(conflConstraint.getCoef(-l) == 0);
       assert(conflConstraint.getSlack(Level) < 0);
@@ -520,7 +521,8 @@ bool Solver::extractCore(const IntSet& assumptions, intConstr& outCore, Lit l_as
       assert(tmpConstraint.getSlack(Level) <= 0);
       Coef reason_coef_l = tmpConstraint.getCoef(l);
       Coef gcd_coef_l = aux::gcd(reason_coef_l, confl_coef_l);
-      conflConstraint.addUpReduced(Level, tmpConstraint, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
+      conflConstraint.addUp(tmpConstraint, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
+      conflConstraint.saturateAndFixOverflow(getLevel());
       tmpConstraint.reset();
       assert(conflConstraint.getCoef(-l) == 0);
       assert(conflConstraint.getSlack(Level) < 0);

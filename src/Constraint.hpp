@@ -317,14 +317,21 @@ struct Constraint {
     degree = _invalid_();
   }
 
-  template <typename S, typename L>
-  void addUpReduced(const IntVecIt& level, Constraint<S, L>& c, SMALL cmult = 1, SMALL thismult = 1) {
-    addUp(c, cmult, thismult);
+  void saturateAndFixOverflow(const IntVecIt& level) {
     removeZeroes();
     saturate();
     if (getDegree() >= (LARGE)INF) roundToOne(level, aux::ceildiv<LARGE>(getDegree(), INF - 1));
     assert(getDegree() < (LARGE)INF);
     assert(isSaturated());
+  }
+
+  void multiply(const SMALL m) {
+    assert(m > 0);
+    if (m == 1) return;
+    if (plogger) proofBuffer << proofMult(m);
+    for (Var v : vars) coefs[v] *= m;
+    rhs *= m;
+    if (degree != _invalid_()) degree *= m;
   }
 
   void divide(const SMALL d) {
@@ -336,6 +343,16 @@ struct Constraint {
     // NOTE: as all coefficients are divisible by d, we can aux::ceildiv the rhs instead of the degree
     rhs = aux::ceildiv_safe<LARGE>(rhs, d);
     if (degree != _invalid_()) degree = aux::ceildiv_safe<LARGE>(degree, d);
+  }
+
+  void divideRoundUp(const SMALL d) {
+    assert(d > 0);
+    if (d == 1) return;
+    for (Var v : vars) {
+      if (coefs[v] % d == 0) continue;
+      weaken((coefs[v] < 0 ? 0 : d) - aux::mod_safe(coefs[v], d), v);
+    }
+    divide(d);
   }
 
   void roundToOne(const IntVecIt& level, const SMALL d) {
