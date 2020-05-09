@@ -333,8 +333,11 @@ void LpSolver::addFilteredCuts() {
       if (ic.getDegree() <= 0) continue;
       ++stats.NLPGOMORYCUTS;
       if (solver.logger) ic.logAsInput();  // TODO: fix
+      solver.learnConstraint(ic);
+      // NOTE: learnConstraint fixes a unique ID for ic, needed to add cut as constraint
+      // TODO: not the cleanest way to guarantee a unique ID for Gomory cuts
+      assert(id2row.count(ic.id) == 0);
       addConstraint(ic, true);
-      solver.learnConstraint(ic.toSimpleCons<Coef, Val>());
       ic.reset();
     } else {  // learned cut
       ++stats.NLPLEARNEDCUTS;
@@ -485,7 +488,7 @@ bool LpSolver::_checkFeasibility(bool inProcessing) {
   }
 
   createLinearCombinationFarkas(lpMultipliers);
-  solver.learnConstraint(lcc.toSimpleCons<Coef, Val>());
+  solver.learnConstraint(lcc);
   if (lcc.getSlack(solver.getLevel()) < 0) {
     ++stats.NLPFARKAS;
     lcc.copyTo(solver.conflConstraint);

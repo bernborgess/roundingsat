@@ -558,8 +558,11 @@ CRef Solver::attachConstraint(intConstr& constraint, ConstraintType type) {
   assert(constraint.getDegree() < INF);
   assert(constraint.vars.size() > 0);
 
-  if (logger) constraint.logProofLineWithInfo("Attach", stats);
-  CRef cr = ca.alloc(constraint, type, logger ? logger->last_proofID : ++crefID);
+  if (logger)
+    constraint.logProofLineWithInfo("Attach", stats);
+  else
+    constraint.id = ++crefID;
+  CRef cr = ca.alloc(constraint, type, constraint.id);
   constraints.push_back(cr);
   Constr& C = ca[cr];
   int* data = C.data;
@@ -675,8 +678,6 @@ CRef Solver::attachConstraint(intConstr& constraint, ConstraintType type) {
   }
   return cr;
 }
-
-void Solver::learnConstraint(SimpleConsInt&& sc) { learnedStack.push_back(sc); }
 
 // NOTE: backjumps to place where the constraint is not conflicting, as otherwise we might miss propagations
 CRef Solver::processLearnedStack() {
@@ -960,7 +961,7 @@ SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector
         assert(conflConstraint.getDegree() > 0);
         assert(conflConstraint.getDegree() < INF);
         assert(conflConstraint.isSaturated());
-        learnConstraint(conflConstraint.toSimpleCons<Coef, Val>());
+        learnConstraint(conflConstraint);
         conflConstraint.reset();
       } else {
         if (!extractCore(assumptions, core)) return SolveState::INTERRUPTED;

@@ -624,7 +624,7 @@ struct Constraint {
     resetBuffer(id);  // ensure consistent proofBuffer
   }
 
-  void logProofLine() {
+  void logProofLine() {  // TODO: avoid successive proof log lines without any operations inbetween
     assert(plogger);
     plogger->proof_out << "p " << proofBuffer.str() << "0\n";
     id = ++plogger->last_proofID;

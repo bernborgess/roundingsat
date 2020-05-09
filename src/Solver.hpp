@@ -49,7 +49,7 @@ class Solver {
  private:
   int n;
   int orig_n;
-  ID crefID = 0;
+  ID crefID = ID_Trivial;
 
   ConstraintAllocator ca;
   IntSet tmpSet;
@@ -156,7 +156,14 @@ class Solver {
   // Constraint management
 
   CRef attachConstraint(intConstr& constraint, ConstraintType type);
-  void learnConstraint(SimpleConsInt&&);
+  template <typename S, typename L>
+  void learnConstraint(Constraint<S, L>& c) {
+    if (c.plogger)
+      c.logProofLineWithInfo("Learn", stats);
+    else
+      c.id = ++crefID;
+    learnedStack.push_back(c.template toSimpleCons<Coef, Val>());
+  }
   CRef processLearnedStack();
   ID addInputConstraint(ConstraintType type, bool addToLP);
   void removeConstraint(Constr& C);
