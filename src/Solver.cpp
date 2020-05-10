@@ -212,7 +212,7 @@ bool Solver::runPropagation(bool onlyUnitPropagation) {
     }
   }
   if (onlyUnitPropagation) return true;
-  if (lpSolver) return lpSolver->checkFeasibility();
+  if (lpSolver) return lpSolver->checkFeasibility() != INFEASIBLE;
   return true;
 }
 

@@ -72,6 +72,8 @@ struct RowData {
   RowData(ID i, bool r) : id(i), removable(r){};
 };
 
+enum LpStatus { INFEASIBLE, OPTIMAL, PIVOTLIMIT, UNDETERMINED };
+
 class LpSolver {
   soplex::SoPlex lp;
   Solver& solver;
@@ -110,7 +112,7 @@ class LpSolver {
 
   // @return: false if inconsistency detected, true otherwise
   // stores inconsistency in solver.conflConstraint
-  bool checkFeasibility(bool inProcessing = false);  // TODO: don't use objective function here?
+  LpStatus checkFeasibility(bool inProcessing = false);  // TODO: don't use objective function here?
   // @return: false if inconsistency detected, true otherwise
   void inProcess();
 
@@ -121,7 +123,7 @@ class LpSolver {
  private:
   void flushConstraints();
 
-  bool _checkFeasibility(bool inProcessing);
+  LpStatus _checkFeasibility(bool inProcessing);
   void _inProcess();
 
   void convertConstraint(intConstr& c, soplex::DSVectorReal& row, Val& rhs);

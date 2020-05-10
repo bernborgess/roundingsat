@@ -400,9 +400,9 @@ void LpSolver::rowToConstraint(int row) {
   if (ic.plogger) ic.resetBuffer(ic.id);
 }
 
-bool LpSolver::checkFeasibility(bool inProcessing) {
+LpStatus LpSolver::checkFeasibility(bool inProcessing) {
   double startTime = aux::cpuTime();
-  bool result = _checkFeasibility(inProcessing);
+  LpStatus result = _checkFeasibility(inProcessing);
   stats.LPTOTALTIME += aux::cpuTime() - startTime;
   return result;
 }
@@ -413,12 +413,12 @@ void LpSolver::inProcess() {
   stats.LPTOTALTIME += aux::cpuTime() - startTime;
 }
 
-bool LpSolver::_checkFeasibility(bool inProcessing) {
+LpStatus LpSolver::_checkFeasibility(bool inProcessing) {
   if (solver.logger) solver.logger->logComment("Checking LP", stats);
   if (options.lpPivotRatio < 0)
     lp.setIntParam(soplex::SoPlex::ITERLIMIT, -1);  // no pivot limit
   else if (options.lpPivotRatio * stats.NCONFL < (inProcessing ? stats.NLPPIVOTSROOT : stats.NLPPIVOTSINTERNAL))
-    return true;  // pivot ratio exceeded
+    return PIVOTLIMIT;  // pivot ratio exceeded
   else
     lp.setIntParam(soplex::SoPlex::ITERLIMIT, options.lpPivotBudget * lpPivotMult);
   flushConstraints();
@@ -448,7 +448,7 @@ bool LpSolver::_checkFeasibility(bool inProcessing) {
 
   if (stat == soplex::SPxSolver::Status::ABORT_ITER) {
     lpPivotMult *= 2;  // increase pivot budget when calling the LP solver
-    return true;
+    return PIVOTLIMIT;
   }
 
   if (stat == soplex::SPxSolver::Status::OPTIMAL) {
@@ -458,23 +458,23 @@ bool LpSolver::_checkFeasibility(bool inProcessing) {
       resetBasis();
     }
     if (lp.numIterations() == 0) ++stats.NLPNOPIVOT;
-    return true;
+    return OPTIMAL;
   }
 
   if (stat == soplex::SPxSolver::Status::ABORT_CYCLING) {
     ++stats.NLPCYCLING;
     resetBasis();
-    return true;
+    return UNDETERMINED;
   }
   if (stat == soplex::SPxSolver::Status::SINGULAR) {
     ++stats.NLPSINGULAR;
     resetBasis();
-    return true;
+    return UNDETERMINED;
   }
   if (stat != soplex::SPxSolver::Status::INFEASIBLE) {
     ++stats.NLPOTHER;
     resetBasis();
-    return true;
+    return UNDETERMINED;
   }
 
   // Infeasible LP :)
@@ -484,7 +484,7 @@ bool LpSolver::_checkFeasibility(bool inProcessing) {
   if (!lp.getDualFarkas(lpMultipliers)) {
     ++stats.NLPNOFARKAS;
     resetBasis();
-    return true;
+    return UNDETERMINED;
   }
 
   createLinearCombinationFarkas(lpMultipliers);
@@ -493,19 +493,21 @@ bool LpSolver::_checkFeasibility(bool inProcessing) {
     ++stats.NLPFARKAS;
     lcc.copyTo(solver.conflConstraint);
     lcc.reset();
-    return false;
+    return INFEASIBLE;
   }
   lcc.reset();
-  return true;
+  return UNDETERMINED;
 }
 
 void LpSolver::_inProcess() {
   assert(solver.decisionLevel() == 0);
-  if (!checkFeasibility(true)) {
+  LpStatus lpstat = checkFeasibility(true);
+  if (lpstat == INFEASIBLE) {
     assert(solver.conflConstraint.getSlack(solver.getLevel()) < 0);
     solver.conflConstraint.reset();  // learned Farkas constraint is falsified and will trigger unsatisfiability
     return;
-  }
+  } else if (lpstat != OPTIMAL)
+    return;
   if (!lp.hasSol()) return;
   lp.getPrimal(lpSolution);
   lp.getSlacksReal(lpSlackSolution);
