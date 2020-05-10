@@ -37,7 +37,9 @@ struct Stats {
   long long NCONFL = 0, NDECIDE = 0, NPROP = 0, NPROPCLAUSE = 0, NPROPCARD = 0, NPROPWATCH = 0, NPROPCOUNTING = 0,
             NRESOLVESTEPS = 0;
   long long NWATCHED = 0, NCOUNTING = 0;
+  __int128 EXTERNLENGTHSUM = 0, EXTERNDEGREESUM = 0;
   __int128 LEARNEDLENGTHSUM = 0, LEARNEDDEGREESUM = 0;
+  long long NCLAUSESEXTERN = 0, NCARDINALITIESEXTERN = 0, NGENERALSEXTERN = 0;
   long long NCLAUSESLEARNED = 0, NCARDINALITIESLEARNED = 0, NGENERALSLEARNED = 0;
   long long NGCD = 0, NCARDDETECT = 0, NCORECARDINALITIES = 0, NCORES = 0, NSOLS = 0;
   long long NWEAKENEDNONIMPLYING = 0, NWEAKENEDNONIMPLIED = 0;
@@ -68,13 +70,18 @@ struct Stats {
     printf("c conflicts %lld\n", NCONFL);
     printf("c restarts %lld\n", NRESTARTS);
     printf("c inprocessing phases %lld\n", NCLEANUP);
-    printf("c clauses %lld\n", NCLAUSESLEARNED);
-    printf("c cardinalities %lld\n", NCARDINALITIESLEARNED);
-    printf("c general constraints %lld\n", NGENERALSLEARNED);
+    printf("c input clauses %lld\n", NCLAUSESEXTERN);
+    printf("c input cardinalities %lld\n", NCARDINALITIESEXTERN);
+    printf("c input general constraints %lld\n", NGENERALSEXTERN);
+    printf("c input average constraint length %.2f\n", NCONFL == 0 ? 0 : (double)EXTERNLENGTHSUM / NCONFL);
+    printf("c input average constraint degree %.2f\n", NCONFL == 0 ? 0 : (double)EXTERNDEGREESUM / NCONFL);
+    printf("c learned clauses %lld\n", NCLAUSESLEARNED);
+    printf("c learned cardinalities %lld\n", NCARDINALITIESLEARNED);
+    printf("c learned general constraints %lld\n", NGENERALSLEARNED);
+    printf("c learned average constraint length %.2f\n", NCONFL == 0 ? 0 : (double)LEARNEDLENGTHSUM / NCONFL);
+    printf("c learned average constraint degree %.2f\n", NCONFL == 0 ? 0 : (double)LEARNEDDEGREESUM / NCONFL);
     printf("c watched constraints %lld\n", NWATCHED);
     printf("c counting constraints %lld\n", NCOUNTING);
-    printf("c average constraint length %.2f\n", NCONFL == 0 ? 0 : (double)LEARNEDLENGTHSUM / NCONFL);
-    printf("c average constraint degree %.2f\n", NCONFL == 0 ? 0 : (double)LEARNEDDEGREESUM / NCONFL);
     printf("c gcd simplifications %lld\n", NGCD);
     printf("c detected cardinalities %lld\n", NCARDDETECT);
     printf("c weakened non-implied lits %lld\n", NWEAKENEDNONIMPLIED);

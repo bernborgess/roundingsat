@@ -567,14 +567,24 @@ CRef Solver::attachConstraint(intConstr& constraint, ConstraintType type) {
   Constr& C = ca[cr];
   int* data = C.data;
 
-  stats.LEARNEDLENGTHSUM += C.size();
-  stats.LEARNEDDEGREESUM += C.degree;
-  if (C.degree == 1)
-    ++stats.NCLAUSESLEARNED;
-  else if (C.isCard() || C.largestCoef() == 1)
-    ++stats.NCARDINALITIESLEARNED;
-  else
-    ++stats.NGENERALSLEARNED;
+  bool learned = type == ConstraintType::LEARNT;
+  if (learned) {
+    stats.LEARNEDLENGTHSUM += C.size();
+    stats.LEARNEDDEGREESUM += C.degree;
+  } else {
+    stats.EXTERNLENGTHSUM += C.size();
+    stats.EXTERNDEGREESUM += C.degree;
+  }
+  if (C.degree == 1) {
+    stats.NCLAUSESLEARNED += learned;
+    stats.NCLAUSESEXTERN += !learned;
+  } else if (C.isCard() || C.largestCoef() == 1) {
+    stats.NCARDINALITIESLEARNED += learned;
+    stats.NCARDINALITIESEXTERN += !learned;
+  } else {
+    stats.NGENERALSLEARNED += learned;
+    stats.NGENERALSEXTERN += !learned;
+  }
 
   if (C.isSimple()) {
     if (C.degree >= C.size()) {
