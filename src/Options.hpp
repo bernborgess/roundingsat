@@ -29,7 +29,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include <cmath>
 #include <cstring>
 #include "aux.hpp"
 #include "quit.hpp"
