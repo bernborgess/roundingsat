@@ -53,3 +53,4 @@ test/*.proof
 test/*.opb
 /massif.out.*
 /roundingsat_static
+/test/logs/*
