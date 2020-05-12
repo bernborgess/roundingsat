@@ -29,3 +29,14 @@ Try on an example instance which is solved quickly:
 ## Citation
 
 [Elffers and Nordström, 2018] J. Elffers and J. Nordström. Divide and Conquer: Towards Faster Pseudo-Boolean Solving. *IJCAI 2018*, 1291-1299.
+
+## Quick debug tests with VeriPB
+
+The following commands run roundingsat_debug for one second on a list of relatively small decision and optimization instances, and verifies the generated proofs with VeriPB (https://github.com/StephanGocht/VeriPB).
+
+    `cd test`
+    `./test_proofs.sh 1`
+
+To run with a timeout of, say, 10s run
+
+    `./test_proofs.sh 10`

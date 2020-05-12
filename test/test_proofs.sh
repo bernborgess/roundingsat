@@ -31,7 +31,7 @@ for folder in "${arr_default[@]}"; do
         mkdir -p `dirname $logfile`
         echo -n "" > $logfile.proof
         echo -n "" > $logfile.formula
-        timeout $time ../roundingsat_debug $formula --proof-log=$logfile > /dev/null
+        timeout $time roundingsat_debug $formula --proof-log=$logfile > /dev/null
         echo "verifying $logfile"
         wc -l $logfile.proof
         veripb $logfile.formula $logfile.proof -d --arbitraryPrecision
@@ -90,7 +90,7 @@ for mode in "${arr_modes[@]}"; do
         mkdir -p `dirname $logfile`
         echo -n "" > $logfile.proof
         echo -n "" > $logfile.formula
-        output=`timeout $time ../roundingsat_debug $formula --proof-log=$logfile --opt-mode=$mode | awk '/^o/ {print $2}'`
+        output=`timeout $time roundingsat_debug $formula --proof-log=$logfile --opt-mode=$mode | awk '/^o/ {print $2}'`
         if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
             errors=`expr 1000 + $errors`
             echo "wrong output: $output vs $obj"
