@@ -35,10 +35,10 @@ for folder in "${arr_default[@]}"; do
         echo "verifying $logfile"
         wc -l $logfile.proof
         veripb $logfile.formula $logfile.proof -d --arbitraryPrecision
-        tested=`expr 1 + $tested`
-        echo $tested
         errors=`expr $? + $errors`
         echo $errors
+        tested=`expr 1 + $tested`
+        echo $tested
         echo ""
     done
 done
@@ -98,10 +98,10 @@ for mode in "${arr_modes[@]}"; do
         echo "verifying $logfile"
         wc -l $logfile.proof
         veripb $logfile.formula $logfile.proof -d --arbitraryPrecision
-        tested=`expr 1 + $tested`
-        echo $tested
         errors=`expr $? + $errors`
         echo $errors
+        tested=`expr 1 + $tested`
+        echo $tested
         echo ""
     done
 done
