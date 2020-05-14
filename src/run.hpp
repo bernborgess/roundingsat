@@ -43,6 +43,7 @@ Solver solver;
 intConstr objective;
 
 inline void printObjBounds(Val lower, Val upper) {
+  if (options.verbosity == 0) return;
   if (upper < std::numeric_limits<Val>::max())
     printf("c bounds %10lld >= %10lld\n", upper, lower);
   else
@@ -349,7 +350,9 @@ void decide() {
 }
 
 void run() {
-  std::cout << "c #variables=" << solver.getNbOrigVars() << " #constraints=" << solver.getNbConstraints() << std::endl;
+  if (options.verbosity > 0)
+    std::cout << "c #variables=" << solver.getNbOrigVars() << " #constraints=" << solver.getNbConstraints()
+              << std::endl;
   if (objective.vars.size() > 0)
     optimize(objective);
   else

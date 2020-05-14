@@ -33,27 +33,35 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "globals.hpp"
 
 void quit::printSol(const std::vector<bool>& sol) {
-  if (!options.printSol) return;
   printf("v");
   for (Var v = 1; v < (Var)sol.size() - stats.NAUXVARS; ++v) printf(sol[v] ? " x%d" : " -x%d", v);
   printf("\n");
 }
 
+void quit::printSolAsOpb(const std::vector<bool>& sol) {
+  for (Var v = 1; v < (Var)sol.size() - stats.NAUXVARS; ++v) {
+    if (sol[v])
+      std::cout << "+1 x" << v << " >= 1 ;\n";
+    else
+      std::cout << "-1 x" << v << " >= 0 ;\n";
+  }
+}
+
 void quit::exit_SAT(const std::vector<bool>& sol, const std::shared_ptr<Logger>& logger) {
   if (logger) logger->flush();
-  stats.print();
+  if (options.verbosity > 0) stats.print();
   puts("s SATISFIABLE");
-  printSol(sol);
+  if (options.printSol) printSol(sol);
   exit(10);
 }
 
 void quit::exit_UNSAT(const std::vector<bool>& sol, Val bestObjVal, const std::shared_ptr<Logger>& logger) {
   if (logger) logger->flush();
-  stats.print();
+  if (options.verbosity > 0) stats.print();
   if (sol.size() > 0) {
     std::cout << "o " << bestObjVal << std::endl;
     std::cout << "s OPTIMUM FOUND" << std::endl;
-    printSol(sol);
+    if (options.printSol) printSol(sol);
     exit(30);
   } else {
     puts("s UNSATISFIABLE");
@@ -64,7 +72,7 @@ void quit::exit_UNSAT(const std::vector<bool>& sol, Val bestObjVal, const std::s
 void quit::exit_INDETERMINATE(const std::vector<bool>& sol, const std::shared_ptr<Logger>& logger) {
   if (sol.size() > 0) exit_SAT(sol, logger);
   if (logger) logger->flush();
-  stats.print();
+  if (options.verbosity > 0) stats.print();
   puts("s UNKNOWN");
   exit(0);
 }

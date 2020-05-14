@@ -37,6 +37,7 @@ class Logger;
 
 namespace quit {
 void printSol(const std::vector<bool>& sol);
+void printSolAsOpb(const std::vector<bool>& sol);
 void exit_SAT(const std::vector<bool>& sol, const std::shared_ptr<Logger>& logger);
 void exit_UNSAT(const std::vector<bool>& sol, Val bestObjVal, const std::shared_ptr<Logger>& logger);
 void exit_INDETERMINATE(const std::vector<bool>& sol, const std::shared_ptr<Logger>& logger);

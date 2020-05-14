@@ -513,7 +513,7 @@ void LpSolver::_inProcess() {
   lp.getSlacksReal(lpSlackSolution);
   assert((int)solver.phase.size() == getNbVariables());
   for (Var v = 1; v < getNbVariables(); ++v) solver.phase[v] = (lpSolution[v] <= 0.5) ? -v : v;
-  std::cout << "c rational objective " << lp.objValueReal() << std::endl;
+  if (options.verbosity > 0) std::cout << "c rational objective " << lp.objValueReal() << std::endl;
   candidateCuts.clear();
   if (solver.logger && (options.addGomoryCuts || options.addLearnedCuts)) solver.logger->logComment("cutting", stats);
   if (options.addGomoryCuts) constructGomoryCandidates();

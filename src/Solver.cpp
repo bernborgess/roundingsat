@@ -737,7 +737,7 @@ ID Solver::addInputConstraint(ConstraintType type, bool addToLP) {
   }
 
   if (tmpConstraint.getSlack(Level) < 0) {
-    puts("c Inconsistent input constraint");
+    if (options.verbosity > 0) puts("c Inconsistent input constraint");
     if (logger) tmpConstraint.logInconsistency(Level, Pos, stats);
     tmpConstraint.reset();
     assert(decisionLevel() == 0);
@@ -747,7 +747,7 @@ ID Solver::addInputConstraint(ConstraintType type, bool addToLP) {
   CRef cr = attachConstraint(tmpConstraint, type);
   tmpConstraint.reset();
   if (!runPropagation(true)) {
-    puts("c Input conflict");
+    if (options.verbosity > 0) puts("c Input conflict");
     if (logger) {
       conflConstraint.logInconsistency(Level, Pos, stats);
       conflConstraint.reset();
