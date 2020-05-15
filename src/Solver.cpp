@@ -205,7 +205,7 @@ bool Solver::runPropagation(bool onlyUnitPropagation) {
         Constr& C = ca[cr];
         if (C.getType() == ConstraintType::LEARNT) {
           cBumpActivity(C);
-          recomputeLBD(C, false);
+          recomputeLBD(C);
         }
         C.toConstraint(conflConstraint);
         return false;
@@ -395,12 +395,12 @@ WatchStatus Solver::checkForPropagation(CRef cr, int& idx, Lit p) {
 // ---------------------------------------------------------------------
 // Conflict analysis
 
-void Solver::recomputeLBD(Constr& C, bool asserting) {
-  if (C.lbd() <= 2) return;
+void Solver::recomputeLBD(Constr& C) {
+  if (C.lbd() >= 2) return;
   assert(tmpSet.size() == 0);
   for (int i = 0; i < (int)C.size(); i++)
     if (isFalse(Level, C.lit(i))) tmpSet.add(Level[-C.lit(i)]);
-  C.setLBD(asserting + tmpSet.size());  // asserting constraints have at least 1 true literal to take into account
+  if (C.lbd() > tmpSet.size() + 1) C.setLBD(tmpSet.size());  // simulate Glucose
   tmpSet.reset();
 }
 
@@ -431,7 +431,7 @@ bool Solver::analyze() {
       Constr& reasonC = ca[Reason[std::abs(l)]];
       if (reasonC.getType() == ConstraintType::LEARNT) {
         cBumpActivity(reasonC);
-        recomputeLBD(reasonC, true);
+        recomputeLBD(reasonC);
       }
       reasonC.toConstraint(tmpConstraint);
       stats.NADDEDLITERALS += tmpConstraint.vars.size();
@@ -721,7 +721,7 @@ CRef Solver::processLearnedStack() {
     assert(cr != CRef_Unsat);
     tmpConstraint.reset();
     Constr& C = ca[cr];
-    if (assertionLevel < INF) recomputeLBD(C, true);  // some constraints are not asserting so their LBD's are unknown
+    if (assertionLevel < INF) recomputeLBD(C);  // some constraints are not asserting so their LBD's are unknown
   }
   return CRef_Undef;
 }

@@ -148,7 +148,7 @@ class Solver {
   // ---------------------------------------------------------------------
   // Conflict analysis
 
-  void recomputeLBD(Constr& C, bool asserting);
+  void recomputeLBD(Constr& C);
   bool analyze();
   bool extractCore(const IntSet& assumptions, intConstr& outCore, Lit l_assump = 0);
 
