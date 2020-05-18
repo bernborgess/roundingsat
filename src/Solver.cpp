@@ -396,12 +396,13 @@ WatchStatus Solver::checkForPropagation(CRef cr, int& idx, Lit p) {
 // Conflict analysis
 
 void Solver::recomputeLBD(Constr& C) {
-  if (C.lbd() >= 2) return;
-  assert(tmpSet.size() == 0);
-  for (int i = 0; i < (int)C.size(); i++)
-    if (isFalse(Level, C.lit(i))) tmpSet.add(Level[-C.lit(i)]);
-  if (C.lbd() > tmpSet.size() + 1) C.setLBD(tmpSet.size());  // simulate Glucose
-  tmpSet.reset();
+  if (C.lbd() > 2) {  // constraints with LBD <= 2 won't have score recomputed
+    assert(tmpSet.size() == 0);
+    for (int i = 0; i < (int)C.size(); i++)
+      if (isFalse(Level, C.lit(i))) tmpSet.add(Level[-C.lit(i)]);
+    if (C.lbd() > tmpSet.size() + 1) C.setLBD(tmpSet.size());  // simulate Glucose
+    tmpSet.reset();
+  }
 }
 
 bool Solver::analyze() {
