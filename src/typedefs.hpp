@@ -50,13 +50,11 @@ const Val INF_long = 1e15 + 1;  // based on max long range captured by double
 
 using IntVecIt = std::vector<int>::iterator;
 
-using ActValV = __float128;
+using ActValV = long double;
 const ActValV actLimitV = (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 *
-                          (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 *
-                          (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 *
-                          (ActValV)1e300;
+                          (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300;  // ~1e2400 << 2^(2^13)
 using ActValC = float;
-const ActValC actLimitC = 1e30;
+const ActValC actLimitC = 1e30;  // ~1e30 << 2^(2^7)
 
 // TODO: make below methods part of a Solver object that's passed around
 inline bool isTrue(const IntVecIt& level, Lit l) { return level[l] != INF; }
