@@ -65,12 +65,31 @@ struct Options {
 
   bool maxdiv = false;
   bool weakenFull = false;
+  bool weakenNonImplying = false;
 
-  std::vector<std::string> opts = {"help",          "print-sol",      "verbosity",      "var-decay",    "rinc",
-                                   "rfirst",        "opt-mode",       "prop-counting",  "prop-clause",  "prop-card",
-                                   "prop-idx",      "prop-sup",       "proof-log",      "lp",           "lp-budget",
-                                   "lp-cut-gomory", "lp-cut-learned", "lp-intolerance", "lp-maxcutcos", "lp-gomcutlim",
-                                   "ca-maxdiv",     "ca-weaken-full"};
+  std::vector<std::string> opts = {"help",
+                                   "print-sol",
+                                   "verbosity",
+                                   "var-decay",
+                                   "rinc",
+                                   "rfirst",
+                                   "opt-mode",
+                                   "prop-counting",
+                                   "prop-clause",
+                                   "prop-card",
+                                   "prop-idx",
+                                   "prop-sup",
+                                   "proof-log",
+                                   "lp",
+                                   "lp-budget",
+                                   "lp-cut-gomory",
+                                   "lp-cut-learned",
+                                   "lp-intolerance",
+                                   "lp-maxcutcos",
+                                   "lp-gomcutlim",
+                                   "ca-maxdiv",
+                                   "ca-weaken-full",
+                                   "ca-weaken-nonimplying"};
 
   typedef bool (*func)(double);
   template <typename T>
@@ -163,9 +182,11 @@ struct Options {
     getOptionNum(
         opt_val, opts[19], [](double x) -> bool { return x >= 1; }, gomoryCutLimit);
     getOptionNum(
-        opt_val, opts[20], [](double x) -> bool { return 1 >= x && x >= 0; }, maxdiv);
+        opt_val, opts[20], [](double x) -> bool { return x == 0 || x == 1; }, maxdiv);
     getOptionNum(
-        opt_val, opts[21], [](double x) -> bool { return 1 >= x && x >= 0; }, weakenFull);
+        opt_val, opts[21], [](double x) -> bool { return x == 0 || x == 1; }, weakenFull);
+    getOptionNum(
+        opt_val, opts[22], [](double x) -> bool { return x == 0 || x == 1; }, weakenNonImplying);
   }
 
   constexpr static int colwidth = 14;
@@ -225,5 +246,6 @@ struct Options {
     usageVal(opts[20], "Use asserting coefficient as divisor for reason constraints", "0 or 1", maxdiv);
     usageVal(opts[21], "Weaken non-divisible non-falsified literals in reason constraints completely", "0 or 1",
              weakenFull);
+    usageVal(opts[22], "Weaken non-implying falsified literals from reason constraints", "0 or 1", weakenNonImplying);
   }
 };

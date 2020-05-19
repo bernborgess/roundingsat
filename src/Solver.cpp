@@ -437,8 +437,9 @@ bool Solver::analyze() {
       reasonC.toConstraint(tmpConstraint);
       stats.NADDEDLITERALS += tmpConstraint.vars.size();
       tmpConstraint.removeUnitsAndZeroes(Level, Pos);  // NOTE: also saturates
-      tmpConstraint.weakenNonImplying(Level, tmpConstraint.getCoef(l), tmpConstraint.getSlack(Level),
-                                      stats);  // NOTE: also saturates
+      if (options.weakenNonImplying)
+        tmpConstraint.weakenNonImplying(Level, tmpConstraint.getCoef(l), tmpConstraint.getSlack(Level),
+                                        stats);  // NOTE: also saturates
       assert(tmpConstraint.getCoef(l) > tmpConstraint.getSlack(Level));
       tmpConstraint.weakenDivideRound(getLevel(), l, options.maxdiv, options.weakenFull);
       assert(tmpConstraint.getSlack(Level) <= 0);
@@ -508,8 +509,9 @@ bool Solver::extractCore(const IntSet& assumptions, intConstr& outCore, Lit l_as
       ca[Reason[std::abs(l)]].toConstraint(tmpConstraint);
       stats.NADDEDLITERALS += tmpConstraint.vars.size();
       tmpConstraint.removeUnitsAndZeroes(Level, Pos);
-      tmpConstraint.weakenNonImplying(Level, tmpConstraint.getCoef(l), tmpConstraint.getSlack(Level),
-                                      stats);  // NOTE: also saturates
+      if (options.weakenNonImplying)
+        tmpConstraint.weakenNonImplying(Level, tmpConstraint.getCoef(l), tmpConstraint.getSlack(Level),
+                                        stats);  // NOTE: also saturates
       assert(tmpConstraint.getCoef(l) > tmpConstraint.getSlack(Level));
       tmpConstraint.weakenDivideRound(getLevel(), l, options.maxdiv, options.weakenFull);
       assert(tmpConstraint.getSlack(Level) <= 0);
