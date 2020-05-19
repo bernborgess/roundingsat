@@ -172,11 +172,9 @@ void LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
     ic.reset();
   }
   lcc.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
-  assert(lcc_unlogged.hasNoZeroes());
-  lcc_unlogged.weakenSmalls(lcc_unlogged.absCoeffSum() / (double)lcc_unlogged.vars.size() * options.intolerance);
-  if (lcc.getDegree() >= INF) lcc.roundToOne(solver.getLevel(), aux::ceildiv<__int128>(lcc.getDegree(), INF - 1));
-  assert(lcc.getDegree() < INF);
-  assert(lcc.isSaturated());
+  assert(lcc.hasNoZeroes());
+  lcc.weakenSmalls(lcc.absCoeffSum() / (double)lcc.vars.size() * options.intolerance);
+  lcc.saturateAndFixOverflow(solver.getLevel(), options.weakenFull);
 }
 
 void flipLits(int128Constr& ic, const soplex::DVectorReal& lpSol) {
@@ -228,25 +226,13 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
 
   lcc_unlogged.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
   // TODO: full postprocessing?
-  if (lcc_unlogged.getDegree() <= 0) lcc_unlogged.reset();
-  assert(lcc_unlogged.hasNoZeroes());
-  lcc_unlogged.weakenSmalls(lcc_unlogged.absCoeffSum() / (double)lcc_unlogged.vars.size() * options.intolerance);
-  if (lcc_unlogged.getDegree() >= INF) {
-    divisor = aux::ceildiv<__int128>(lcc_unlogged.getDegree(), INF - 1);
-    for (Var v : lcc_unlogged.vars) {
-      __int128 rem = aux::mod_safe(lcc_unlogged.coefs[v], divisor);
-      if (rem == 0) continue;
-      assert(rem > 0);
-      if ((double)divisor * lpSolution[v] < rem)
-        lcc_unlogged.weaken(divisor - rem, v);
-      else
-        lcc_unlogged.weaken(-rem, v);
-    }
-    lcc_unlogged.divide(divisor);
-    lcc_unlogged.saturate();
+  if (lcc_unlogged.getDegree() <= 0) {
+    lcc_unlogged.reset();
+  } else {
+    assert(lcc_unlogged.hasNoZeroes());
+    lcc_unlogged.weakenSmalls(lcc_unlogged.absCoeffSum() / (double)lcc_unlogged.vars.size() * options.intolerance);
+    lcc_unlogged.saturateAndFixOverflow(solver.getLevel(), options.weakenFull);
   }
-  assert(lcc_unlogged.getDegree() < INF);
-  assert(lcc_unlogged.isSaturated());
   return CandidateCut(lcc_unlogged, lpSolution);
 }
 

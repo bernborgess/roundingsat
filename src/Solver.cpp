@@ -440,17 +440,13 @@ bool Solver::analyze() {
       tmpConstraint.weakenNonImplying(Level, tmpConstraint.getCoef(l), tmpConstraint.getSlack(Level),
                                       stats);  // NOTE: also saturates
       assert(tmpConstraint.getCoef(l) > tmpConstraint.getSlack(Level));
-      Coef slk = tmpConstraint.getSlack(Level);
-      if (slk > 0) {
-        Coef div = slk + 1;
-        tmpConstraint.roundToOne(Level, div);
-      }
+      tmpConstraint.weakenDivideRound(getLevel(), l, options.maxdiv, options.weakenFull);
       assert(tmpConstraint.getSlack(Level) <= 0);
       for (Var v : tmpConstraint.vars) actSet.add(tmpConstraint.getLit(v));
       Coef reason_coef_l = tmpConstraint.getCoef(l);
       Coef gcd_coef_l = aux::gcd(reason_coef_l, confl_coef_l);
       conflConstraint.addUp(tmpConstraint, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
-      conflConstraint.saturateAndFixOverflow(getLevel());
+      conflConstraint.saturateAndFixOverflow(getLevel(), options.weakenFull);
       tmpConstraint.reset();
       assert(conflConstraint.getCoef(-l) == 0);
       assert(conflConstraint.getSlack(Level) < 0);
@@ -515,16 +511,12 @@ bool Solver::extractCore(const IntSet& assumptions, intConstr& outCore, Lit l_as
       tmpConstraint.weakenNonImplying(Level, tmpConstraint.getCoef(l), tmpConstraint.getSlack(Level),
                                       stats);  // NOTE: also saturates
       assert(tmpConstraint.getCoef(l) > tmpConstraint.getSlack(Level));
-      Coef slk = tmpConstraint.getSlack(Level);
-      if (slk > 0) {
-        Coef div = slk + 1;
-        tmpConstraint.roundToOne(Level, div);
-      }
+      tmpConstraint.weakenDivideRound(getLevel(), l, options.maxdiv, options.weakenFull);
       assert(tmpConstraint.getSlack(Level) <= 0);
       Coef reason_coef_l = tmpConstraint.getCoef(l);
       Coef gcd_coef_l = aux::gcd(reason_coef_l, confl_coef_l);
       conflConstraint.addUp(tmpConstraint, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
-      conflConstraint.saturateAndFixOverflow(getLevel());
+      conflConstraint.saturateAndFixOverflow(getLevel(), options.weakenFull);
       tmpConstraint.reset();
       assert(conflConstraint.getCoef(-l) == 0);
       assert(conflConstraint.getSlack(Level) < 0);

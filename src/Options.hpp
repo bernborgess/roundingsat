@@ -63,10 +63,14 @@ struct Options {
   double maxCutCos = 0.1;
   int gomoryCutLimit = 100;
 
+  bool maxdiv = false;
+  bool weakenFull = false;
+
   std::vector<std::string> opts = {"help",          "print-sol",      "verbosity",      "var-decay",    "rinc",
                                    "rfirst",        "opt-mode",       "prop-counting",  "prop-clause",  "prop-card",
                                    "prop-idx",      "prop-sup",       "proof-log",      "lp",           "lp-budget",
-                                   "lp-cut-gomory", "lp-cut-learned", "lp-intolerance", "lp-maxcutcos", "lp-gomcutlim"};
+                                   "lp-cut-gomory", "lp-cut-learned", "lp-intolerance", "lp-maxcutcos", "lp-gomcutlim",
+                                   "ca-maxdiv",     "ca-weaken-full"};
 
   typedef bool (*func)(double);
   template <typename T>
@@ -158,6 +162,10 @@ struct Options {
         opt_val, opts[18], [](double x) -> bool { return 1 >= x && x >= 0; }, maxCutCos);
     getOptionNum(
         opt_val, opts[19], [](double x) -> bool { return x >= 1; }, gomoryCutLimit);
+    getOptionNum(
+        opt_val, opts[20], [](double x) -> bool { return 1 >= x && x >= 0; }, maxdiv);
+    getOptionNum(
+        opt_val, opts[21], [](double x) -> bool { return 1 >= x && x >= 0; }, weakenFull);
   }
 
   constexpr static int colwidth = 14;
@@ -214,5 +222,8 @@ struct Options {
              "Upper bound on cosine of angle between cuts added in one round, higher means cuts can be more parallel",
              "float between 0 and 1", maxCutCos);
     usageVal(opts[19], "Max number of rows considered for Gomory cuts in one round", "int >= 1", gomoryCutLimit);
+    usageVal(opts[20], "Use asserting coefficient as divisor for reason constraints", "0 or 1", maxdiv);
+    usageVal(opts[21], "Weaken non-divisible non-falsified literals in reason constraints completely", "0 or 1",
+             weakenFull);
   }
 };

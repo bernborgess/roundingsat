@@ -322,12 +322,16 @@ struct Constraint {
     degree = _invalid_();
   }
 
-  void saturateAndFixOverflow(const IntVecIt& level) {
+  void saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening) {
     removeZeroes();
     saturate();
-    if (getDegree() >= (LARGE)INF) roundToOne(level, aux::ceildiv<LARGE>(getDegree(), INF - 1));
+    if (getDegree() >= (LARGE)INF) {
+      LARGE div = aux::ceildiv<LARGE>(getDegree(), INF - 1);
+      weakenNonDivisibleNonFalsifieds(level, div, fullWeakening);
+      divideRoundUp(div);
+      saturate();
+    }
     assert(getDegree() < (LARGE)INF);
-    assert(isSaturated());
   }
 
   void multiply(const SMALL m) {
@@ -339,42 +343,36 @@ struct Constraint {
     if (degree != _invalid_()) degree *= m;
   }
 
-  void divide(const SMALL d) {
+  void divide(const LARGE d) {
     if (plogger) proofBuffer << d << " d ";
     for (Var v : vars) {
       assert(coefs[v] % d == 0);
       coefs[v] /= d;
     }
     // NOTE: as all coefficients are divisible by d, we can aux::ceildiv the rhs instead of the degree
-    rhs = aux::ceildiv_safe<LARGE>(rhs, d);
-    if (degree != _invalid_()) degree = aux::ceildiv_safe<LARGE>(degree, d);
+    rhs = aux::ceildiv_safe(rhs, d);
+    if (degree != _invalid_()) degree = aux::ceildiv_safe(degree, d);
   }
 
-  void divideRoundUp(const SMALL d) {
+  void divideRoundUp(const LARGE d) {
     assert(d > 0);
     if (d == 1) return;
     for (Var v : vars) {
       if (coefs[v] % d == 0) continue;
-      weaken((coefs[v] < 0 ? 0 : d) - aux::mod_safe(coefs[v], d), v);
+      weaken((coefs[v] < 0 ? 0 : d) - aux::mod_safe<LARGE>(coefs[v], d), v);
     }
     divide(d);
   }
 
-  void roundToOne(const IntVecIt& level, const SMALL d) {
-    assert(isSaturated());
-    assert(hasNoUnits(level));
-    assert(d > 0);
-    if (d == 1) return;
-    for (Var v : vars) {
-      if (coefs[v] % d == 0) continue;
-      weaken((increasesSlack(level, v) ? 0 : d) - aux::mod_safe(coefs[v], d), v);
-    }
-    degree = _invalid_();  // TODO: not needed, as weaken already invalidates degree
-    divide(d);
-    saturate();  // NOTE: needed, as weakening can change degree significantly
+  void weakenDivideRound(const IntVecIt& level, Lit l, bool maxdiv, bool fullWeakening) {
+    assert(getCoef(l) > 0);
+    LARGE div = maxdiv ? getCoef(l) : std::max<LARGE>(1, getSlack(level) + 1);
+    weakenNonDivisibleNonFalsifieds(level, div, fullWeakening);
+    divideRoundUp(div);
+    saturate();
   }
 
-  void applyMIR(SMALL d) {
+  void applyMIR(LARGE d) {
     for (Var v : vars) coefs[v] = mir_coeff(coefs[v], rhs, d);
     rhs = aux::mod_safe(rhs, d) * aux::ceildiv_safe(rhs, d);
     degree = _invalid_();
@@ -529,6 +527,18 @@ struct Constraint {
     for (Var v : vars)
       if (std::abs(coefs[v]) < limit) weaken(-coefs[v], v);
     saturate();
+  }
+
+  void weakenNonDivisibleNonFalsifieds(const IntVecIt& level, LARGE div, bool fullWeakening) {
+    assert(div > 0);
+    if (div == 1) return;
+    if (fullWeakening) {
+      for (Var v : vars)
+        if (coefs[v] % div != 0 && !falsified(level, v)) weaken(-coefs[v], v);
+    } else {
+      for (Var v : vars)
+        if (coefs[v] % div != 0 && !falsified(level, v)) weaken(-(std::abs(coefs[v]) % div), (coefs[v] < 0 ? -v : v));
+    }
   }
 
   LARGE absCoeffSum() const {
