@@ -351,7 +351,7 @@ void decide() {
 
 void run() {
   if (options.verbosity > 0)
-    std::cout << "c #variables=" << solver.getNbOrigVars() << " #constraints=" << solver.getNbConstraints()
+    std::cout << "c #variables " << solver.getNbOrigVars() << " #constraints " << solver.getNbConstraints()
               << std::endl;
   if (objective.vars.size() > 0)
     optimize(objective);
