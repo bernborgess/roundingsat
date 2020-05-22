@@ -113,11 +113,11 @@ struct Constraint {
     return degree;
   }
   inline SMALL getCoef(Lit l) const {
-    assert((unsigned int)std::abs(l) < coefs.size());
-    return coefs[std::abs(l)] == _unused_() ? 0 : (l < 0 ? -coefs[-l] : coefs[l]);
+    assert((unsigned int)toVar(l) < coefs.size());
+    return coefs[toVar(l)] == _unused_() ? 0 : (l < 0 ? -coefs[-l] : coefs[l]);
   }
   inline Lit getLit(Lit l) const {  // NOTE: answer of 0 means coef 0 or not in vars
-    Var v = std::abs(l);
+    Var v = toVar(l);
     if (v >= (Var)coefs.size()) return 0;
     SMALL c = coefs[v];
     if (c == 0 || c == _unused_())
@@ -167,9 +167,9 @@ struct Constraint {
     if (m == 0) return;
     if (plogger) {
       if (m > 0)
-        proofBuffer << (l < 0 ? "~x" : "x") << std::abs(l) << " " << proofMult(m) << "+ ";
+        proofBuffer << (l < 0 ? "~x" : "x") << toVar(l) << " " << proofMult(m) << "+ ";
       else
-        proofBuffer << (l < 0 ? "x" : "~x") << std::abs(l) << " " << proofMult(-m) << "+ ";
+        proofBuffer << (l < 0 ? "x" : "~x") << toVar(l) << " " << proofMult(-m) << "+ ";
     }
     addLhs(m, l);  // resets degree // TODO: optimize this method by not calling addLhs and not resetting degree
     if (m < 0) addRhs(m);
@@ -454,8 +454,7 @@ struct Constraint {
       assert(l != 0);
       if (isFalse(level, l)) litsByPos.push_back(-l);
     }
-    std::sort(litsByPos.begin(), litsByPos.end(),
-              [&](Lit l1, Lit l2) { return pos[std::abs(l1)] < pos[std::abs(l2)]; });
+    std::sort(litsByPos.begin(), litsByPos.end(), [&](Lit l1, Lit l2) { return pos[toVar(l1)] < pos[toVar(l2)]; });
 
     // calculate earliest propagating decision level by decreasing slack one decision level at a time
     auto posIt = litsByPos.cbegin();
@@ -589,12 +588,12 @@ struct Constraint {
       for (int i = 0; i < largeCoefsNeeded; ++i) {  // partially weaken large vars
         Lit l = getLit(vars[i]);
         SMALL d = getCoef(l) - div_coef;
-        proofBuffer << (l > 0 ? "~x" : "x") << std::abs(l) << " " << proofMult(d) << "+ ";
+        proofBuffer << (l > 0 ? "~x" : "x") << toVar(l) << " " << proofMult(d) << "+ ";
       }
       for (int i = skippable; i < (int)vars.size(); ++i) {  // weaken small vars
         Lit l = getLit(vars[i]);
         SMALL d = getCoef(l);
-        proofBuffer << (l > 0 ? "~x" : "x") << std::abs(l) << " " << proofMult(d) << "+ ";
+        proofBuffer << (l > 0 ? "~x" : "x") << toVar(l) << " " << proofMult(d) << "+ ";
       }
       if (div_coef > 1) proofBuffer << div_coef << " d ";
     }

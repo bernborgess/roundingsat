@@ -44,6 +44,7 @@ using Var = int;
 using Lit = int;
 using Coef = int;
 using Val = long long;
+inline Var toVar(Lit l) { return std::abs(l); }
 
 const Coef INF = 1e9 + 1;       // based on max value of int that still allows addition of two ints
 const Val INF_long = 1e15 + 1;  // based on max long range captured by double
@@ -60,4 +61,4 @@ const ActValC actLimitC = 1e30;  // ~1e30 << 2^(2^7)
 inline bool isTrue(const IntVecIt& level, Lit l) { return level[l] != INF; }
 inline bool isFalse(const IntVecIt& level, Lit l) { return level[-l] != INF; }
 inline bool isUnit(const IntVecIt& level, Lit l) { return level[l] == 0; }
-inline bool isUnknown(const std::vector<int>& pos, Lit l) { return pos[std::abs(l)] == INF; }
+inline bool isUnknown(const std::vector<int>& pos, Lit l) { return pos[toVar(l)] == INF; }

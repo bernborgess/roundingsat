@@ -125,7 +125,7 @@ void Solver::uncheckedEnqueue(Lit p, CRef from) {
   assert(!isTrue(Level, p));
   assert(!isFalse(Level, p));
   assert(isUnknown(Pos, p));
-  Var v = std::abs(p);
+  Var v = toVar(p);
   Reason[v] = from;
   if (decisionLevel() == 0) {
     Reason[v] = CRef_Undef;  // no need to keep track of reasons for unit literals
@@ -151,7 +151,7 @@ void Solver::undoOne() {
       if (w.idx >= 0 && w.idx % 2 == 0) ca[w.cref].undoFalsified(w.idx);
     --qhead;
   }
-  Var v = std::abs(l);
+  Var v = toVar(l);
   trail.pop_back();
   Level[l] = INF;
   Pos[v] = INF;
@@ -428,8 +428,8 @@ bool Solver::analyze() {
         assert(conflConstraint.getSlack(Level) < 0);
         continue;
       }
-      assert(Reason[std::abs(l)] != CRef_Undef);
-      Constr& reasonC = ca[Reason[std::abs(l)]];
+      assert(Reason[toVar(l)] != CRef_Undef);
+      Constr& reasonC = ca[Reason[toVar(l)]];
       if (reasonC.getType() == ConstraintType::LEARNT) {
         cBumpActivity(reasonC);
         recomputeLBD(reasonC);
@@ -456,7 +456,7 @@ bool Solver::analyze() {
   }
   assert(conflConstraint.getSlack(Level) < 0);
   for (Lit l : actSet.keys)
-    if (l != 0) vBumpActivity(std::abs(l));
+    if (l != 0) vBumpActivity(toVar(l));
   actSet.reset();
   return true;
 }
@@ -468,7 +468,7 @@ bool Solver::extractCore(const IntSet& assumptions, intConstr& outCore, Lit l_as
   if (l_assump != 0) {  // l_assump is an assumption propagated to the opposite value
     assert(assumptions.has(l_assump));
     assert(isFalse(Level, l_assump));
-    int pos = Pos[std::abs(l_assump)];
+    int pos = Pos[toVar(l_assump)];
     while ((int)trail.size() > pos) undoOne();
     assert(isUnknown(Pos, l_assump));
     decide(l_assump);
@@ -492,7 +492,7 @@ bool Solver::extractCore(const IntSet& assumptions, intConstr& outCore, Lit l_as
   backjumpTo(0);
 
   for (Lit l : decisions) decide(l);
-  for (Lit l : props) propagate(l, Reason[std::abs(l)]);
+  for (Lit l : props) propagate(l, Reason[toVar(l)]);
 
   stats.NADDEDLITERALS += conflConstraint.vars.size();
   conflConstraint.removeUnitsAndZeroes(Level, Pos);
@@ -506,7 +506,7 @@ bool Solver::extractCore(const IntSet& assumptions, intConstr& outCore, Lit l_as
     assert(std::abs(conflConstraint.getCoef(-l)) < INF);
     Coef confl_coef_l = conflConstraint.getCoef(-l);
     if (confl_coef_l > 0) {
-      ca[Reason[std::abs(l)]].toConstraint(tmpConstraint);
+      ca[Reason[toVar(l)]].toConstraint(tmpConstraint);
       stats.NADDEDLITERALS += tmpConstraint.vars.size();
       tmpConstraint.removeUnitsAndZeroes(Level, Pos);
       if (options.weakenNonImplying)
@@ -636,7 +636,7 @@ CRef Solver::attachConstraint(intConstr& constraint, ConstraintType type) {
     for (unsigned int i = 0; i < 2 * C.size(); i += 2) {
       Lit l = data[i + 1];
       adj[l].emplace_back(cr, i);
-      if (!isFalse(Level, l) || Pos[std::abs(l)] >= qhead) C.slack += data[i];
+      if (!isFalse(Level, l) || Pos[toVar(l)] >= qhead) C.slack += data[i];
     }
     assert(C.slack >= 0);
     if (C.slack < C.largestCoef()) {  // propagate
@@ -652,7 +652,7 @@ CRef Solver::attachConstraint(intConstr& constraint, ConstraintType type) {
   ++stats.NWATCHED;
   for (unsigned int i = 0; i < 2 * C.size() && C.slack < C.largestCoef(); i += 2) {
     Lit l = data[i + 1];
-    if (!isFalse(Level, l) || Pos[std::abs(l)] >= qhead) {
+    if (!isFalse(Level, l) || Pos[toVar(l)] >= qhead) {
       assert(!C.isWatched(i));
       C.slack += data[i];
       data[i] = -data[i];
@@ -884,7 +884,7 @@ Val Solver::lhs(Constr& C, const std::vector<bool>& sol) {
   Val result = 0;
   for (size_t j = 0; j < C.size(); ++j) {
     Lit l = C.lit(j);
-    result += ((l > 0) == sol[std::abs(l)]) * C.coef(j);
+    result += ((l > 0) == sol[toVar(l)]) * C.coef(j);
   }
   return result;
 }
@@ -997,7 +997,7 @@ SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector
             if (isUnit(Level, l))
               backjumpTo(0), core.reset();  // negated assumption is unit
             else {
-              ca[Reason[std::abs(l)]].toConstraint(conflConstraint);
+              ca[Reason[toVar(l)]].toConstraint(conflConstraint);
               if (!extractCore(assumptions, core, -l)) return SolveState::INTERRUPTED;
             }
             return SolveState::INCONSISTENT;

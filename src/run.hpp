@@ -274,7 +274,7 @@ void optimize(intConstr& origObj) {
       }
       std::sort(assumps.keys.begin(), assumps.keys.end(), [&](Lit l1, Lit l2) {
         return reformObj.getCoef(-l1) > reformObj.getCoef(-l2) ||
-               (reformObj.getCoef(-l1) == reformObj.getCoef(-l2) && std::abs(l1) < std::abs(l2));
+               (reformObj.getCoef(-l1) == reformObj.getCoef(-l2) && toVar(l1) < toVar(l2));
       });
     }
     assert(upper_bound > lower_bound);
