@@ -66,6 +66,7 @@ void Solver::setNbVars(long long nvars) {
 
 void Solver::setNbOrigVars(int o_n) {
   orig_n = o_n;
+  stats.NORIGVARS = n;
   stats.NAUXVARS = n - orig_n;
 }
 

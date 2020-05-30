@@ -45,7 +45,7 @@ struct Stats {
   long long NWEAKENEDNONIMPLYING = 0, NWEAKENEDNONIMPLIED = 0;
   long long NRESTARTS = 0, NCLEANUP = 0;
   double STARTTIME = 0;
-  long long NAUXVARS = 0;
+  long long NORIGVARS = 0, NAUXVARS = 0;
 
   long long NLPADDEDROWS = 0, NLPDELETEDROWS = 0;
   long long NLPPIVOTSINTERNAL = 0, NLPPIVOTSROOT = 0, NLPNOPIVOT = 0, NLPRESETBASIS = 0;
@@ -86,6 +86,7 @@ struct Stats {
     printf("c detected cardinalities %lld\n", NCARDDETECT);
     printf("c weakened non-implied lits %lld\n", NWEAKENEDNONIMPLIED);
     printf("c weakened non-implying lits %lld\n", NWEAKENEDNONIMPLYING);
+    printf("c original variables %lld\n", NORIGVARS);
     printf("c auxiliary variables introduced %lld\n", NAUXVARS);
     printf("c solutions found %lld\n", NSOLS);
     printf("c cores constructed %lld\n", NCORES);
