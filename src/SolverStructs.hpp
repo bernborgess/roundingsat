@@ -50,13 +50,6 @@ struct Watch {
   bool operator==(const Watch& other) const { return other.cref == cref && other.idx == idx; }
 };
 
-/*
- * FORMULA constraints are original input formula constraints that are only deleted when satisfied at root.
- * AUXILIARY constraints are non-formula constraints that are only deleted when satisfied at root.
- * EXTERNAL constraints are non-formula constraints that are never deleted.
- * LEARNT constraints are implied by any combination of the above, and may be deleted heuristically.
- */
-enum ConstraintType { FORMULA, AUXILIARY, EXTERNAL, LEARNT };
 class Solver;
 struct Constr {  // internal solver constraint optimized for fast propagation
   static int sz_constr(int length) { return (sizeof(Constr) + sizeof(int) * length) / sizeof(uint32_t); }
@@ -64,9 +57,9 @@ struct Constr {  // internal solver constraint optimized for fast propagation
   Val degree;
   // NOTE: above attributes not strictly needed in cache-sensitive Constr, but it did not matter after testing
   struct {
-    unsigned unused : 1;
-    unsigned type : 2;
-    unsigned lbd : 29;
+    unsigned locked : 1;
+    unsigned origin : 4;
+    unsigned lbd : 27;
     unsigned markedfordel : 1;
     unsigned counting : 1;
     unsigned size : 30;
@@ -82,8 +75,9 @@ struct Constr {  // internal solver constraint optimized for fast propagation
   inline bool isSimple() const { return slack < std::numeric_limits<Val>::min() + 2; }
   inline int getMemSize() const { return sz_constr(size() + (isSimple() ? 0 : size())); }
   inline unsigned int size() const { return header.size; }
-  inline void setType(ConstraintType t) { header.type = (unsigned int)t; }
-  inline ConstraintType getType() const { return (ConstraintType)header.type; }
+  inline void setLocked(bool lkd) { header.locked = lkd; }
+  inline bool isLocked() { return header.locked; }
+  inline Origin getOrigin() const { return (Origin)header.origin; }
   inline void setLBD(unsigned int lbd) { header.lbd = std::min(header.lbd, lbd); }
   inline unsigned int lbd() const { return header.lbd; }
   inline bool isMarkedForDelete() const { return header.markedfordel; }
@@ -112,6 +106,7 @@ struct Constr {  // internal solver constraint optimized for fast propagation
     }
     out.degree = degree;
     out.id = id;
+    out.orig = getOrigin();
     if (out.plogger) out.resetBuffer(id);
   }
   template <typename CF, typename DG>
@@ -119,6 +114,7 @@ struct Constr {  // internal solver constraint optimized for fast propagation
     SimpleCons<CF, DG> result;
     result.rhs = degree;
     result.id = id;
+    result.orig = getOrigin();
     result.terms.reserve(size());
     for (unsigned int i = 0; i < size(); ++i) result.terms.emplace_back(coef(i), lit(i));
     return result;
@@ -140,7 +136,7 @@ struct ConstraintAllocator {
   uint32_t at = 0, cap = 0;
   uint32_t wasted = 0;  // for GC
   void capacity(uint32_t min_cap);
-  CRef alloc(intConstr& constraint, ConstraintType type, ID id);
+  CRef alloc(intConstr& constraint, bool locked);
   Constr& operator[](CRef cr) { return (Constr&)*(memory + cr.ofs); }
   const Constr& operator[](CRef cr) const { return (Constr&)*(memory + cr.ofs); }
 };

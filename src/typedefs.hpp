@@ -57,6 +57,20 @@ const ActValV actLimitV = (ActValV)1e300 * (ActValV)1e300 * (ActValV)1e300 * (Ac
 using ActValC = float;
 const ActValC actLimitC = 1e30;  // ~1e30 << 2^(2^7)
 
+/*
+ * UNKNOWN: uninitialized value
+ * FORMULA: original input formula constraints
+ * LEARNED: learned from regular conflict analysis
+ * BOUND: upper and lower bounds on the objective function
+ * COREGUIDED: extension constraints from coreguided optimization
+ * FARKAS: LP solver infeasibility witness
+ * LEARNEDFARKAS: constraint learned from conflict analysis on FARKAS
+ * GOMORY: Gomory cut
+ *
+ * max number of types is 16, as the type is stored with 4 bits in Constr
+ */
+enum Origin { UNKNOWN, FORMULA, LEARNED, BOUND, COREGUIDED, FARKAS, LEARNEDFARKAS, GOMORY };
+
 // TODO: make below methods part of a Solver object that's passed around
 inline bool isTrue(const IntVecIt& level, Lit l) { return level[l] != INF; }
 inline bool isFalse(const IntVecIt& level, Lit l) { return level[-l] != INF; }

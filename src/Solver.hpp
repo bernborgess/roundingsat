@@ -98,9 +98,9 @@ class Solver {
   const std::vector<int>& getPos() const { return Pos; }
   int decisionLevel() const { return trail_lim.size(); }
 
-  ID addConstraint(const intConstr& c, ConstraintType type, bool addToLP);
-  ID addConstraint(const SimpleConsInt& c, ConstraintType type, bool addToLP);
-  void dropExternal(ID id, bool forceDelete, bool removeFromLP);
+  ID addConstraint(const intConstr& c, Origin orig, bool addToLP);
+  ID addConstraint(const SimpleConsInt& c, Origin orig, bool addToLP);
+  void dropExternal(ID id, bool erasable, bool forceDelete, bool removeFromLP);
   int getNbConstraints() const { return constraints.size(); }
   void getIthConstraint(int i, intConstr& out) const { return ca[constraints[i]].toConstraint(out); }
 
@@ -155,9 +155,12 @@ class Solver {
   // ---------------------------------------------------------------------
   // Constraint management
 
-  CRef attachConstraint(intConstr& constraint, ConstraintType type);
+  CRef attachConstraint(intConstr& constraint, bool locked);
   template <typename S, typename L>
-  void learnConstraint(Constraint<S, L>& c) {
+  void learnConstraint(Constraint<S, L>& c, Origin orig) {
+    assert(orig == Origin::LEARNED || orig == Origin::FARKAS || orig == Origin::LEARNEDFARKAS ||
+           orig == Origin::GOMORY);
+    c.orig = orig;
     if (c.plogger)
       c.logProofLineWithInfo("Learn", stats);
     else
@@ -165,8 +168,8 @@ class Solver {
     learnedStack.push_back(c.template toSimpleCons<Coef, Val>());
   }
   CRef processLearnedStack();
-  ID addInputConstraint(ConstraintType type, bool addToLP);
-  void removeConstraint(Constr& C);
+  ID addInputConstraint(bool addToLP);
+  void removeConstraint(Constr& C, bool override = false);
 
   // ---------------------------------------------------------------------
   // Garbage collection

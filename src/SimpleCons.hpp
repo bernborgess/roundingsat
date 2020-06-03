@@ -49,6 +49,7 @@ template <typename CF, typename DG>
 struct SimpleCons {
   std::vector<Term<CF>> terms;
   DG rhs = 0;
+  Origin orig = Origin::UNKNOWN;
   ID id = ID_Trivial;
 
   void toNormalFormLit() {

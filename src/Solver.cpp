@@ -204,7 +204,7 @@ bool Solver::runPropagation(bool onlyUnitPropagation) {
         }
         --qhead;
         Constr& C = ca[cr];
-        if (C.getType() == ConstraintType::LEARNT) {
+        if (!C.isLocked()) {
           cBumpActivity(C);
           recomputeLBD(C);
         }
@@ -431,10 +431,19 @@ bool Solver::analyze() {
       }
       assert(Reason[toVar(l)] != CRef_Undef);
       Constr& reasonC = ca[Reason[toVar(l)]];
-      if (reasonC.getType() == ConstraintType::LEARNT) {
+      if (!reasonC.isLocked()) {
         cBumpActivity(reasonC);
         recomputeLBD(reasonC);
       }
+
+      stats.NENCFORMULA += reasonC.getOrigin() == Origin::FORMULA;
+      stats.NENCLEARNED += reasonC.getOrigin() == Origin::LEARNED;
+      stats.NENCBOUND += reasonC.getOrigin() == Origin::BOUND;
+      stats.NENCCOREGUIDED += reasonC.getOrigin() == Origin::COREGUIDED;
+      stats.NLPENCGOMORY += reasonC.getOrigin() == Origin::GOMORY;
+      stats.NLPENCLEARNEDFARKAS += reasonC.getOrigin() == Origin::LEARNEDFARKAS;
+      stats.NLPENCFARKAS += reasonC.getOrigin() == Origin::FARKAS;
+
       reasonC.toConstraint(tmpConstraint);
       stats.NADDEDLITERALS += tmpConstraint.vars.size();
       tmpConstraint.removeUnitsAndZeroes(Level, Pos);  // NOTE: also saturates
@@ -546,7 +555,7 @@ bool Solver::extractCore(const IntSet& assumptions, intConstr& outCore, Lit l_as
 // ---------------------------------------------------------------------
 // Constraint management
 
-CRef Solver::attachConstraint(intConstr& constraint, ConstraintType type) {
+CRef Solver::attachConstraint(intConstr& constraint, bool locked) {
   assert(constraint.isSortedInDecreasingCoefOrder());
   assert(constraint.isSaturated());
   assert(constraint.hasNoZeroes());
@@ -559,12 +568,12 @@ CRef Solver::attachConstraint(intConstr& constraint, ConstraintType type) {
     constraint.logProofLineWithInfo("Attach", stats);
   else
     constraint.id = ++crefID;
-  CRef cr = ca.alloc(constraint, type, constraint.id);
+  CRef cr = ca.alloc(constraint, locked);
   constraints.push_back(cr);
   Constr& C = ca[cr];
   int* data = C.data;
 
-  bool learned = type == ConstraintType::LEARNT;
+  bool learned = (C.getOrigin() == Origin::LEARNED);
   if (learned) {
     stats.LEARNEDLENGTHSUM += C.size();
     stats.LEARNEDDEGREESUM += C.degree;
@@ -582,6 +591,14 @@ CRef Solver::attachConstraint(intConstr& constraint, ConstraintType type) {
     stats.NGENERALSLEARNED += learned;
     stats.NGENERALSEXTERN += !learned;
   }
+
+  stats.NCONSFORMULA += C.getOrigin() == Origin::FORMULA;
+  stats.NCONSLEARNED += C.getOrigin() == Origin::LEARNED;
+  stats.NCONSBOUND += C.getOrigin() == Origin::BOUND;
+  stats.NCONSCOREGUIDED += C.getOrigin() == Origin::COREGUIDED;
+  stats.NLPGOMORYCUTS += C.getOrigin() == Origin::GOMORY;
+  stats.NLPLEARNEDFARKAS += C.getOrigin() == Origin::LEARNEDFARKAS;
+  stats.NLPFARKAS += C.getOrigin() == Origin::FARKAS;
 
   if (C.isSimple()) {
     if (C.degree >= C.size()) {
@@ -713,7 +730,7 @@ CRef Solver::processLearnedStack() {
       tmpConstraint.reset();
       continue;
     }
-    CRef cr = attachConstraint(tmpConstraint, ConstraintType::LEARNT);
+    CRef cr = attachConstraint(tmpConstraint, false);
     assert(cr != CRef_Unsat);
     tmpConstraint.reset();
     Constr& C = ca[cr];
@@ -722,7 +739,9 @@ CRef Solver::processLearnedStack() {
   return CRef_Undef;
 }
 
-ID Solver::addInputConstraint(ConstraintType type, bool addToLP) {
+ID Solver::addInputConstraint(bool addToLP) {
+  assert(tmpConstraint.orig == Origin::FORMULA || tmpConstraint.orig == Origin::BOUND ||
+         tmpConstraint.orig == Origin::COREGUIDED);
   assert(decisionLevel() == 0);
   if (logger) tmpConstraint.logAsInput();
   tmpConstraint.postProcess(Level, Pos, true, stats);
@@ -740,7 +759,7 @@ ID Solver::addInputConstraint(ConstraintType type, bool addToLP) {
     return ID_Unsat;
   }
 
-  CRef cr = attachConstraint(tmpConstraint, type);
+  CRef cr = attachConstraint(tmpConstraint, true);
   tmpConstraint.reset();
   if (!runPropagation(true)) {
     if (options.verbosity > 0) puts("c Input conflict");
@@ -752,41 +771,45 @@ ID Solver::addInputConstraint(ConstraintType type, bool addToLP) {
     return ID_Unsat;
   }
   ID id = ca[cr].id;
-  if (type == ConstraintType::EXTERNAL) external[id] = cr;
+  if (ca[cr].getOrigin() != Origin::FORMULA) external[id] = cr;
   if (addToLP && lpSolver) lpSolver->addConstraint(cr, false);
   return id;
 }
 
-ID Solver::addConstraint(const intConstr& c, ConstraintType type, bool addToLP) {
+ID Solver::addConstraint(const intConstr& c, Origin orig, bool addToLP) {
   // NOTE: copy to tmpConstraint guarantees original constraint is not changed and does not need logger
   c.copyTo(tmpConstraint);
-  ID result = addInputConstraint(type, addToLP);
+  tmpConstraint.orig = orig;
+  ID result = addInputConstraint(addToLP);
   return result;
 }
 
-ID Solver::addConstraint(const SimpleConsInt& c, ConstraintType type, bool addToLP) {
+ID Solver::addConstraint(const SimpleConsInt& c, Origin orig, bool addToLP) {
   tmpConstraint.construct(c);
-  ID result = addInputConstraint(type, addToLP);
+  tmpConstraint.orig = orig;
+  ID result = addInputConstraint(addToLP);
   return result;
 }
 
-void Solver::removeConstraint(Constr& C) {
-  assert(decisionLevel() == 0);
-  assert(C.getType() != ConstraintType::EXTERNAL);
+void Solver::removeConstraint(Constr& C, bool override) {
+  _unused(override);
+  assert(override || !C.isLocked());
   assert(!C.isMarkedForDelete());
+  assert(!external.count(C.id));
   C.markForDel();
   ca.wasted += C.getMemSize();
 }
 
-void Solver::dropExternal(ID id, bool forceDelete, bool removeFromLP) {
+void Solver::dropExternal(ID id, bool erasable, bool forceDelete, bool removeFromLP) {
+  assert(erasable || !forceDelete);
   if (id == ID_Undef) return;
   auto old_it = external.find(id);
   assert(old_it != external.end());
   Constr& constr = ca[old_it->second];
-  constr.setType(ConstraintType::AUXILIARY);
+  external.erase(old_it);
+  constr.setLocked(!erasable);
   if (forceDelete) removeConstraint(constr);
   if (removeFromLP && lpSolver) lpSolver->removeConstraint(id);
-  external.erase(old_it);
 }
 
 // ---------------------------------------------------------------------
@@ -833,13 +856,13 @@ void Solver::reduceDB() {
   size_t promisingLearnts = 0;
   for (CRef& cr : constraints) {
     Constr& C = ca[cr];
-    if (C.isMarkedForDelete() || C.getType() == ConstraintType::EXTERNAL) continue;
+    if (C.isMarkedForDelete() || external.count(C.id)) continue;
     Val eval = -C.degree;
     for (int j = 0; j < (int)C.size() && eval < 0; ++j)
       if (isUnit(Level, C.lit(j))) eval += C.coef(j);
     if (eval >= 0)
-      removeConstraint(C);  // remove constraints satisfied at root
-    else if (C.getType() == ConstraintType::LEARNT) {
+      removeConstraint(C, true);  // remove constraints satisfied at root
+    else if (!C.isLocked()) {
       if (C.size() > 2 && C.lbd() > 2) learnts.push_back(cr);  // Keep all binary clauses and short LBDs
       if (C.size() <= 2 || C.lbd() <= 3) ++promisingLearnts;
       ++totalLearnts;
@@ -892,7 +915,7 @@ Val Solver::lhs(Constr& C, const std::vector<bool>& sol) {
 bool Solver::checksol(const std::vector<bool>& sol) {
   for (CRef cr : constraints) {
     Constr& C = ca[cr];
-    if (C.getType() == ConstraintType::FORMULA && lhs(C, sol) < C.degree) return false;
+    if (C.getOrigin() == Origin::FORMULA && lhs(C, sol) < C.degree) return false;
   }
   return true;
 }
@@ -968,7 +991,10 @@ SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector
         assert(conflConstraint.getDegree() > 0);
         assert(conflConstraint.getDegree() < INF);
         assert(conflConstraint.isSaturated());
-        learnConstraint(conflConstraint);
+        if (learnedStack.size() > 0 && learnedStack.back().orig == Origin::FARKAS)
+          learnConstraint(conflConstraint, Origin::LEARNEDFARKAS);  // TODO: ugly hack
+        else
+          learnConstraint(conflConstraint, Origin::LEARNED);
         conflConstraint.reset();
       } else {
         if (!extractCore(assumptions, core)) return SolveState::INTERRUPTED;
