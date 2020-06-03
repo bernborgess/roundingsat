@@ -54,6 +54,7 @@ struct Constraint {
   LARGE degree = 0;
   LARGE rhs = 0;
   ID id = ID_Trivial;
+  Origin orig = Origin::UNKNOWN;
   std::vector<Var> vars;
   std::vector<SMALL> coefs;
   std::stringstream proofBuffer;
@@ -98,6 +99,7 @@ struct Constraint {
     rhs = 0;
     degree = 0;
     id = ID_Trivial;
+    orig = Origin::UNKNOWN;
     if (plogger) resetBuffer();
   }
 
@@ -261,6 +263,7 @@ struct Constraint {
     assert(out.isReset());
     out.rhs = rhs;
     out.id = id;
+    out.orig = orig;
     out.vars = vars;
     out.resize(coefs.size());
     for (Var v : vars) out.coefs[v] = coefs[v];
@@ -285,6 +288,7 @@ struct Constraint {
     }
     degree = _invalid_();
     id = sc.id;
+    orig = sc.orig;
     if (plogger) resetBuffer(id);
   }
 
@@ -718,6 +722,7 @@ struct Constraint {
       if (coefs[v] != 0) result.terms.emplace_back((Coef)coefs[v], v);
     if (plogger) logProofLine();
     result.id = id;
+    result.orig = orig;
     return result;
   }
 };

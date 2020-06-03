@@ -46,13 +46,16 @@ struct Stats {
   long long NRESTARTS = 0, NCLEANUP = 0;
   double STARTTIME = 0;
   long long NORIGVARS = 0, NAUXVARS = 0;
+  long long NCONSFORMULA = 0, NCONSLEARNED = 0, NCONSBOUND = 0, NCONSCOREGUIDED = 0;
+  long long NENCFORMULA = 0, NENCLEARNED = 0, NENCBOUND = 0, NENCCOREGUIDED;
 
   long long NLPADDEDROWS = 0, NLPDELETEDROWS = 0;
   long long NLPPIVOTSINTERNAL = 0, NLPPIVOTSROOT = 0, NLPNOPIVOT = 0, NLPRESETBASIS = 0;
   double LPSOLVETIME = 0, LPTOTALTIME = 0;
   long long NLPCALLS = 0, NLPOPTIMAL = 0, NLPINFEAS = 0, NLPFARKAS = 0;
   long long NLPCYCLING = 0, NLPNOPRIMAL = 0, NLPNOFARKAS = 0, NLPSINGULAR = 0, NLPOTHER = 0;
-  long long NLPGOMORYCUTS = 0, NLPLEARNEDCUTS = 0, NLPDELETEDCUTS = 0;
+  long long NLPGOMORYCUTS = 0, NLPLEARNEDCUTS = 0, NLPLEARNEDFARKAS = 0, NLPDELETEDCUTS = 0;
+  long long NLPENCGOMORY = 0, NLPENCFARKAS = 0, NLPENCLEARNEDFARKAS = 0;
 
   inline long long getDetTime() const {
     return 1 + NADDEDLITERALS + NWATCHLOOKUPS + NWATCHLOOKUPSBJ + NWATCHCHECKS + NPROPCHECKS + NPROP + NTRAILPOPS +
@@ -112,6 +115,7 @@ struct Stats {
     printf("c LP no pivot count %lld\n", NLPNOPIVOT);
     printf("c LP infeasibilities %lld\n", NLPINFEAS);
     printf("c LP valid Farkas constraints %lld\n", NLPFARKAS);
+    printf("c LP learned Farkas constraints %lld\n", NLPLEARNEDFARKAS);
     printf("c LP basis resets %lld\n", NLPRESETBASIS);
     printf("c LP cycling count %lld\n", NLPCYCLING);
     printf("c LP singular count %lld\n", NLPSINGULAR);
@@ -121,5 +125,16 @@ struct Stats {
     printf("c LP Gomory cuts %lld\n", NLPGOMORYCUTS);
     printf("c LP learned cuts %lld\n", NLPLEARNEDCUTS);
     printf("c LP deleted cuts %lld\n", NLPDELETEDCUTS);
+    printf("c formula constraints %lld\n", NCONSFORMULA);
+    printf("c learned constraints %lld\n", NCONSLEARNED);
+    printf("c bound constraints %lld\n", NCONSBOUND);
+    printf("c core-guided constraints %lld\n", NCONSCOREGUIDED);
+    printf("c encountered formula constraints %lld\n", NENCFORMULA);
+    printf("c encountered learned constraints %lld\n", NENCLEARNED);
+    printf("c encountered bound constraints %lld\n", NENCBOUND);
+    printf("c encountered core-guided constraints %lld\n", NENCCOREGUIDED);
+    printf("c LP encountered Gomory constraints %lld\n", NLPENCGOMORY);
+    printf("c LP encountered Farkas constraints %lld\n", NLPENCFARKAS);
+    printf("c LP encountered learned Farkas constraints %lld\n", NLPENCLEARNEDFARKAS);
   }
 };

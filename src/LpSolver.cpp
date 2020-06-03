@@ -106,7 +106,7 @@ LpSolver::LpSolver(Solver& slvr, const intConstr& o) : solver(slvr) {
 
   // add all formula constraints
   for (CRef cr : solver.constraints)
-    if (solver.ca[cr].getType() == ConstraintType::FORMULA) addConstraint(cr, false);
+    if (solver.ca[cr].getOrigin() == Origin::FORMULA) addConstraint(cr, false);
 
   // How does RoundingSat perform branch-and-bound minimization?
   // - F is the objective function, with a trivial lower bound L and trivial upper bound U
@@ -317,9 +317,8 @@ void LpSolver::addFilteredCuts() {
       ic.construct(cc.simpcons);
       ic.postProcess(solver.getLevel(), solver.getPos(), true, stats);
       if (ic.getDegree() <= 0) continue;
-      ++stats.NLPGOMORYCUTS;
       if (solver.logger) ic.logAsInput();  // TODO: fix
-      solver.learnConstraint(ic);
+      solver.learnConstraint(ic, Origin::GOMORY);
       // NOTE: learnConstraint fixes a unique ID for ic, needed to add cut as constraint
       // TODO: not the cleanest way to guarantee a unique ID for Gomory cuts
       assert(id2row.count(ic.id) == 0);
@@ -474,9 +473,8 @@ LpStatus LpSolver::_checkFeasibility(bool inProcessing) {
   }
 
   createLinearCombinationFarkas(lpMultipliers);
-  solver.learnConstraint(lcc);
+  solver.learnConstraint(lcc, Origin::FARKAS);
   if (lcc.getSlack(solver.getLevel()) < 0) {
-    ++stats.NLPFARKAS;
     lcc.copyTo(solver.conflConstraint);
     lcc.reset();
     return INFEASIBLE;

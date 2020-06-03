@@ -64,13 +64,14 @@ void ConstraintAllocator::capacity(uint32_t min_cap) {
 }
 
 // TODO: allow constraints with 10^18 bit degree
-CRef ConstraintAllocator::alloc(intConstr& constraint, ConstraintType type, ID id) {
+CRef ConstraintAllocator::alloc(intConstr& constraint, bool locked) {
   assert(constraint.getDegree() > 0);
   assert(constraint.getDegree() < INF);
   assert(constraint.isSaturated());
   // as the constraint is saturated, the coefficients are between 1 and 1e9 as well.
   assert(!constraint.vars.empty());
-  assert(id > 0);
+  assert(constraint.id > 0);
+  assert(constraint.orig != Origin::UNKNOWN);
   unsigned int length = constraint.vars.size();
   bool asClause = options.clauseProp && constraint.getDegree() == 1;
   bool asCard = !asClause && options.cardProp && constraint.isCardinality();
@@ -82,10 +83,10 @@ CRef ConstraintAllocator::alloc(intConstr& constraint, ConstraintType type, ID i
   capacity(at);
   Constr* constr = (Constr*)(memory + old_at);
   new (constr) Constr;
-  constr->id = id;
+  constr->id = constraint.id;
   constr->act = 0;
   constr->degree = constraint.getDegree();
-  constr->header = {0, (unsigned int)type, 0x1FFFFFFF, 0, 0, length};
+  constr->header = {locked, (unsigned int)constraint.orig, 0x07FFFFFF, 0, 0, length};
   constr->ntrailpops = -1;
   constr->slack =
       asClause ? std::numeric_limits<Val>::min() : (asCard ? std::numeric_limits<Val>::min() + 1 : -constr->degree);
