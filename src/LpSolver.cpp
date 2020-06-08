@@ -146,7 +146,6 @@ void LpSolver::setNbVariables(int n) {
 
   lpSolution.reDim(n);
   lcc.resize(n);
-  lcc_unlogged.resize(n);
   ic.resize(n);
   lowerBounds.reDim(n);
   upperBounds.reDim(n);
@@ -177,17 +176,8 @@ void LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
   lcc.saturateAndFixOverflow(solver.getLevel(), options.weakenFull);
 }
 
-void flipLits(int128Constr& ic, const soplex::DVectorReal& lpSol) {
-  for (Var v : ic.vars) {
-    if (lpSol[v] <= 0.5) continue;
-    ic.coefs[v] = -ic.coefs[v];
-    ic.addRhs(ic.coefs[v]);
-  }
-  ic.degree = ic._invalid_();
-}
-
 CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults) {
-  assert(lcc_unlogged.isReset());
+  assert(lcc.isReset());
   double mult = getScaleFactor(mults, false);
   if (mult == 0) return CandidateCut();
 
@@ -197,22 +187,18 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     if (factor == 0) continue;
     rowToConstraint(r);
     if (factor < 0) ic.invert();
-    lcc_unlogged.addUp(ic, std::abs(factor));
+    lcc.addUp(ic, std::abs(factor));
     ic.reset();
     slacks.emplace_back(-factor, r);
   }
 
-  flipLits(lcc_unlogged, lpSolution);
-
-  __int128 b = lcc_unlogged.getRhs();
+  __int128 b = lcc.getRhs();
   if (b == 0) return CandidateCut();
 
   assert(mult > 0);
   __int128 divisor = mult;
   while ((b % divisor) == 0) ++divisor;
-  lcc_unlogged.applyMIR(divisor);
-
-  flipLits(lcc_unlogged, lpSolution);
+  lcc.applyMIR(divisor, [&](Var v) -> Lit { return lpSolution[v] <= 0.5 ? v : -v; });
 
   // round up the slack variables MIR style and cancel out the slack variables
   for (unsigned i = 0; i < slacks.size(); ++i) {
@@ -220,20 +206,20 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     if (factor == 0) continue;
     rowToConstraint(slacks[i].second);
     if (factor < 0) ic.invert();
-    lcc_unlogged.addUp(ic, std::abs(factor));
+    lcc.addUp(ic, std::abs(factor));
     ic.reset();
   }
+  lcc.logAsInput();  // TODO: fix logging for Gomory cuts
 
-  lcc_unlogged.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
-  // TODO: full postprocessing?
-  if (lcc_unlogged.getDegree() <= 0) {
-    lcc_unlogged.reset();
+  lcc.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
+  if (lcc.getDegree() <= 0) {
+    lcc.reset();
   } else {
-    assert(lcc_unlogged.hasNoZeroes());
-    lcc_unlogged.weakenSmalls(lcc_unlogged.absCoeffSum() / (double)lcc_unlogged.vars.size() * options.intolerance);
-    lcc_unlogged.saturateAndFixOverflow(solver.getLevel(), options.weakenFull);
+    assert(lcc.hasNoZeroes());
+    lcc.weakenSmalls(lcc.absCoeffSum() / (double)lcc.vars.size() * options.intolerance);
+    lcc.saturateAndFixOverflow(solver.getLevel(), options.weakenFull);
   }
-  return CandidateCut(lcc_unlogged, lpSolution);
+  return CandidateCut(lcc, lpSolution);
 }
 
 void LpSolver::constructGomoryCandidates() {
@@ -270,11 +256,11 @@ void LpSolver::constructGomoryCandidates() {
     lpMultipliers.clear();
     lp.getBasisInverseRowReal(row, lpMultipliers.get_ptr());
     candidateCuts.push_back(createLinearCombinationGomory(lpMultipliers));
-    lcc_unlogged.reset();
+    lcc.reset();
     if (candidateCuts.back().ratSlack >= -options.intolerance) candidateCuts.pop_back();
     for (int i = 0; i < lpMultipliers.dim(); ++i) lpMultipliers[i] = -lpMultipliers[i];
     candidateCuts.push_back(createLinearCombinationGomory(lpMultipliers));
-    lcc_unlogged.reset();
+    lcc.reset();
     if (candidateCuts.back().ratSlack >= -options.intolerance) candidateCuts.pop_back();
   }
 }
@@ -317,7 +303,7 @@ void LpSolver::addFilteredCuts() {
       ic.construct(cc.simpcons);
       ic.postProcess(solver.getLevel(), solver.getPos(), true, stats);
       if (ic.getDegree() <= 0) continue;
-      if (solver.logger) ic.logAsInput();  // TODO: fix
+      assert(ic.id != ID_Trivial);
       solver.learnConstraint(ic, Origin::GOMORY);
       // NOTE: learnConstraint fixes a unique ID for ic, needed to add cut as constraint
       // TODO: not the cleanest way to guarantee a unique ID for Gomory cuts
