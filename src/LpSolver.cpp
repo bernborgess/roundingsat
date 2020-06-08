@@ -300,7 +300,7 @@ void LpSolver::addFilteredCuts() {
   for (int i : keptCuts) {
     auto& cc = candidateCuts[i];
     if (cc.cr == CRef_Undef) {  // Gomory cut
-      ic.construct(cc.simpcons);
+      ic.init(cc.simpcons);
       ic.postProcess(solver.getLevel(), solver.getPos(), true, stats);
       if (ic.getDegree() <= 0) continue;
       assert(ic.id != ID_Trivial);
