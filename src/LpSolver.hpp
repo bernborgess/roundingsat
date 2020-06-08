@@ -100,7 +100,6 @@ class LpSolver {
   std::vector<CandidateCut> candidateCuts;
 
   int128Constr lcc;
-  int128Constr lcc_unlogged;  // TODO: remove when logging Gomory cut generation
   intConstr ic;
 
  public:

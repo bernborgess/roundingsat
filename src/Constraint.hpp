@@ -30,6 +30,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #pragma once
 
 #include <algorithm>
+#include <functional>
 #include <memory>
 #include <sstream>
 #include "IntSet.hpp"
@@ -331,7 +332,7 @@ struct Constraint {
     saturate();
     if (getDegree() >= (LARGE)INF) {
       LARGE div = aux::ceildiv<LARGE>(getDegree(), INF - 1);
-      weakenNonDivisibleNonFalsifieds(level, div, fullWeakening);
+      weakenNonDivisibleNonFalsifieds(level, div, fullWeakening, 0);
       divideRoundUp(div);
       saturate();
     }
@@ -370,17 +371,28 @@ struct Constraint {
 
   void weakenDivideRound(const IntVecIt& level, Lit l, bool maxdiv, bool fullWeakening) {
     assert(getCoef(l) > 0);
-    LARGE div = maxdiv ? getCoef(l) : std::max<LARGE>(1, getSlack(level) + 1);
-    weakenNonDivisibleNonFalsifieds(level, div, fullWeakening);
+    LARGE div = maxdiv ? getCoef(l) : getSlack(level) + 1;
+    if (div <= 1) return;
+    weakenNonDivisibleNonFalsifieds(level, div, fullWeakening, l);
     divideRoundUp(div);
     saturate();
   }
 
-  void applyMIR(LARGE d) {
-    for (Var v : vars) coefs[v] = mir_coeff(coefs[v], rhs, d);
+  void applyMIR(LARGE d, std::function<Lit(Var)> toLit) {
+    std::vector<Var> flipped;
+    for (Var v : vars)
+      if (toLit(v) < 0) {
+        coefs[v] = -coefs[v];
+        rhs += coefs[v];
+        flipped.push_back(v);
+      }
+    for (Var v : vars) coefs[v] = mir_coeff<LARGE>(coefs[v], rhs, d);
     rhs = aux::mod_safe(rhs, d) * aux::ceildiv_safe(rhs, d);
+    for (Var v : flipped) {
+      coefs[v] = -coefs[v];
+      rhs += coefs[v];
+    }
     degree = _invalid_();
-    // TODO: fix logging
   }
 
   bool divideByGCD() {
@@ -532,12 +544,12 @@ struct Constraint {
     saturate();
   }
 
-  void weakenNonDivisibleNonFalsifieds(const IntVecIt& level, LARGE div, bool fullWeakening) {
+  void weakenNonDivisibleNonFalsifieds(const IntVecIt& level, LARGE div, bool fullWeakening, Lit asserting) {
     assert(div > 0);
     if (div == 1) return;
     if (fullWeakening) {
       for (Var v : vars)
-        if (coefs[v] % div != 0 && !falsified(level, v)) weaken(-coefs[v], v);
+        if (coefs[v] % div != 0 && !falsified(level, v) && v != toVar(asserting)) weaken(-coefs[v], v);
     } else {
       for (Var v : vars)
         if (coefs[v] % div != 0 && !falsified(level, v)) weaken(-(std::abs(coefs[v]) % div), (coefs[v] < 0 ? -v : v));
