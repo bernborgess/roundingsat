@@ -708,7 +708,7 @@ CRef Solver::processLearnedStack() {
   // loop back to front as the last constraint in the queue is a result of conflict analysis
   // and we want to first check this constraint to backjump.
   while (learnedStack.size() > 0) {
-    tmpConstraint.construct(learnedStack.back());
+    tmpConstraint.init(learnedStack.back());
     learnedStack.pop_back();
     tmpConstraint.removeUnitsAndZeroes(Level, Pos, true);
     tmpConstraint.sortInDecreasingCoefOrder();
@@ -785,7 +785,7 @@ ID Solver::addConstraint(const intConstr& c, Origin orig, bool addToLP) {
 }
 
 ID Solver::addConstraint(const SimpleConsInt& c, Origin orig, bool addToLP) {
-  tmpConstraint.construct(c);
+  tmpConstraint.init(c);
   tmpConstraint.orig = orig;
   ID result = addInputConstraint(addToLP);
   return result;

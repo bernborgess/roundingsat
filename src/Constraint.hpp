@@ -54,23 +54,110 @@ template <typename SMALL, typename LARGE>  // LARGE should be able to fit sums o
 struct Constraint {
   LARGE degree = 0;
   LARGE rhs = 0;
-  ID id = ID_Trivial;
-  Origin orig = Origin::UNKNOWN;
   std::vector<Var> vars;
   std::vector<SMALL> coefs;
+  std::vector<bool> used;
+  ID id = ID_Trivial;
+  Origin orig = Origin::UNKNOWN;
   std::stringstream proofBuffer;
   std::shared_ptr<Logger> plogger;
-  static constexpr SMALL _unused_() { return std::numeric_limits<SMALL>::max(); }
-  static constexpr LARGE _invalid_() { return std::numeric_limits<LARGE>::min(); }
 
+ private:
+  void remove(Var v) {
+    assert(used[v]);
+    coefs[v] = 0;
+    used[v] = false;
+  }
+
+  bool increasesSlack(const IntVecIt& level, Var v) const {
+    return isTrue(level, v) || (!isFalse(level, v) && coefs[v] > 0);
+  }
+
+  LARGE calcDegree() const {
+    LARGE res = rhs;
+    for (Var v : vars) res -= std::min<SMALL>(0, coefs[v]);  // considering negative coefficients
+    return res;
+  }
+
+  LARGE calcRhs() const {
+    LARGE res = degree;
+    for (Var v : vars) res += std::min<SMALL>(0, coefs[v]);  // considering negative coefficients
+    return res;
+  }
+
+  bool testConstraint() const {
+    assert(degree == calcDegree());
+    assert(rhs == calcRhs());
+    assert(coefs.size() == used.size());
+    std::unordered_set<Var> usedvars;
+    usedvars.insert(vars.begin(), vars.end());
+    for (Var v = 1; v < (int)coefs.size(); ++v) {
+      assert(used[v] || coefs[v] == 0);
+      assert(usedvars.count(v) == used[v]);
+    }
+    return true;
+  }
+
+ public:
   Constraint() {
     assert(std::numeric_limits<SMALL>::is_specialized);
     assert(std::numeric_limits<LARGE>::is_specialized);
     reset();
   }
 
-  inline void resize(size_t s) {
-    if (s > coefs.size()) coefs.resize(s, _unused_());
+  template <typename CF, typename DG>
+  void init(const SimpleCons<CF, DG>& sc) {
+    assert(isReset());
+    assert(std::abs(sc.rhs) < std::numeric_limits<LARGE>::max());
+    addRhs(sc.rhs);
+    for (auto& t : sc.terms) {
+      assert(std::abs(t.c) < std::numeric_limits<SMALL>::max());
+      addLhs(t.c, t.l);
+    }
+    id = sc.id;
+    orig = sc.orig;
+    if (plogger) resetBuffer(id);
+  }
+
+  template <typename S, typename L>
+  void copyTo(Constraint<S, L>& out) const {
+    assert(out.isReset());
+    out.degree = degree;
+    out.rhs = rhs;
+    out.id = id;
+    out.orig = orig;
+    out.vars = vars;
+    out.resize(coefs.size());
+    for (Var v : vars) {
+      out.coefs[v] = coefs[v];
+      assert(used[v] == true);
+      assert(out.used[v] == false);
+      out.used[v] = true;
+    }
+    if (plogger) {
+      out.proofBuffer.str(std::string());
+      out.proofBuffer << proofBuffer.str();
+    }
+  }
+
+  template <typename CF, typename DG>
+  SimpleCons<CF, DG> toSimpleCons() {
+    SimpleCons<CF, DG> result;
+    result.rhs = getRhs();
+    result.terms.reserve(vars.size());
+    for (Var v : vars)
+      if (coefs[v] != 0) result.terms.emplace_back((Coef)coefs[v], v);
+    if (plogger) logProofLine();
+    result.id = id;
+    result.orig = orig;
+    return result;
+  }
+
+  void resize(size_t s) {
+    if (s > coefs.size()) {
+      coefs.resize(s, 0);
+      used.resize(s, false);
+    }
   }
 
   void resetBuffer(ID proofID = ID_Trivial) {
@@ -81,21 +168,24 @@ struct Constraint {
     proofBuffer.str(std::string());
     proofBuffer << proofID << " ";
   }
+
   void initializeLogging(std::shared_ptr<Logger>& l) {
     assert(isReset());
     plogger = l;
     if (plogger) resetBuffer();
   }
+
   template <typename T>
-  inline static std::string proofMult(T mult) {
+  static std::string proofMult(T mult) {
     std::stringstream ss;
     if (mult != 1) ss << mult << " * ";
     return ss.str();
   }
 
-  bool isReset() const { return vars.size() == 0 && rhs == 0; }
+  bool isReset() const { return vars.size() == 0 && rhs == 0 && degree == 0; }
+
   void reset() {
-    for (Var v : vars) coefs[v] = _unused_();
+    for (Var v : vars) remove(v);
     vars.clear();
     rhs = 0;
     degree = 0;
@@ -104,47 +194,43 @@ struct Constraint {
     if (plogger) resetBuffer();
   }
 
-  inline void addRhs(LARGE r) {
+  void addRhs(LARGE r) {
     rhs += r;
-    if (degree != _invalid_()) degree += r;
+    degree += r;
   }
-  inline LARGE getRhs() const { return rhs; }
-  inline LARGE getDegree() {
-    if (degree != _invalid_()) return degree;
-    degree = rhs;
-    for (Var v : vars) degree -= std::min<SMALL>(0, coefs[v]);  // considering negative coefficients
-    return degree;
-  }
-  inline SMALL getCoef(Lit l) const {
+
+  LARGE getRhs() const { return rhs; }
+  LARGE getDegree() const { return degree; }
+  SMALL getCoef(Lit l) const {
     assert((unsigned int)toVar(l) < coefs.size());
-    return coefs[toVar(l)] == _unused_() ? 0 : (l < 0 ? -coefs[-l] : coefs[l]);
+    return l < 0 ? -coefs[-l] : coefs[l];
   }
-  inline Lit getLit(Lit l) const {  // NOTE: answer of 0 means coef 0 or not in vars
+  Lit getLit(Lit l) const {  // NOTE: answer of 0 means coef 0 or not in vars
     Var v = toVar(l);
     if (v >= (Var)coefs.size()) return 0;
     SMALL c = coefs[v];
-    if (c == 0 || c == _unused_())
+    if (c == 0)
       return 0;
     else if (c < 0)
       return -v;
     else
       return v;
   }
-  inline bool falsified(const IntVecIt& level, Var v) const {
+
+  bool falsified(const IntVecIt& level, Var v) const {
     assert(v > 0);
     assert((getLit(v) != 0 && !isFalse(level, getLit(v))) == (coefs[v] > 0 && !isFalse(level, v)) ||
            (coefs[v] < 0 && !isTrue(level, v)));
     return (coefs[v] > 0 && isFalse(level, v)) || (coefs[v] < 0 && isTrue(level, v));
   }
-  inline bool increasesSlack(const IntVecIt& level, Var v) const {
-    return isTrue(level, v) || (!isFalse(level, v) && coefs[v] > 0);
-  }
+
   LARGE getSlack(const IntVecIt& level) const {
     LARGE slack = -rhs;
     for (Var v : vars)
       if (increasesSlack(level, v)) slack += coefs[v];
     return slack;
   }
+
   LARGE getSlack(const IntSet& assumptions) const {
     LARGE slack = -rhs;
     for (Var v : vars)
@@ -152,10 +238,10 @@ struct Constraint {
     return slack;
   }
 
-  // NOTE: erasing variables with coef 0 in addLhs would lead to invalidated iteration (e.g., for loops that weaken)
-  void addLhs(SMALL c, Lit l) {  // treats negative literals as 1-v
+  void addLhs(SMALL c, Lit l) {  // add c*(l>=0) if c>0 and -c*(-l>=0) if c<0
+    if (c == 0) return;
     assert(l != 0);
-    degree = _invalid_();
+    if (c < 0) degree -= c;
     Var v = l;
     if (l < 0) {
       rhs -= c;
@@ -163,19 +249,39 @@ struct Constraint {
       v = -l;
     }
     assert(v < (Var)coefs.size());
-    if (coefs[v] == _unused_()) vars.push_back(v), coefs[v] = 0;
-    coefs[v] += c;
+    if (!used[v]) {
+      assert(coefs[v] == 0);
+      vars.push_back(v);
+      coefs[v] = c;
+      used[v] = true;
+    } else {
+      SMALL cf = coefs[v];
+      coefs[v] += c;
+      if ((cf < 0) != (c < 0)) degree -= std::min(std::abs(c), std::abs(cf));
+    }
   }
-  inline void weaken(SMALL m, Lit l) {  // add m*(l>=0) if m>0 and -m*(-l>=-1) if m<0
+
+  void weaken(SMALL m, Var v) {  // add m*(v>=0) if m>0 and -m*(-v>=-1) if m<0
+    assert(v > 0);
+    assert(v < (Var)coefs.size());
     if (m == 0) return;
     if (plogger) {
       if (m > 0)
-        proofBuffer << (l < 0 ? "~x" : "x") << toVar(l) << " " << proofMult(m) << "+ ";
+        proofBuffer << "x" << v << " " << proofMult(m) << "+ ";
       else
-        proofBuffer << (l < 0 ? "x" : "~x") << toVar(l) << " " << proofMult(-m) << "+ ";
+        proofBuffer << "~x" << v << " " << proofMult(-m) << "+ ";
     }
-    addLhs(m, l);  // resets degree // TODO: optimize this method by not calling addLhs and not resetting degree
-    if (m < 0) addRhs(m);
+
+    if (m < 0) rhs += m;
+    if (!used[v]) {
+      assert(coefs[v] == 0);
+      vars.push_back(v);
+      coefs[v] = m;
+      used[v] = true;
+    } else {
+      if ((coefs[v] < 0) != (m < 0)) degree -= std::min(std::abs(m), std::abs(coefs[v]));
+      coefs[v] += m;
+    }
   }
 
   // @post: preserves order of vars
@@ -196,20 +302,21 @@ struct Constraint {
       Var v = vars[i];
       SMALL c = coefs[v];
       if (c == 0)
-        coefs[v] = _unused_();
+        remove(v);
       else if (isUnit(level, v)) {
         rhs -= c;
-        if (degree != _invalid_() && c > 0) degree -= c;
-        coefs[v] = _unused_();
+        if (c > 0) degree -= c;
+        remove(v);
       } else if (isUnit(level, -v)) {
-        if (degree != _invalid_() && c < 0) degree += c;
-        coefs[v] = _unused_();
+        if (c < 0) degree += c;
+        remove(v);
       } else
         vars[j++] = v;
     }
     vars.resize(j);
     if (doSaturation) saturate();
   }
+
   bool hasNoUnits(const IntVecIt& level) const {
     for (Var v : vars)
       if (isUnit(level, v) || isUnit(level, -v)) return false;
@@ -221,11 +328,12 @@ struct Constraint {
     for (int i = 0; i < (int)vars.size(); ++i) {
       Var v = vars[i];
       if (coefs[v] == 0) {
-        coefs[v] = _unused_();
+        remove(v);
         aux::swapErase(vars, i--);
       }
     }
   }
+
   bool hasNoZeroes() const {
     for (Var v : vars)
       if (coefs[v] == 0) return false;
@@ -237,7 +345,7 @@ struct Constraint {
     if (plogger && !isSaturated()) proofBuffer << "s ";  // log saturation only if it modifies the constraint
     LARGE w = getDegree();
     if (w <= 0) {  // NOTE: does not call reset(0), as we do not want to reset the buffer
-      for (Var v : vars) coefs[v] = _unused_();
+      for (Var v : vars) remove(v);
       vars.clear();
       rhs = 0;
       degree = 0;
@@ -251,80 +359,51 @@ struct Constraint {
     }
     assert(isSaturated());
   }
+
   void saturate() { saturate(vars); }
-  bool isSaturated() {
+
+  bool isSaturated() const {
     LARGE w = getDegree();
     for (Var v : vars)
       if (std::abs(coefs[v]) > w) return false;
     return true;
   }
 
-  template <typename S, typename L>
-  void copyTo(Constraint<S, L>& out) const {
-    assert(out.isReset());
-    out.rhs = rhs;
-    out.id = id;
-    out.orig = orig;
-    out.vars = vars;
-    out.resize(coefs.size());
-    for (Var v : vars) out.coefs[v] = coefs[v];
-    if (degree == _invalid_())
-      out.degree = out._invalid_();
-    else
-      out.degree = degree;
-    if (plogger) {
-      out.proofBuffer.str(std::string());
-      out.proofBuffer << proofBuffer.str();
-    }
-  }
-
-  template <typename CF, typename DG>
-  void construct(const SimpleCons<CF, DG>& sc) {
-    assert(isReset());
-    assert(std::abs(sc.rhs) < std::numeric_limits<LARGE>::max());
-    addRhs(sc.rhs);
-    for (auto& t : sc.terms) {
-      assert(std::abs(t.c) < std::numeric_limits<SMALL>::max());
-      addLhs(t.c, t.l);
-    }
-    degree = _invalid_();
-    id = sc.id;
-    orig = sc.orig;
-    if (plogger) resetBuffer(id);
-  }
-
   void invert() {
     rhs = -rhs;
     for (Var v : vars) coefs[v] = -coefs[v];
-    degree = _invalid_();
+    degree = calcDegree();
   }
 
   template <typename S, typename L>
   void addUp(Constraint<S, L>& c, SMALL cmult = 1, SMALL thismult = 1) {
-    assert(cmult >= 0);
-    assert(thismult >= 0);
+    assert(cmult >= 1);
+    assert(thismult >= 1);
     if (plogger) proofBuffer << proofMult(thismult) << c.proofBuffer.str() << proofMult(cmult) << "+ ";
-    if (thismult != 1) {
+    if (thismult > 1) {
+      degree *= thismult;
       rhs *= thismult;
       for (Var v : vars) coefs[v] *= thismult;
     }
     assert(std::abs(c.getRhs()) < std::numeric_limits<LARGE>::max());
     rhs += (LARGE)cmult * (LARGE)c.getRhs();
+    degree += (LARGE)cmult * (LARGE)c.getDegree();
     for (Var v : c.vars) {
       assert(v < (Var)coefs.size());
       assert(v > 0);
       assert(std::abs(c.coefs[v]) < std::numeric_limits<SMALL>::max());
       SMALL val = cmult * c.coefs[v];
-      if (coefs[v] == _unused_()) {
+      if (!used[v]) {
+        assert(coefs[v] == 0);
         vars.push_back(v);
         coefs[v] = val;
+        used[v] = true;
       } else {
         SMALL cf = coefs[v];
+        coefs[v] += val;
         if ((cf < 0) != (val < 0)) degree -= std::min(std::abs(cf), std::abs(val));
-        coefs[v] = cf + val;
       }
     }
-    degree = _invalid_();
   }
 
   void saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening) {
@@ -345,7 +424,7 @@ struct Constraint {
     if (plogger) proofBuffer << proofMult(m);
     for (Var v : vars) coefs[v] *= m;
     rhs *= m;
-    if (degree != _invalid_()) degree *= m;
+    degree *= m;
   }
 
   void divide(const LARGE d) {
@@ -354,9 +433,9 @@ struct Constraint {
       assert(coefs[v] % d == 0);
       coefs[v] /= d;
     }
-    // NOTE: as all coefficients are divisible by d, we can aux::ceildiv the rhs instead of the degree
+    // NOTE: as all coefficients are divisible by d, we can aux::ceildiv the rhs and the degree
     rhs = aux::ceildiv_safe(rhs, d);
-    if (degree != _invalid_()) degree = aux::ceildiv_safe(degree, d);
+    degree = aux::ceildiv_safe(degree, d);
   }
 
   void divideRoundUp(const LARGE d) {
@@ -379,20 +458,20 @@ struct Constraint {
   }
 
   void applyMIR(LARGE d, std::function<Lit(Var)> toLit) {
-    std::vector<Var> flipped;
-    for (Var v : vars)
+    LARGE toReduce = 0;
+    LARGE toAdd = 0;
+    for (Var v : vars) {
       if (toLit(v) < 0) {
-        coefs[v] = -coefs[v];
-        rhs += coefs[v];
-        flipped.push_back(v);
-      }
-    for (Var v : vars) coefs[v] = mir_coeff<LARGE>(coefs[v], rhs, d);
-    rhs = aux::mod_safe(rhs, d) * aux::ceildiv_safe(rhs, d);
-    for (Var v : flipped) {
-      coefs[v] = -coefs[v];
-      rhs += coefs[v];
+        toReduce += coefs[v];
+        coefs[v] = -mir_coeff<LARGE>(-coefs[v], rhs, d);
+        toAdd += coefs[v];
+      } else
+        coefs[v] = mir_coeff<LARGE>(coefs[v], rhs, d);
     }
-    degree = _invalid_();
+    rhs -= toReduce;
+    rhs = aux::mod_safe(rhs, d) * aux::ceildiv_safe(rhs, d);
+    rhs += toAdd;
+    degree = calcDegree();
   }
 
   bool divideByGCD() {
@@ -430,7 +509,7 @@ struct Constraint {
       Var v = vars[i];
       SMALL cf = coefs[v];
       if (cf == 0) {
-        coefs[v] = _unused_();
+        remove(v);
         aux::swapErase(vars, i);
         continue;
       }
@@ -499,6 +578,7 @@ struct Constraint {
       }
     // TODO: always saturate?
   }
+
   // @post: preserves order after removeZeroes()
   bool weakenNonImplying(const IntVecIt& level, SMALL propCoef, LARGE slack, Stats& sts) {
     assert(hasNoZeroes());
@@ -517,6 +597,7 @@ struct Constraint {
     if (changed) saturate();  // TODO: always saturate?
     return changed;
   }
+
   // @post: preserves order after removeZeroes()
   void heuristicWeakening(const IntVecIt& level, const std::vector<int>& pos, LARGE slk, Stats& sts) {
     assert(slk == getSlack(level));
@@ -552,7 +633,7 @@ struct Constraint {
         if (coefs[v] % div != 0 && !falsified(level, v) && v != toVar(asserting)) weaken(-coefs[v], v);
     } else {
       for (Var v : vars)
-        if (coefs[v] % div != 0 && !falsified(level, v)) weaken(-(std::abs(coefs[v]) % div), (coefs[v] < 0 ? -v : v));
+        if (coefs[v] % div != 0 && !falsified(level, v)) weaken(-(coefs[v] % div), v);
     }
   }
 
@@ -615,6 +696,7 @@ struct Constraint {
     }
     rhs = largeCoefsNeeded;
     degree = largeCoefsNeeded;
+    for (int i = skippable; i < (int)vars.size(); ++i) remove(vars[i]);
     vars.resize(skippable);
     for (int i = 0; i < (int)vars.size(); ++i) {
       SMALL& c = coefs[vars[i]];
@@ -626,6 +708,7 @@ struct Constraint {
     }
     return true;
   }
+
   bool isCardinality() const {
     for (Var v : vars)
       if (std::abs(coefs[v]) > 1) return false;
@@ -635,6 +718,7 @@ struct Constraint {
   void sortInDecreasingCoefOrder() {
     std::sort(vars.begin(), vars.end(), [&](Var v1, Var v2) { return std::abs(coefs[v1]) > std::abs(coefs[v2]); });
   }
+
   bool isSortedInDecreasingCoefOrder() const {
     for (int i = 1; i < (int)vars.size(); ++i)
       if (std::abs(coefs[vars[i - 1]]) < std::abs(coefs[vars[i]])) return false;
@@ -711,6 +795,7 @@ struct Constraint {
     }
     o << ">= " << getDegree() << " ;\n";
   }
+
   void toStreamWithAssignment(std::ostream& o, const IntVecIt& level, const std::vector<int>& pos) {
     std::vector<Var> vs = vars;
     std::sort(vs.begin(), vs.end(), [](Var v1, Var v2) { return v1 < v2; });
@@ -723,19 +808,6 @@ struct Constraint {
         << " ";
     }
     o << ">= " << getDegree() << "(" << getSlack(level) << ")";
-  }
-
-  template <typename CF, typename DG>
-  SimpleCons<CF, DG> toSimpleCons() {
-    SimpleCons<CF, DG> result;
-    result.rhs = getRhs();
-    result.terms.reserve(vars.size());
-    for (Var v : vars)
-      if (coefs[v] != 0) result.terms.emplace_back((Coef)coefs[v], v);
-    if (plogger) logProofLine();
-    result.id = id;
-    result.orig = orig;
-    return result;
   }
 };
 
