@@ -4,15 +4,19 @@ RoundingSat is a pseudo-Boolean SAT solver for optimization and decision problem
 
 ## Compilation
 
-In the root directory:
+Download soplex at
+https://soplex.zib.de/download.php?fname=soplex-5.0.0.tgz and place
+the downloaded file in the root directory of roundingsat,
+alternatively the location can also be configured see `cd build; cmake -L ..` for more information.
 
-    cmake .
-    make release_single
+In the root directory of roundingsat:
 
-On newer systems, the following command uses 4 threads to compile:
+    cd build
+    cmake -DCMAKE_BUILD_TYPE=Release ../
+    make
 
-    cmake .
-    make release
+If you also want a debug build, just create another build folder and
+call cmake from there using `-DCMAKE_BUILD_TYPE=Debug`.
 
 ## Usage
 
@@ -21,7 +25,7 @@ For the input formats, see [here](InputFormats.md).
 Download OPB files:
 
     curl http://www.cril.univ-artois.fr/PB12/bench12/PB12-DEC-SMALLINT-LIN.tar | tar xv
-    
+
 Try on an example instance which is solved quickly:
 
     bzcat ./PB12/normalized-PB12/DEC-SMALLINT-LIN/sroussel/ShortestPathBA/normalized-BeauxArts_K76.opb.bz2 | ./roundingsat

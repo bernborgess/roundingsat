@@ -34,7 +34,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #pragma GCC diagnostic ignored "-Wstrict-overflow"
 #pragma GCC diagnostic ignored "-Wdeprecated-copy"
 #pragma GCC diagnostic ignored "-Wclass-memaccess"
-#include "soplex/soplex.h"
+#include "soplex.h"
 #pragma GCC diagnostic pop
 
 #include "SimpleCons.hpp"

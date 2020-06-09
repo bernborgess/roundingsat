@@ -2,66 +2,78 @@ cmake_minimum_required(VERSION 3.5)
 project(RoundingSat2)
 
 set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/")
-find_package(ZLIB REQUIRED)
 
-file(GLOB ALL_CPP_FILES ${PROJECT_SOURCE_DIR}/src/*.cpp)
-file(GLOB ALL_HPP_FILES ${PROJECT_SOURCE_DIR}/src/*.hpp)
-file(GLOB ALL_SRC_FILES ${PROJECT_SOURCE_DIR}/src/*.cpp ${PROJECT_SOURCE_DIR}/src/*.hpp)
+if (NOT CMAKE_BUILD_TYPE)
+    message(WARNING "Please use -DCMAKE_BUILD_TYPE=[build_type] where [build_type] is one of: Debug, Release, RelWithDebInfo and MinSizeRel")
+endif()
 
-# uncomment to profile with gprof
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")
-#set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
-#set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -pg")
+set(build_static "ON"
+    CACHE STRING "Build and use static libraries.")
 
-# uncomment to do something ugly
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Ofast")
+set(profile_flags "OFF"
+    CACHE STRING "Build using gprof flag (-pg).")
+
+set(soplex "${PROJECT_SOURCE_DIR}/soplex-5.0.0.tgz"
+    CACHE STRING "Soplex package, downlaod at https://soplex.zib.de/download.php?fname=soplex-5.0.0.tgz")
+
+# provides libsoplex and ${SOPLEX_INCLUDE_DIRS}
+include(${PROJECT_SOURCE_DIR}/cmake/soplex_build_and_load.cmake)
+
+if(${build_static})
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -static")
+endif()
+
+if(${profile_flags})
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -pg")
+endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
-set(BUILD_SHARED_LIBS OFF)
-set(CMAKE_EXE_LINKER_FLAGS "-static-libgcc -static-libstdc++ -static")
 
-add_executable(roundingsat ${ALL_CPP_FILES})
-target_link_libraries(roundingsat ${CMAKE_SOURCE_DIR}/src/soplex/libsoplex.a z)
-target_include_directories(roundingsat PRIVATE "${CMAKE_SOURCE_DIR}/src/soplex")
+# uncomment to do something ugly
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Ofast")
 
-add_custom_target(release
-  COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=Release ${CMAKE_SOURCE_DIR}
-  COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target roundingsat -j 4
-  COMMENT "Creating executable in release mode.")
+set(source_files
+    src/aux.cpp
+    src/Solver.cpp
+    src/roundingsat.cpp
+    src/quit.cpp
+    src/LpSolver.cpp
+    src/SolverStructs.cpp
+)
 
-add_custom_target(release_single
-  COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=Release ${CMAKE_SOURCE_DIR}
-  COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target roundingsat
-  COMMENT "Creating executable in release mode.")
+set(header_files
+    src/SolverStructs.hpp
+    src/aux.hpp
+    src/Logger.hpp
+    src/Stats.hpp
+    src/LpSolver.hpp
+    src/Options.hpp
+    src/IntSet.hpp
+    src/Solver.hpp
+    src/run.hpp
+    src/typedefs.hpp
+    src/globals.hpp
+    src/SimpleCons.hpp
+    src/parsing.hpp
+    src/Constraint.hpp
+    src/quit.hpp
+)
 
-add_executable(roundingsat_debug ${ALL_CPP_FILES})
-target_link_libraries(roundingsat_debug ${CMAKE_SOURCE_DIR}/src/soplex/libsoplex_debug.a z)
-target_include_directories(roundingsat_debug PRIVATE "${CMAKE_SOURCE_DIR}/src/soplex")
+set(all_cpp_files ${source_files} ${header_files})
 
-add_custom_target(debug
-  COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=Debug ${CMAKE_SOURCE_DIR}
-  COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target roundingsat_debug -j 4
-  COMMENT "Creating executable in debug mode.")
+add_executable(roundingsat ${source_files})
+target_include_directories(roundingsat PRIVATE ${SOPLEX_INCLUDE_DIRS})
+target_link_libraries(roundingsat libsoplex)
 
-add_custom_target(debug_single
-  COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=Debug ${CMAKE_SOURCE_DIR}
-  COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target roundingsat_debug
-  COMMENT "Creating executable in debug mode.")
-
-add_executable(roundingsat_info ${ALL_CPP_FILES})
-target_link_libraries(roundingsat_info ${CMAKE_SOURCE_DIR}/src/soplex/libsoplex.a z)
-target_include_directories(roundingsat_info PRIVATE "${CMAKE_SOURCE_DIR}/src/soplex")
-
-add_custom_target(info
-        COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=RelWithDebInfo ${CMAKE_SOURCE_DIR}
-        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target roundingsat_info -j 4
-        COMMENT "Creating executable in release mode with debug info.")
-
-add_custom_target(
+FIND_PROGRAM(CLANG_FORMAT "clang-format")
+IF(CLANG_FORMAT)
+    add_custom_target(
         format
-        COMMAND /usr/bin/clang-format
+        COMMAND ${CLANG_FORMAT}
         -style=file
         -i
-        ${ALL_SRC_FILES}
-)
+        ${all_cpp_files}
+    )
+endif()
