@@ -209,7 +209,11 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     lcc.addUp(ic, std::abs(factor));
     ic.reset();
   }
-  lcc.logAsInput();  // TODO: fix logging for Gomory cuts
+  if (lcc.plogger)
+    lcc.logAsInput();
+  else
+    lcc.id = ++solver.crefID;
+  // TODO: fix logging for Gomory cuts
 
   lcc.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
   if (lcc.getDegree() <= 0) {

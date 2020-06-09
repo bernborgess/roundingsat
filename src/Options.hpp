@@ -57,8 +57,8 @@ struct Options {
 
   float lpPivotRatio = 1;
   long long lpPivotBudget = 1000;
-  bool addGomoryCuts = false;
-  bool addLearnedCuts = false;
+  bool addGomoryCuts = true;
+  bool addLearnedCuts = true;
   double intolerance = 1e-6;
   double maxCutCos = 0.1;
   int gomoryCutLimit = 100;

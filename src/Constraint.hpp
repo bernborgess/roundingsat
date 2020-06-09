@@ -65,6 +65,7 @@ struct Constraint {
 
  private:
   void remove(Var v) {
+    assert(used[v]);
     coefs[v] = 0;
     used[v] = false;
   }
@@ -177,6 +178,7 @@ struct Constraint {
     }
     assert(v < (Var)coefs.size());
     if (!used[v]) {
+      assert(coefs[v] == 0);
       vars.push_back(v);
       coefs[v] = c;
       used[v] = true;
@@ -339,6 +341,7 @@ struct Constraint {
       assert(std::abs(c.coefs[v]) < std::numeric_limits<SMALL>::max());
       SMALL val = cmult * c.coefs[v];
       if (!used[v]) {
+        assert(coefs[v] == 0);
         vars.push_back(v);
         coefs[v] = val;
         used[v] = true;
@@ -403,19 +406,19 @@ struct Constraint {
   }
 
   void applyMIR(LARGE d, std::function<Lit(Var)> toLit) {
-    std::vector<Var> flipped;
-    for (Var v : vars)
+    LARGE toReduce = 0;
+    LARGE toAdd = 0;
+    for (Var v : vars) {
       if (toLit(v) < 0) {
-        coefs[v] = -coefs[v];
-        rhs += coefs[v];
-        flipped.push_back(v);
-      }
-    for (Var v : vars) coefs[v] = mir_coeff<LARGE>(coefs[v], rhs, d);
-    rhs = aux::mod_safe(rhs, d) * aux::ceildiv_safe(rhs, d);
-    for (Var v : flipped) {
-      coefs[v] = -coefs[v];
-      rhs += coefs[v];
+        toReduce += coefs[v];
+        coefs[v] = -mir_coeff<LARGE>(-coefs[v], rhs, d);
+        toAdd += coefs[v];
+      } else
+        coefs[v] = mir_coeff<LARGE>(coefs[v], rhs, d);
     }
+    rhs -= toReduce;
+    rhs = aux::mod_safe(rhs, d) * aux::ceildiv_safe(rhs, d);
+    rhs += toAdd;
     degree = _invalid_();
   }
 
@@ -639,6 +642,7 @@ struct Constraint {
     }
     rhs = largeCoefsNeeded;
     degree = largeCoefsNeeded;
+    for (int i = skippable; i < (int)vars.size(); ++i) remove(vars[i]);
     vars.resize(skippable);
     for (int i = 0; i < (int)vars.size(); ++i) {
       SMALL& c = coefs[vars[i]];
