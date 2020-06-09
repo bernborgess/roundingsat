@@ -54,11 +54,11 @@ template <typename SMALL, typename LARGE>  // LARGE should be able to fit sums o
 struct Constraint {
   LARGE degree = 0;
   LARGE rhs = 0;
-  ID id = ID_Trivial;
-  Origin orig = Origin::UNKNOWN;
   std::vector<Var> vars;
   std::vector<SMALL> coefs;
   std::vector<bool> used;
+  ID id = ID_Trivial;
+  Origin orig = Origin::UNKNOWN;
   std::stringstream proofBuffer;
   std::shared_ptr<Logger> plogger;
   static constexpr LARGE _invalid_() { return std::numeric_limits<LARGE>::min(); }
@@ -74,6 +74,31 @@ struct Constraint {
     return isTrue(level, v) || (!isFalse(level, v) && coefs[v] > 0);
   }
 
+  LARGE calcDegree(){
+    LARGE res = rhs;
+    for (Var v : vars) res -= std::min<SMALL>(0, coefs[v]);  // considering negative coefficients
+    return res;
+  }
+
+  LARGE calcRhs(){
+    LARGE res = degree;
+    for (Var v : vars) res += std::min<SMALL>(0, coefs[v]);  // considering negative coefficients
+    return res;
+  }
+
+  bool testConstraint(){
+    assert(degree==_invalid_() || degree==calcDegree());
+    assert(degree==_invalid_() || rhs==calcRhs());
+    assert(coefs.size()==used.size());
+    std::unordered_set<Var> usedvars;
+    usedvars.insert(vars.begin(),vars.end());
+    for(Var v=1; v<(int)coefs.size(); ++v){
+      assert(used[v] || coefs[v]==0);
+      assert(usedvars.count(v)==used[v]);
+    }
+    return true;
+  }
+
  public:
   Constraint() {
     assert(std::numeric_limits<SMALL>::is_specialized);
@@ -81,7 +106,7 @@ struct Constraint {
     reset();
   }
 
-  inline void resize(size_t s) {
+  void resize(size_t s) {
     if (s > coefs.size()) {
       coefs.resize(s, 0);
       used.resize(s, false);
@@ -110,6 +135,7 @@ struct Constraint {
 
   bool isReset() const { return vars.size() == 0 && rhs == 0; }
   void reset() {
+    assert(testConstraint());
     for (Var v : vars) remove(v);
     vars.clear();
     rhs = 0;
