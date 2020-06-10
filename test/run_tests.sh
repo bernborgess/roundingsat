@@ -92,7 +92,7 @@ for mode in "${arr_modes[@]}"; do
         mkdir -p `dirname $logfile`
         echo -n "" > $logfile.proof
         echo -n "" > $logfile.formula
-        output=`timeout $time $roundingsat $formula --proof-log=$logfile --opt-mode=$mode | awk '/^o/ {print $2}'`
+        output=`timeout $time $roundingsat $formula --proof-log=$logfile 2>&1 | awk '/^o|.*Assertion.*/ {print $2}'`
         if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
             errors=`expr 1000 + $errors`
             echo "wrong output: $output vs $obj"
@@ -106,6 +106,28 @@ for mode in "${arr_modes[@]}"; do
         echo $tested
         echo ""
     done
+done
+
+echo "########## no proofs ##########"
+echo ""
+for j in "${arr_opt[@]}"; do
+    formula="$(cut -d'_' -f1 <<<$j)"
+    formula="$SCRIPTPATH/instances/opb/opt/$formula.opb"
+    obj="$(cut -d'_' -f2 <<<$j)"
+    echo "running $formula"
+    logfile=${formula/instances/logs}
+    mkdir -p `dirname $logfile`
+    echo -n "" > $logfile.proof
+    echo -n "" > $logfile.formula
+    output=`timeout $time $roundingsat $formula --opt-mode="lazy-hybrid" 2>&1 | awk '/^o|.*Assertion.*/ {print $2}'`
+    if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
+        errors=`expr 1000 + $errors`
+        echo "wrong output: $output vs $obj"
+    fi
+    echo $errors
+    tested=`expr 1 + $tested`
+    echo $tested
+    echo ""
 done
 
 echo "tested: $tested"
