@@ -27,6 +27,8 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ***********************************************************************/
 
+#if WITHSOPLEX
+
 #include "LpSolver.hpp"
 #include <queue>
 #include "Solver.hpp"
@@ -579,3 +581,5 @@ void LpSolver::flushConstraints() {
   lpMultipliers.reDim(getNbRows());
   assert((int)row2data.size() == getNbRows());
 }
+
+#endif  // WITHSOPLEX

@@ -29,6 +29,23 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
+#include "SimpleCons.hpp"
+#include "SolverStructs.hpp"
+#include "aux.hpp"
+#include "globals.hpp"
+#include "typedefs.hpp"
+
+struct RowData {
+  ID id;
+  bool removable;
+  RowData(){};
+  RowData(ID i, bool r) : id(i), removable(r){};
+};
+
+enum LpStatus { INFEASIBLE, OPTIMAL, PIVOTLIMIT, UNDETERMINED };
+
+#if WITHSOPLEX
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wstrict-overflow"
@@ -37,11 +54,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "soplex.h"
 #pragma GCC diagnostic pop
 
-#include "SimpleCons.hpp"
-#include "SolverStructs.hpp"
-#include "aux.hpp"
-#include "globals.hpp"
-#include "typedefs.hpp"
+struct AdditionData {
+  soplex::DSVectorReal lhs;
+  Val rhs;
+  bool removable;
+};
 
 struct CandidateCut {
   SimpleConsInt simpcons;
@@ -58,21 +75,6 @@ struct CandidateCut {
   void initialize(const soplex::DVectorReal& sol);
 };
 std::ostream& operator<<(std::ostream& o, const CandidateCut& cc);
-
-struct AdditionData {
-  soplex::DSVectorReal lhs;
-  Val rhs;
-  bool removable;
-};
-
-struct RowData {
-  ID id;
-  bool removable;
-  RowData(){};
-  RowData(ID i, bool r) : id(i), removable(r){};
-};
-
-enum LpStatus { INFEASIBLE, OPTIMAL, PIVOTLIMIT, UNDETERMINED };
 
 class LpSolver {
   soplex::SoPlex lp;
@@ -104,10 +106,7 @@ class LpSolver {
 
  public:
   LpSolver(Solver& solver, const intConstr& objective);
-
   void setNbVariables(int n);
-  int getNbVariables() const;
-  int getNbRows() const;
 
   // @return: false if inconsistency detected, true otherwise
   // stores inconsistency in solver.conflConstraint
@@ -120,6 +119,9 @@ class LpSolver {
   void removeConstraint(ID id);
 
  private:
+  int getNbVariables() const;
+  int getNbRows() const;
+
   void flushConstraints();
 
   LpStatus _checkFeasibility(bool inProcessing);
@@ -142,3 +144,32 @@ class LpSolver {
     return std::round(a) == a && a < INF_long && a > -INF_long;
   }  // NOTE: double type can only store ranges of integers up to ~9e15
 };
+
+#else
+
+class LpSolver {
+ public:
+  LpSolver(Solver& solver, const intConstr& objective) {
+    _unused(solver);
+    _unused(objective);
+  };
+  void setNbVariables(int n) { _unused(n); };
+
+  LpStatus checkFeasibility(bool inProcessing = false) {
+    _unused(inProcessing);
+    return LpStatus::UNDETERMINED;
+  }
+  void inProcess() {}
+
+  void addConstraint(intConstr& c, bool removable) {
+    _unused(c);
+    _unused(removable);
+  }
+  void addConstraint(CRef cr, bool removable) {
+    _unused(cr);
+    _unused(removable);
+  }
+  void removeConstraint(ID id) { _unused(id); }
+};
+
+#endif  // WITHSOPLEX

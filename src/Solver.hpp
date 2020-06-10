@@ -34,7 +34,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "LpSolver.hpp"
 #include "Options.hpp"
 #include "SolverStructs.hpp"
-#include "soplex.h"
 #include "typedefs.hpp"
 
 class Logger;
