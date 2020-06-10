@@ -1,5 +1,5 @@
-if(NOT EXISTS ${soplex})
-    message(FATAL_ERROR "Please provide location of soplex via -Dsoplex=..., did not find soplex at: ${soplex}.")
+if(NOT EXISTS ${soplex_pkg})
+    message(FATAL_ERROR "Please provide location of SoPlex package via -Dsoplex_pkg=..., did not find it at: ${soplex_pkg}.")
 endif()
 
 set(soplex_dir "${PROJECT_BINARY_DIR}/soplex")
@@ -39,13 +39,13 @@ if(NOT EXISTS ${soplex_targets} OR NOT EXISTS ${soplex_config})
       RESULT_VARIABLE result
       WORKING_DIRECTORY ${soplex_dir}/download)
     if(result)
-      message(FATAL_ERROR "CMake step for soplex failed: ${result}")
+      message(FATAL_ERROR "CMake step for SoPlex failed: ${result}")
     endif()
     execute_process(COMMAND ${CMAKE_COMMAND} --build .
       RESULT_VARIABLE result
       WORKING_DIRECTORY ${soplex_dir}/download)
     if(result)
-      message(FATAL_ERROR "Build step for soplex failed: ${result}")
+      message(FATAL_ERROR "Build step for SoPlex failed: ${result}")
     endif()
 endif()
 

@@ -13,16 +13,16 @@ set(build_static "ON"
 set(profile_flags "OFF"
     CACHE STRING "Build using gprof flag (-pg).")
 
-set(compilewithsoplex "OFF"
+set(soplex "OFF"
     CACHE STRING "Use SoPlex to check for rational infeasibility.")
 
-set(soplex "${PROJECT_SOURCE_DIR}/soplex-5.0.0.tgz"
+set(soplex_pkg "${PROJECT_SOURCE_DIR}/soplex-5.0.0.tgz"
     CACHE STRING "SoPlex package, download at https://soplex.zib.de/download.php?fname=soplex-5.0.0.tgz")
 
 set(testruns_timeout 1
     CACHE STRING "Timeout of individual test runs.")
 
-IF(compilewithsoplex)
+IF(soplex)
     # provides libsoplex and ${SOPLEX_INCLUDE_DIRS}
     include(${PROJECT_SOURCE_DIR}/cmake/soplex_build_and_load.cmake)
 endif()
@@ -71,7 +71,7 @@ set(all_files ${source_files} ${header_files})
 add_executable(roundingsat ${source_files})
 target_include_directories(roundingsat PRIVATE ${PROJECT_SOURCE_DIR}/src/ ${SOPLEX_INCLUDE_DIRS})
 
-IF(compilewithsoplex)
+IF(soplex)
     target_link_libraries(roundingsat libsoplex)
     target_compile_definitions(roundingsat PUBLIC WITHSOPLEX)
 endif()
