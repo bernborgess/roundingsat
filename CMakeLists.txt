@@ -14,7 +14,7 @@ set(profile_flags "OFF"
     CACHE STRING "Build using gprof flag (-pg).")
 
 set(soplex "${PROJECT_SOURCE_DIR}/soplex-5.0.0.tgz"
-    CACHE STRING "Soplex package, downlaod at https://soplex.zib.de/download.php?fname=soplex-5.0.0.tgz")
+    CACHE STRING "SoPlex package, download at https://soplex.zib.de/download.php?fname=soplex-5.0.0.tgz")
 
 # provides libsoplex and ${SOPLEX_INCLUDE_DIRS}
 include(${PROJECT_SOURCE_DIR}/cmake/soplex_build_and_load.cmake)
@@ -30,9 +30,6 @@ if(${profile_flags})
 endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
-
-# uncomment to do something ugly
-# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Ofast")
 
 set(source_files
     src/aux.cpp
@@ -61,19 +58,30 @@ set(header_files
     src/quit.hpp
 )
 
-set(all_cpp_files ${source_files} ${header_files})
+set(all_files ${source_files} ${header_files})
 
 add_executable(roundingsat ${source_files})
-target_include_directories(roundingsat PRIVATE ${SOPLEX_INCLUDE_DIRS})
+target_include_directories(roundingsat PRIVATE ${PROJECT_SOURCE_DIR}/src/ ${SOPLEX_INCLUDE_DIRS})
 target_link_libraries(roundingsat libsoplex)
 
 FIND_PROGRAM(CLANG_FORMAT "clang-format")
 IF(CLANG_FORMAT)
     add_custom_target(
         format
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
         COMMAND ${CLANG_FORMAT}
         -style=file
         -i
-        ${all_cpp_files}
+        ${all_files}
     )
 endif()
+
+set(testruns_timeout 1
+    CACHE STRING "Timeout of individual test runs.")
+
+add_custom_target(
+    testruns
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/test
+    COMMAND ./run_tests.sh ${testruns_timeout} ${CMAKE_CURRENT_BINARY_DIR}/roundingsat
+)
+add_dependencies(testruns roundingsat)

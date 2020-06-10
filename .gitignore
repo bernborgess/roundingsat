@@ -9,5 +9,7 @@ test/*.formula
 test/*.proof
 test/*.opb
 /massif.out.*
-/roundingsat_static
 /test/logs/*
+
+# soplex
+soplex-5.0.0.tgz

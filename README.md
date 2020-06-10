@@ -4,19 +4,22 @@ RoundingSat is a pseudo-Boolean SAT solver for optimization and decision problem
 
 ## Compilation
 
-Download soplex at
-https://soplex.zib.de/download.php?fname=soplex-5.0.0.tgz and place
-the downloaded file in the root directory of roundingsat,
-alternatively the location can also be configured see `cd build; cmake -L ..` for more information.
+Download SoPlex at https://soplex.zib.de/download.php?fname=soplex-5.0.0.tgz and place the downloaded file in the root directory of roundingsat.
+Alternatively, the location can also be configured see `cd build; cmake -L ..` for more information.
 
 In the root directory of roundingsat:
 
     cd build
-    cmake -DCMAKE_BUILD_TYPE=Release ../
+    cmake -DCMAKE_BUILD_TYPE=Release ..
     make
 
-If you also want a debug build, just create another build folder and
-call cmake from there using `-DCMAKE_BUILD_TYPE=Debug`.
+For a debug build:
+
+    cd build_debug
+    cmake -DCMAKE_BUILD_TYPE=Debug ..
+    make
+
+For more builds, similar build directories can be created.
 
 ## Usage
 
@@ -34,13 +37,15 @@ Try on an example instance which is solved quickly:
 
 [Elffers and Nordström, 2018] J. Elffers and J. Nordström. Divide and Conquer: Towards Faster Pseudo-Boolean Solving. *IJCAI 2018*, 1291-1299.
 
-## Quick debug tests with VeriPB
+## Debug tests with VeriPB
 
-The following commands run roundingsat_debug for one second on a list of relatively small decision and optimization instances, and verifies the generated proofs with VeriPB (https://github.com/StephanGocht/VeriPB).
+After compiling a debug version, the following executes debug test runs checking runtime invariants, the solver result, and the generated proofs with VeriPB (https://github.com/StephanGocht/VeriPB).
 
-    `cd test`
-    `./test_proofs.sh 1`
+    cd build_debug
+    make testruns
 
-To run with a timeout of, say, 10s run
+Equivalently, execute
 
-    `./test_proofs.sh 10`
+    tests/run_tests.sh <timeout> <binary>
+
+to test the given RoundingSat binary with runs with a given timeout.
