@@ -23,6 +23,7 @@ set(testruns_timeout 1
     CACHE STRING "Timeout of individual test runs.")
 
 IF(soplex)
+    find_package(Boost REQUIRED) # As of 2020-06-11, SoPlex does not easily compile without Boost, so we treat Boost as a requirement for SoPlex
     # provides libsoplex and ${SOPLEX_INCLUDE_DIRS}
     include(${PROJECT_SOURCE_DIR}/cmake/soplex_build_and_load.cmake)
 endif()

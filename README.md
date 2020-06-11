@@ -4,7 +4,7 @@ RoundingSat is a pseudo-Boolean SAT solver for optimization and decision problem
 
 ## Compilation
 
-In the root directory of roundingsat:
+In the root directory of RoundingSat:
 
     cd build
     cmake -DCMAKE_BUILD_TYPE=Release ..
@@ -21,13 +21,14 @@ For more builds, similar build directories can be created.
 ## SoPlex
 
 RoundingSat supports an integration with the LP solver SoPlex to improve its search routine.
-For this, first download SoPlex at https://soplex.zib.de/download.php?fname=soplex-5.0.0.tgz and place the downloaded file in the root directory of roundingsat.
-Next, configure with the cmake option `-Dsoplex=ON`:
+For this, first download SoPlex at https://soplex.zib.de/download.php?fname=soplex-5.0.0.tgz and place the downloaded file in the root directory of RoundingSat.
+Next, follow the above build process, but configure with the cmake option `-Dsoplex=ON`:
 
+    cd build
     cmake -DCMAKE_BUILD_TYPE=Release -Dsoplex=ON ..
+    make
 
-Finally, run `make` as normal.
-Alternatively, the location of the SoPlex package can also be configured with the cmake option `-Dsoplex_pkg=<location>`.
+The location of the SoPlex package can be configured with the cmake option `-Dsoplex_pkg=<location>`.
 
 ## Usage
 

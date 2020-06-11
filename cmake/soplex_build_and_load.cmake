@@ -28,9 +28,12 @@ if(NOT EXISTS ${soplex_targets} OR NOT EXISTS ${soplex_config})
         ${soplex_cmake_args}
         -DCMAKE_BUILD_TYPE=${soplex_build_type}
         -DCMAKE_INSTALL_PREFIX=${soplex_dir}/install
+        -DBOOST=ON
         -DGMP=OFF
+        -DMPFR=OFF
         -DBUILD_TESTING=OFF
         -DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS=OFF
+        -DZLIB=OFF
     )
 
     configure_file(${PROJECT_SOURCE_DIR}/cmake/soplex_CMakeLists.txt.in ${soplex_dir}/download/CMakeLists.txt)
