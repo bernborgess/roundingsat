@@ -735,7 +735,10 @@ CRef Solver::processLearnedStack() {
     assert(cr != CRef_Unsat);
     tmpConstraint.reset();
     Constr& C = ca[cr];
-    if (assertionLevel < INF) recomputeLBD(C);  // some constraints are not asserting so their LBD's are unknown
+    if (assertionLevel < INF)
+      recomputeLBD(C);
+    else
+      C.setLBD(C.size());  // the LBD of non-asserting constraints is undefined, so we take a safe upper bound
   }
   return CRef_Undef;
 }

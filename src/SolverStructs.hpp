@@ -79,7 +79,7 @@ struct Constr {  // internal solver constraint optimized for fast propagation
   inline void setLocked(bool lkd) { header.locked = lkd; }
   inline bool isLocked() { return header.locked; }
   inline Origin getOrigin() const { return (Origin)header.origin; }
-  inline void setLBD(unsigned int lbd) { header.lbd = std::min(header.lbd, lbd); }
+  inline void setLBD(unsigned int lbd) { header.lbd = lbd; }
   inline unsigned int lbd() const { return header.lbd; }
   inline bool isMarkedForDelete() const { return header.markedfordel; }
   inline void markForDel() { header.markedfordel = 1; }
