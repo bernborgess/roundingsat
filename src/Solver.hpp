@@ -55,7 +55,7 @@ class Solver {
   IntSet tmpSet;
   IntSet actSet;
   intConstr tmpConstraint;
-  longConstr conflConstraint;  // functions as old confl_data
+  bigConstr conflConstraint;  // functions as old confl_data
   intConstr logConstraint;
   OrderHeap order_heap;
 

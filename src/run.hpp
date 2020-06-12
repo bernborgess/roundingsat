@@ -186,7 +186,7 @@ void handleInconsistency(longConstr& reformObj, const intConstr& origObj,
   long long mult = INF;
   for (Var v : core.vars) {
     assert(reformObj.getLit(v) != 0);
-    mult = std::min<long long>(mult, std::abs(reformObj.coefs[v]));
+    mult = std::min<long long>(mult, absRS(reformObj.coefs[v]));
   }
   assert(mult < INF);
   assert(mult > 0);
@@ -246,7 +246,7 @@ void optimize(intConstr& origObj) {
   core.initializeLogging(solver.logger);
 
   Val opt_coef_sum = 0;
-  for (Var v : origObj.vars) opt_coef_sum += std::abs(origObj.coefs[v]);
+  for (Var v : origObj.vars) opt_coef_sum += absRS(origObj.coefs[v]);
   if (opt_coef_sum >= (Val)INF)
     quit::exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});  // TODO: remove restriction
 

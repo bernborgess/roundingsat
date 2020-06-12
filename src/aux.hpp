@@ -132,17 +132,20 @@ inline T floordiv(const T& p, const T& q) {
 template <typename T>
 inline T ceildiv_safe(const T& p, const T& q) {
   assert(q > 0);
-  return (p < 0 ? -floordiv(-p, q) : ceildiv(p, q));
+  return (p < 0) ? (-floordiv(T(-p), q)) : ceildiv(p, q);
 }
 template <typename T>
 inline T floordiv_safe(const T& p, const T& q) {
   assert(q > 0);
-  return (p < 0 ? -ceildiv(-p, q) : floordiv(p, q));
+  return (p < 0) ? (-ceildiv(-p, q)) : floordiv(p, q);
 }
 template <typename T>
 inline T mod_safe(const T& p, const T& q) {
   assert(q > 0);
-  return p < 0 ? q - (-p % q) : p % q;
+  if (p < 0)
+    return q - (-p % q);
+  else
+    return p % q;
 }
 
 unsigned int gcd(unsigned int u, unsigned int v);  // TODO: C++17 provides std::gcd

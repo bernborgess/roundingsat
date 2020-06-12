@@ -30,11 +30,24 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
+#include <boost/multiprecision/cpp_int.hpp>  //  Integer types.
 #include <cassert>
 #include <iostream>
 #include <limits>
 #include <unordered_map>
 #include <vector>
+using bigint = boost::multiprecision::cpp_int;
+using BigCoef = bigint;
+using BigVal = bigint;
+
+template <typename T>
+inline T absRS(const T& x) {
+  return std::abs(x);
+}
+template <>
+inline bigint absRS(const bigint& x) {
+  return boost::multiprecision::abs(x);
+}
 
 using ID = uint64_t;
 const ID ID_Undef = std::numeric_limits<ID>::max();
@@ -45,7 +58,7 @@ using Var = int;
 using Lit = int;
 using Coef = int;
 using Val = long long;
-inline Var toVar(Lit l) { return std::abs(l); }
+inline Var toVar(Lit l) { return absRS(l); }
 
 const Coef INF = 1e9 + 1;       // based on max value of int that still allows addition of two ints
 const Val INF_long = 1e15 + 1;  // based on max long range captured by double

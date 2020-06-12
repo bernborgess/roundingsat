@@ -109,10 +109,10 @@ struct Constraint {
   template <typename CF, typename DG>
   void init(const SimpleCons<CF, DG>& sc) {
     assert(isReset());
-    assert(std::abs(sc.rhs) < std::numeric_limits<LARGE>::max());
+    assert(absRS(sc.rhs) < std::numeric_limits<LARGE>::max());
     addRhs(sc.rhs);
     for (auto& t : sc.terms) {
-      assert(std::abs(t.c) < std::numeric_limits<SMALL>::max());
+      assert(absRS(t.c) < std::numeric_limits<SMALL>::max());
       addLhs(t.c, t.l);
     }
     id = sc.id;
@@ -122,15 +122,16 @@ struct Constraint {
 
   template <typename S, typename L>
   void copyTo(Constraint<S, L>& out) const {
+    // TODO: assert whether s/L can fit SMALL/LARGE? Not always possible.
     assert(out.isReset());
-    out.degree = degree;
-    out.rhs = rhs;
+    out.degree = static_cast<L>(degree);
+    out.rhs = static_cast<L>(rhs);
     out.id = id;
     out.orig = orig;
     out.vars = vars;
     out.resize(coefs.size());
     for (Var v : vars) {
-      out.coefs[v] = coefs[v];
+      out.coefs[v] = static_cast<S>(coefs[v]);
       assert(used[v] == true);
       assert(out.used[v] == false);
       out.used[v] = true;
@@ -144,7 +145,7 @@ struct Constraint {
   template <typename CF, typename DG>
   SimpleCons<CF, DG> toSimpleCons() {
     SimpleCons<CF, DG> result;
-    result.rhs = getRhs();
+    result.rhs = static_cast<DG>(getRhs());
     result.terms.reserve(vars.size());
     for (Var v : vars)
       if (coefs[v] != 0) result.terms.emplace_back((Coef)coefs[v], v);
@@ -258,7 +259,7 @@ struct Constraint {
     } else {
       SMALL cf = coefs[v];
       coefs[v] += c;
-      if ((cf < 0) != (c < 0)) degree -= std::min(std::abs(c), std::abs(cf));
+      if ((cf < 0) != (c < 0)) degree -= std::min(absRS(c), absRS(cf));
     }
   }
 
@@ -280,7 +281,7 @@ struct Constraint {
       coefs[v] = m;
       used[v] = true;
     } else {
-      if ((coefs[v] < 0) != (m < 0)) degree -= std::min(std::abs(m), std::abs(coefs[v]));
+      if ((coefs[v] < 0) != (m < 0)) degree -= std::min(absRS(m), absRS(coefs[v]));
       coefs[v] += m;
     }
   }
@@ -366,7 +367,7 @@ struct Constraint {
   bool isSaturated() const {
     LARGE w = getDegree();
     for (Var v : vars)
-      if (std::abs(coefs[v]) > w) return false;
+      if (absRS(coefs[v]) > w) return false;
     return true;
   }
 
@@ -386,13 +387,13 @@ struct Constraint {
       rhs *= thismult;
       for (Var v : vars) coefs[v] *= thismult;
     }
-    assert(std::abs(c.getRhs()) < std::numeric_limits<LARGE>::max());
+    assert(absRS(c.getRhs()) < std::numeric_limits<LARGE>::max());
     rhs += (LARGE)cmult * (LARGE)c.getRhs();
     degree += (LARGE)cmult * (LARGE)c.getDegree();
     for (Var v : c.vars) {
       assert(v < (Var)coefs.size());
       assert(v > 0);
-      assert(std::abs(c.coefs[v]) < std::numeric_limits<SMALL>::max());
+      assert(absRS(c.coefs[v]) < std::numeric_limits<SMALL>::max());
       SMALL val = cmult * c.coefs[v];
       if (!used[v]) {
         assert(coefs[v] == 0);
@@ -402,7 +403,7 @@ struct Constraint {
       } else {
         SMALL cf = coefs[v];
         coefs[v] += val;
-        if ((cf < 0) != (val < 0)) degree -= std::min(std::abs(cf), std::abs(val));
+        if ((cf < 0) != (val < 0)) degree -= std::min(absRS(cf), absRS(val));
       }
     }
   }
@@ -419,7 +420,7 @@ struct Constraint {
     assert(getDegree() < (LARGE)INF);
   }
 
-  void multiply(const SMALL m) {
+  void multiply(const SMALL& m) {
     assert(m > 0);
     if (m == 1) return;
     if (plogger) proofBuffer << proofMult(m);
@@ -428,7 +429,7 @@ struct Constraint {
     degree *= m;
   }
 
-  void divide(const LARGE d) {
+  void divide(const LARGE& d) {
     if (plogger) proofBuffer << d << " d ";
     for (Var v : vars) {
       assert(coefs[v] % d == 0);
@@ -439,7 +440,7 @@ struct Constraint {
     degree = aux::ceildiv_safe(degree, d);
   }
 
-  void divideRoundUp(const LARGE d) {
+  void divideRoundUp(const LARGE& d) {
     assert(d > 0);
     if (d == 1) return;
     for (Var v : vars) {
@@ -480,10 +481,10 @@ struct Constraint {
     assert(isSortedInDecreasingCoefOrder());
     assert(hasNoZeroes());
     if (vars.size() == 0) return false;
-    if (std::abs(coefs[vars[0]]) >= INF) return false;  // TODO: large coefs currently unsupported
-    unsigned int _gcd = std::abs(coefs[vars.back()]);
+    if (absRS(coefs[vars[0]]) >= INF) return false;  // TODO: large coefs currently unsupported
+    unsigned int _gcd = absRS(coefs[vars.back()]);
     for (Var v : vars) {
-      _gcd = aux::gcd(_gcd, (unsigned int)std::abs(coefs[v]));
+      _gcd = aux::gcd(_gcd, (unsigned int)absRS(coefs[v]));
       if (_gcd == 1) return false;
     }
     assert(_gcd > 1);
@@ -516,7 +517,7 @@ struct Constraint {
       }
       Lit l = cf < 0 ? -v : v;
       if (level[-l] < lvl) continue;  // falsified lit
-      SMALL c = std::abs(cf);
+      SMALL c = absRS(cf);
       if (level[l] >= lvl) largestCoef = std::max(largestCoef, c);  // unknown lit
       slack += c;
       int mid = (vars.size() + i) / 2;  // move non-falsifieds to the back for efficiency in next call
@@ -558,13 +559,13 @@ struct Constraint {
     int assertionLevel = 0;
     while (true) {
       while (posIt != litsByPos.cend() && level[*posIt] <= assertionLevel) {
-        slack -= std::abs(coefs[std::abs(*posIt)]);
+        slack -= absRS(coefs[absRS(*posIt)]);
         ++posIt;
       }
       if (slack < 0) return assertionLevel - 1;
       while (coefIt != vars.cend() && assertionLevel >= level[getLit(*coefIt)]) ++coefIt;
       if (coefIt == vars.cend()) return INF;  // no assertion level
-      if (slack < std::abs(coefs[*coefIt])) return assertionLevel;
+      if (slack < absRS(coefs[*coefIt])) return assertionLevel;
       if (posIt == litsByPos.cend()) return INF;  // slack will no longer decrease
       assertionLevel = level[*posIt];
     }
@@ -573,7 +574,7 @@ struct Constraint {
   // @post: preserves order after removeZeroes()
   void weakenNonImplied(const IntVecIt& level, LARGE slack, Stats& sts) {
     for (Var v : vars)
-      if (coefs[v] != 0 && std::abs(coefs[v]) <= slack && !falsified(level, v)) {
+      if (coefs[v] != 0 && absRS(coefs[v]) <= slack && !falsified(level, v)) {
         weaken(-coefs[v], v);
         ++sts.NWEAKENEDNONIMPLIED;
       }
@@ -585,11 +586,11 @@ struct Constraint {
     assert(hasNoZeroes());
     assert(isSortedInDecreasingCoefOrder());
     long long oldCount = sts.NWEAKENEDNONIMPLYING;
-    for (int i = vars.size() - 1; i >= 0 && slack + std::abs(coefs[vars[i]]) < propCoef; --i) {
+    for (int i = vars.size() - 1; i >= 0 && slack + absRS(coefs[vars[i]]) < propCoef; --i) {
       Var v = vars[i];
       if (falsified(level, v)) {
         SMALL c = coefs[v];
-        slack += std::abs(c);
+        slack += absRS(c);
         weaken(-c, v);
         ++sts.NWEAKENEDNONIMPLYING;
       }
@@ -607,14 +608,14 @@ struct Constraint {
     Var v_prop = -1;
     for (int i = vars.size() - 1; i >= 0; --i) {
       Var v = vars[i];
-      if (std::abs(coefs[v]) > slk && isUnknown(pos, v)) {
+      if (absRS(coefs[v]) > slk && isUnknown(pos, v)) {
         v_prop = v;
         break;
       }
     }
     if (v_prop == -1) return;  // no propagation, no idea what to weaken
-    if (weakenNonImplying(level, std::abs(coefs[v_prop]), slk, sts)) slk = getSlack(level);  // slack changed
-    assert(getSlack(level) < std::abs(coefs[v_prop]));
+    if (weakenNonImplying(level, absRS(coefs[v_prop]), slk, sts)) slk = getSlack(level);  // slack changed
+    assert(getSlack(level) < absRS(coefs[v_prop]));
     weakenNonImplied(level, slk, sts);
   }
 
@@ -622,7 +623,7 @@ struct Constraint {
   template <typename T>
   void weakenSmalls(T limit) {
     for (Var v : vars)
-      if (std::abs(coefs[v]) < limit) weaken(-coefs[v], v);
+      if (absRS(coefs[v]) < limit) weaken(-coefs[v], v);
     saturate();
   }
 
@@ -640,7 +641,7 @@ struct Constraint {
 
   LARGE absCoeffSum() const {
     LARGE result = 0;
-    for (Var v : vars) result += std::abs(coefs[v]);
+    for (Var v : vars) result += absRS(coefs[v]);
     return result;
   }
 
@@ -649,18 +650,17 @@ struct Constraint {
     assert(isSaturated());
     assert(isSortedInDecreasingCoefOrder());
     assert(hasNoZeroes());
-    if (vars.size() == 0 || std::abs(coefs[vars[0]]) == 1) return false;  // already cardinality
-    const LARGE w = getDegree();
-    if (w <= 0) return false;
+    if (vars.size() == 0 || absRS(coefs[vars[0]]) == 1) return false;  // already cardinality
+    if (getDegree() <= 0) return false;
 
     int largeCoefsNeeded = 0;
     LARGE largeCoefSum = 0;
-    while (largeCoefsNeeded < (int)vars.size() && largeCoefSum < w) {
-      largeCoefSum += std::abs(coefs[vars[largeCoefsNeeded]]);
+    while (largeCoefsNeeded < (int)vars.size() && largeCoefSum < getDegree()) {
+      largeCoefSum += absRS(coefs[vars[largeCoefsNeeded]]);
       ++largeCoefsNeeded;
     }
     assert(largeCoefsNeeded > 0);
-    if (largeCoefSum < w) {
+    if (largeCoefSum < getDegree()) {
       for (Var v : vars) weaken(-coefs[v], v);
       return true;  // trivial inconsistency
     }
@@ -668,21 +668,21 @@ struct Constraint {
     int skippable = vars.size();  // counting backwards
     if (equivalencePreserving) {
       LARGE smallCoefSum = 0;
-      for (int i = 1; i <= largeCoefsNeeded; ++i) smallCoefSum += std::abs(coefs[vars[vars.size() - i]]);
-      if (smallCoefSum < w) return false;
+      for (int i = 1; i <= largeCoefsNeeded; ++i) smallCoefSum += absRS(coefs[vars[vars.size() - i]]);
+      if (smallCoefSum < getDegree()) return false;
       // else, we have an equivalent cardinality constraint
     } else {
-      LARGE wiggleroom = w - largeCoefSum + std::abs(coefs[vars[largeCoefsNeeded - 1]]);
+      LARGE wiggleroom = getDegree() - largeCoefSum + absRS(coefs[vars[largeCoefsNeeded - 1]]);
       assert(wiggleroom > 0);
-      while (skippable > 0 && wiggleroom > std::abs(coefs[vars[skippable - 1]])) {
+      while (skippable > 0 && wiggleroom > absRS(coefs[vars[skippable - 1]])) {
         --skippable;
-        wiggleroom -= std::abs(coefs[vars[skippable]]);
+        wiggleroom -= absRS(coefs[vars[skippable]]);
       }
     }
     assert(skippable >= largeCoefsNeeded);
 
     if (plogger) {
-      SMALL div_coef = std::abs(coefs[vars[largeCoefsNeeded - 1]]);
+      SMALL div_coef = absRS(coefs[vars[largeCoefsNeeded - 1]]);
       for (int i = 0; i < largeCoefsNeeded; ++i) {  // partially weaken large vars
         Lit l = getLit(vars[i]);
         SMALL d = getCoef(l) - div_coef;
@@ -712,17 +712,17 @@ struct Constraint {
 
   bool isCardinality() const {
     for (Var v : vars)
-      if (std::abs(coefs[v]) > 1) return false;
+      if (absRS(coefs[v]) > 1) return false;
     return true;
   }
 
   void sortInDecreasingCoefOrder() {
-    std::sort(vars.begin(), vars.end(), [&](Var v1, Var v2) { return std::abs(coefs[v1]) > std::abs(coefs[v2]); });
+    std::sort(vars.begin(), vars.end(), [&](Var v1, Var v2) { return absRS(coefs[v1]) > absRS(coefs[v2]); });
   }
 
   bool isSortedInDecreasingCoefOrder() const {
     for (int i = 1; i < (int)vars.size(); ++i)
-      if (std::abs(coefs[vars[i - 1]]) < std::abs(coefs[vars[i]])) return false;
+      if (absRS(coefs[vars[i - 1]]) < absRS(coefs[vars[i]])) return false;
     return true;
   }
 
@@ -764,7 +764,7 @@ struct Constraint {
     for (Var v : vars)
       if (v != v_unit) weaken(-coefs[v], v);
     assert(getDegree() > 0);
-    LARGE d = std::max<LARGE>(std::abs(coefs[v_unit]), getDegree());
+    LARGE d = std::max<LARGE>(absRS(coefs[v_unit]), getDegree());
     if (d > 1) proofBuffer << d << " d ";
     if (coefs[v_unit] > 0) {
       coefs[v_unit] = 1;
@@ -827,3 +827,4 @@ std::ostream& operator<<(std::ostream& o, Constraint<S, L>& C) {
 using intConstr = Constraint<int, long long>;
 using longConstr = Constraint<long long, __int128>;
 using int128Constr = Constraint<__int128, __int128>;
+using bigConstr = Constraint<bigint, bigint>;

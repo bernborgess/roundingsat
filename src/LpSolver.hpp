@@ -139,8 +139,8 @@ class LpSolver {
   void addFilteredCuts();
   void pruneCuts();
 
-  inline static double nonIntegrality(double a) { return std::abs(std::round(a) - a); }
-  inline static bool validCoeff(double a) { return std::round(a) == a && std::abs(a) < INF; }
+  inline static double nonIntegrality(double a) { return absRS(std::round(a) - a); }
+  inline static bool validCoeff(double a) { return std::round(a) == a && absRS(a) < INF; }
   inline static bool validRhs(double a) {
     return std::round(a) == a && a < INF_long && a > -INF_long;
   }  // NOTE: double type can only store ranges of integers up to ~9e15

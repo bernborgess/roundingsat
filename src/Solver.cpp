@@ -380,7 +380,7 @@ WatchStatus Solver::checkForPropagation(CRef cr, int& idx, Lit p) {
   if (slack < 0) return WatchStatus::CONFLICTING;
   // keep the watch, check for propagation
   stats.NPROPCHECKS -= watchIdx >> 1;
-  for (; watchIdx < Csize2 && std::abs(data[watchIdx]) > slack;
+  for (; watchIdx < Csize2 && absRS(data[watchIdx]) > slack;
        watchIdx += 2) {  // NOTE: second innermost loop of RoundingSat
     const Lit l = data[watchIdx + 1];
     if (isUnknown(Pos, l)) {
@@ -417,8 +417,8 @@ bool Solver::analyze() {
   while (decisionLevel() > 0) {
     if (asynch_interrupt) return false;
     Lit l = trail.back();
-    assert(std::abs(conflConstraint.getCoef(-l)) < INF);
-    Coef confl_coef_l = conflConstraint.getCoef(-l);
+    assert(absRS(conflConstraint.getCoef(-l)) < INF);
+    Coef confl_coef_l = static_cast<Coef>(conflConstraint.getCoef(-l));
     if (confl_coef_l > 0) {
       ++stats.NRESOLVESTEPS;
       assert(conflConstraint.getSlack(Level) < 0);
@@ -510,12 +510,12 @@ bool Solver::extractCore(const IntSet& assumptions, intConstr& outCore, Lit l_as
   assert(conflConstraint.getSlack(Level) < 0);
 
   // analyze conflict
-  Val assumpslk = conflConstraint.getSlack(assumptions);
+  BigVal assumpslk = conflConstraint.getSlack(assumptions);
   while (assumpslk >= 0) {
     if (asynch_interrupt) return false;
     Lit l = trail.back();
-    assert(std::abs(conflConstraint.getCoef(-l)) < INF);
-    Coef confl_coef_l = conflConstraint.getCoef(-l);
+    assert(absRS(conflConstraint.getCoef(-l)) < INF);
+    Coef confl_coef_l = static_cast<Coef>(conflConstraint.getCoef(-l));
     if (confl_coef_l > 0) {
       ca[Reason[toVar(l)]].toConstraint(tmpConstraint);
       stats.NADDEDLITERALS += tmpConstraint.vars.size();
@@ -684,9 +684,9 @@ CRef Solver::attachConstraint(intConstr& constraint, bool locked) {
     std::vector<unsigned int> falsifiedIdcs;
     falsifiedIdcs.reserve(C.size());
     for (unsigned int i = 0; i < 2 * C.size(); i += 2)
-      if (isFalse(Level, data[i + 1]) && Pos[std::abs(data[i + 1])] < qhead) falsifiedIdcs.push_back(i);
+      if (isFalse(Level, data[i + 1]) && Pos[absRS(data[i + 1])] < qhead) falsifiedIdcs.push_back(i);
     std::sort(falsifiedIdcs.begin(), falsifiedIdcs.end(),
-              [&](unsigned i1, unsigned i2) { return Pos[std::abs(data[i1 + 1])] > Pos[std::abs(data[i2 + 1])]; });
+              [&](unsigned i1, unsigned i2) { return Pos[absRS(data[i1 + 1])] > Pos[absRS(data[i2 + 1])]; });
     Val diff = C.largestCoef() - C.slack;
     for (unsigned int i : falsifiedIdcs) {
       assert(!C.isWatched(i));
@@ -696,7 +696,7 @@ CRef Solver::attachConstraint(intConstr& constraint, bool locked) {
       if (diff <= 0) break;
     }
     // perform initial propagation
-    for (unsigned int i = 0; i < 2 * C.size() && std::abs(data[i]) > C.slack; i += 2)
+    for (unsigned int i = 0; i < 2 * C.size() && absRS(data[i]) > C.slack; i += 2)
       if (isUnknown(Pos, data[i + 1])) {
         propagate(data[i + 1], cr);
       }
