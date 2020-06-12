@@ -1,7 +1,7 @@
 #!/bin/bash
 
 time=$1
-roundingsat=$2
+binary=$2
 
 SCRIPTPATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 
@@ -33,7 +33,7 @@ for folder in "${arr_default[@]}"; do
         mkdir -p `dirname $logfile`
         echo -n "" > $logfile.proof
         echo -n "" > $logfile.formula
-        timeout $time $roundingsat $formula --proof-log=$logfile > /dev/null
+        timeout $time $binary $formula --proof-log=$logfile > /dev/null
         echo "verifying $logfile"
         wc -l $logfile.proof
         veripb $logfile.formula $logfile.proof -d --arbitraryPrecision
@@ -92,7 +92,7 @@ for mode in "${arr_modes[@]}"; do
         mkdir -p `dirname $logfile`
         echo -n "" > $logfile.proof
         echo -n "" > $logfile.formula
-        output=`timeout $time $roundingsat $formula --proof-log=$logfile 2>&1 | awk '/^o|.*Assertion.*/ {print $2}'`
+        output=`timeout $time $binary $formula --opt-mode=$mode --proof-log=$logfile 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
         if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
             errors=`expr 1000 + $errors`
             echo "wrong output: $output vs $obj"
@@ -119,7 +119,7 @@ for j in "${arr_opt[@]}"; do
     mkdir -p `dirname $logfile`
     echo -n "" > $logfile.proof
     echo -n "" > $logfile.formula
-    output=`timeout $time $roundingsat $formula --opt-mode="lazy-hybrid" 2>&1 | awk '/^o|.*Assertion.*/ {print $2}'`
+    output=`timeout $time $binary $formula --opt-mode="lazy-hybrid" 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
     if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
         errors=`expr 1000 + $errors`
         echo "wrong output: $output vs $obj"
