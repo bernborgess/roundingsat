@@ -87,9 +87,9 @@ struct Constr {  // internal solver constraint optimized for fast propagation
   inline void setCounting(bool c) { header.counting = (unsigned int)c; }
   inline Coef largestCoef() const {
     assert(!isSimple());
-    return absRS(data[0]);
+    return rs::abs(data[0]);
   }
-  inline Coef coef(unsigned int i) const { return isSimple() ? 1 : absRS(data[i << 1]); }
+  inline Coef coef(unsigned int i) const { return isSimple() ? 1 : rs::abs(data[i << 1]); }
   inline Lit lit(unsigned int i) const { return isSimple() ? data[i] : data[(i << 1) + 1]; }
   inline bool isWatched(unsigned int i) const {
     assert(!isSimple());

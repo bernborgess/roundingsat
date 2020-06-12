@@ -34,20 +34,42 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <cassert>
 #include <iostream>
 #include <limits>
+#include <numeric>
 #include <unordered_map>
 #include <vector>
+
 using bigint = boost::multiprecision::cpp_int;
 using BigCoef = bigint;
 using BigVal = bigint;
 
+namespace rs {  // RoundingSat namespace
 template <typename T>
-inline T absRS(const T& x) {
+inline T abs(const T& x) {
   return std::abs(x);
 }
 template <>
-inline bigint absRS(const bigint& x) {
+inline bigint abs(const bigint& x) {
   return boost::multiprecision::abs(x);
 }
+
+template <typename T>
+inline T gcd(const T& x, const T& y) {
+  return std::gcd(x, y);
+}
+template <>
+inline bigint gcd(const bigint& x, const bigint& y) {
+  return boost::multiprecision::gcd(x, y);
+}
+
+template <typename T>
+inline T lcm(const T& x, const T& y) {
+  return std::lcm(x, y);
+}
+template <>
+inline bigint lcm(const bigint& x, const bigint& y) {
+  return boost::multiprecision::lcm(x, y);
+}
+}  // namespace rs
 
 using ID = uint64_t;
 const ID ID_Undef = std::numeric_limits<ID>::max();
@@ -58,7 +80,7 @@ using Var = int;
 using Lit = int;
 using Coef = int;
 using Val = long long;
-inline Var toVar(Lit l) { return absRS(l); }
+inline Var toVar(Lit l) { return rs::abs(l); }
 
 const Coef INF = 1e9 + 1;       // based on max value of int that still allows addition of two ints
 const Val INF_long = 1e15 + 1;  // based on max long range captured by double

@@ -35,23 +35,3 @@ std::ostream& operator<<(std::ostream& os, __int128 x) {
   if (x < 10) return os << (char)(x + '0');
   return os << x / 10 << (char)(x % 10 + '0');
 }
-
-unsigned int aux::gcd(unsigned int u, unsigned int v) {
-  assert(u != 0);
-  assert(v != 0);
-  if (u % v == 0) return v;
-  if (v % u == 0) return u;
-  unsigned int t;
-  int shift = __builtin_ctz(u | v);
-  u >>= __builtin_ctz(u);
-  do {
-    v >>= __builtin_ctz(v);
-    if (u > v) {
-      t = v;
-      v = u;
-      u = t;
-    }
-    v = v - u;
-  } while (v != 0);
-  return u << shift;
-}

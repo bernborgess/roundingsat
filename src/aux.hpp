@@ -62,26 +62,6 @@ std::ostream& operator<<(std::ostream& os, __int128 x);
 
 namespace aux {
 
-#ifndef __GLIBCXX_TYPE_INT_N_0
-namespace std {
-template <>
-class numeric_limits<__int128> {
- public:
-  static __int128 max() {
-    __int128 x;
-    x = 170141183460469;
-    x *= 1000000000000000;
-    x += 231731687303715;
-    x *= 1000000000;
-    x += 884105727;
-    return x;  // which is 2^127-1
-  };
-  static __int128 min() { return -max() + 1; };
-  const static bool is_specialized = true;
-};
-}  // namespace std
-#endif
-
 template <typename T>
 T str2num(const std::string&& description) {
   T result = 0;
@@ -147,8 +127,6 @@ inline T mod_safe(const T& p, const T& q) {
   else
     return p % q;
 }
-
-unsigned int gcd(unsigned int u, unsigned int v);  // TODO: C++17 provides std::gcd
 
 // Minisat cpuTime function
 static inline double cpuTime() {

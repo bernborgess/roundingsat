@@ -43,9 +43,11 @@ Val lower_bound;
 Solver solver;
 intConstr objective;
 
+inline bool foundSolution() { return solution.size() > 0; }
+
 inline void printObjBounds(Val lower, Val upper) {
   if (options.verbosity == 0) return;
-  if (upper < std::numeric_limits<Val>::max())
+  if (foundSolution())
     printf("c bounds %10lld >= %10lld\n", upper, lower);
   else
     printf("c bounds          - >= %10lld\n", lower);
@@ -186,7 +188,7 @@ void handleInconsistency(longConstr& reformObj, const intConstr& origObj,
   long long mult = INF;
   for (Var v : core.vars) {
     assert(reformObj.getLit(v) != 0);
-    mult = std::min<long long>(mult, absRS(reformObj.coefs[v]));
+    mult = std::min<long long>(mult, rs::abs(reformObj.coefs[v]));
   }
   assert(mult < INF);
   assert(mult > 0);
@@ -242,11 +244,11 @@ void optimize(intConstr& origObj) {
   // NOTE: -origObj.getDegree() keeps track of the offset of the reformulated objective (or after removing unit lits)
   origObj.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), false);
   lower_bound = -origObj.getDegree();
-  upper_bound = std::numeric_limits<Val>::max();
+  upper_bound = origObj.absCoeffSum() + 1;
   core.initializeLogging(solver.logger);
 
   Val opt_coef_sum = 0;
-  for (Var v : origObj.vars) opt_coef_sum += absRS(origObj.coefs[v]);
+  for (Var v : origObj.vars) opt_coef_sum += rs::abs(origObj.coefs[v]);
   if (opt_coef_sum >= (Val)INF)
     quit::exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});  // TODO: remove restriction
 
@@ -287,7 +289,7 @@ void optimize(intConstr& origObj) {
     else
       lower_time += stats.getDetTime() - current_time;
     if (reply == SolveState::SAT) {
-      assert(solution.size() > 0);
+      assert(foundSolution());
       ++stats.NSOLS;
       handleNewSolution(origObj, lastUpperBound);
       assert((options.optMode != Options::COREGUIDED && options.optMode != Options::LAZYCOREGUIDED) ||

@@ -190,7 +190,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     if (factor == 0) continue;
     rowToConstraint(r);
     if (factor < 0) ic.invert();
-    lcc.addUp(ic, absRS(factor));
+    lcc.addUp(ic, rs::abs(factor));
     ic.reset();
     slacks.emplace_back(-factor, r);
   }
@@ -209,7 +209,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     if (factor == 0) continue;
     rowToConstraint(slacks[i].second);
     if (factor < 0) ic.invert();
-    lcc.addUp(ic, absRS(factor));
+    lcc.addUp(ic, rs::abs(factor));
     ic.reset();
   }
   if (lcc.plogger)
@@ -348,7 +348,7 @@ double LpSolver::getScaleFactor(soplex::DVectorReal& mults, bool removeNegatives
     if (std::isnan(mults[i]) || (removeNegatives && mults[i] < 0)) mults[i] = 0;  // TODO: report NaN to Ambros?
     if (mults[i] == 0) continue;
     ++nbMults;
-    largest = std::max(absRS(mults[i]), largest);
+    largest = std::max(rs::abs(mults[i]), largest);
   }
   if (nbMults == 0) return 0;
   assert(nbMults < INF);
@@ -362,7 +362,7 @@ double LpSolver::getScaleFactor(soplex::DVectorReal& mults, bool removeNegatives
 void LpSolver::rowToConstraint(int row) {
   assert(ic.isReset());
   double rhs = lp.lhsReal(row);
-  assert(absRS(rhs) != INFTY);
+  assert(rs::abs(rhs) != INFTY);
   assert(validRhs(rhs));
   ic.addRhs(rhs);
 

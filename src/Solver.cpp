@@ -380,7 +380,7 @@ WatchStatus Solver::checkForPropagation(CRef cr, int& idx, Lit p) {
   if (slack < 0) return WatchStatus::CONFLICTING;
   // keep the watch, check for propagation
   stats.NPROPCHECKS -= watchIdx >> 1;
-  for (; watchIdx < Csize2 && absRS(data[watchIdx]) > slack;
+  for (; watchIdx < Csize2 && rs::abs(data[watchIdx]) > slack;
        watchIdx += 2) {  // NOTE: second innermost loop of RoundingSat
     const Lit l = data[watchIdx + 1];
     if (isUnknown(Pos, l)) {
@@ -417,7 +417,7 @@ bool Solver::analyze() {
   while (decisionLevel() > 0) {
     if (asynch_interrupt) return false;
     Lit l = trail.back();
-    assert(absRS(conflConstraint.getCoef(-l)) < INF);
+    assert(rs::abs(conflConstraint.getCoef(-l)) < INF);
     Coef confl_coef_l = static_cast<Coef>(conflConstraint.getCoef(-l));
     if (confl_coef_l > 0) {
       ++stats.NRESOLVESTEPS;
@@ -456,7 +456,7 @@ bool Solver::analyze() {
       assert(tmpConstraint.getSlack(Level) <= 0);
       for (Var v : tmpConstraint.vars) actSet.add(tmpConstraint.getLit(v));
       Coef reason_coef_l = tmpConstraint.getCoef(l);
-      Coef gcd_coef_l = aux::gcd(reason_coef_l, confl_coef_l);
+      Coef gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
       conflConstraint.addUp(tmpConstraint, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
       conflConstraint.saturateAndFixOverflow(getLevel(), options.weakenFull);
       tmpConstraint.reset();
@@ -514,7 +514,7 @@ bool Solver::extractCore(const IntSet& assumptions, intConstr& outCore, Lit l_as
   while (assumpslk >= 0) {
     if (asynch_interrupt) return false;
     Lit l = trail.back();
-    assert(absRS(conflConstraint.getCoef(-l)) < INF);
+    assert(rs::abs(conflConstraint.getCoef(-l)) < INF);
     Coef confl_coef_l = static_cast<Coef>(conflConstraint.getCoef(-l));
     if (confl_coef_l > 0) {
       ca[Reason[toVar(l)]].toConstraint(tmpConstraint);
@@ -527,7 +527,7 @@ bool Solver::extractCore(const IntSet& assumptions, intConstr& outCore, Lit l_as
       tmpConstraint.weakenDivideRound(getLevel(), l, options.maxdiv, options.weakenFull);
       assert(tmpConstraint.getSlack(Level) <= 0);
       Coef reason_coef_l = tmpConstraint.getCoef(l);
-      Coef gcd_coef_l = aux::gcd(reason_coef_l, confl_coef_l);
+      Coef gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
       conflConstraint.addUp(tmpConstraint, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
       conflConstraint.saturateAndFixOverflow(getLevel(), options.weakenFull);
       tmpConstraint.reset();
@@ -684,9 +684,9 @@ CRef Solver::attachConstraint(intConstr& constraint, bool locked) {
     std::vector<unsigned int> falsifiedIdcs;
     falsifiedIdcs.reserve(C.size());
     for (unsigned int i = 0; i < 2 * C.size(); i += 2)
-      if (isFalse(Level, data[i + 1]) && Pos[absRS(data[i + 1])] < qhead) falsifiedIdcs.push_back(i);
+      if (isFalse(Level, data[i + 1]) && Pos[rs::abs(data[i + 1])] < qhead) falsifiedIdcs.push_back(i);
     std::sort(falsifiedIdcs.begin(), falsifiedIdcs.end(),
-              [&](unsigned i1, unsigned i2) { return Pos[absRS(data[i1 + 1])] > Pos[absRS(data[i2 + 1])]; });
+              [&](unsigned i1, unsigned i2) { return Pos[rs::abs(data[i1 + 1])] > Pos[rs::abs(data[i2 + 1])]; });
     Val diff = C.largestCoef() - C.slack;
     for (unsigned int i : falsifiedIdcs) {
       assert(!C.isWatched(i));
@@ -696,7 +696,7 @@ CRef Solver::attachConstraint(intConstr& constraint, bool locked) {
       if (diff <= 0) break;
     }
     // perform initial propagation
-    for (unsigned int i = 0; i < 2 * C.size() && absRS(data[i]) > C.slack; i += 2)
+    for (unsigned int i = 0; i < 2 * C.size() && rs::abs(data[i]) > C.slack; i += 2)
       if (isUnknown(Pos, data[i + 1])) {
         propagate(data[i + 1], cr);
       }

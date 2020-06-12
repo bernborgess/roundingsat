@@ -43,7 +43,7 @@ void Constr::undoFalsified(int i) {
   assert(!isSimple());
   assert(isCounting() || isWatched(i));
   ++stats.NWATCHLOOKUPSBJ;
-  slack += absRS(data[i]);
+  slack += rs::abs(data[i]);
 }
 
 void ConstraintAllocator::capacity(uint32_t min_cap) {
@@ -100,7 +100,7 @@ CRef ConstraintAllocator::alloc(intConstr& constraint, bool locked) {
     if (constr->isSimple())
       constr->data[i] = constraint.getLit(v);
     else {
-      constr->data[(i << 1)] = absRS(constraint.coefs[v]);
+      constr->data[(i << 1)] = rs::abs(constraint.coefs[v]);
       constr->data[(i << 1) + 1] = constraint.getLit(v);
     }
   }
