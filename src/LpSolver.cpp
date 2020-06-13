@@ -196,6 +196,8 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   }
 
   __int128 b = lcc.getRhs();
+  for (Var v : lcc.vars)
+    if (lpSolution[v] > 0.5) b -= lcc.coefs[v];
   if (b == 0) return CandidateCut();
 
   assert(mult > 0);
@@ -204,8 +206,10 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   lcc.applyMIR(divisor, [&](Var v) -> Lit { return lpSolution[v] <= 0.5 ? v : -v; });
 
   // round up the slack variables MIR style and cancel out the slack variables
+  __int128 bmodd = aux::mod_safe(b, divisor);
   for (unsigned i = 0; i < slacks.size(); ++i) {
-    __int128 factor = mir_coeff(slacks[i].first, b, divisor);
+    __int128 factor =
+        bmodd * aux::floordiv_safe(slacks[i].first, divisor) + std::min(aux::mod_safe(slacks[i].first, divisor), bmodd);
     if (factor == 0) continue;
     rowToConstraint(slacks[i].second);
     if (factor < 0) ic.invert();
@@ -219,13 +223,28 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   // TODO: fix logging for Gomory cuts
 
   lcc.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
-  if (lcc.getDegree() <= 0) {
+  if (lcc.getDegree() <= 0)
     lcc.reset();
-  } else {
+  else {
     assert(lcc.hasNoZeroes());
     lcc.weakenSmalls(lcc.absCoeffSum() / (double)lcc.vars.size() * options.intolerance);
-    lcc.saturateAndFixOverflow(solver.getLevel(), options.weakenFull);
+    if (lcc.getDegree() >= INF) {
+      divisor = aux::ceildiv<__int128>(lcc.getDegree(), INF - 1);
+      for (Var v : lcc.vars) {
+        __int128 rem = aux::mod_safe(lcc.coefs[v], divisor);
+        if (rem == 0) continue;
+        assert(rem > 0);
+        if ((double)divisor * lpSolution[v] < rem)
+          lcc.weaken(divisor - rem, v);
+        else
+          lcc.weaken(-rem, v);
+      }
+      lcc.divide(divisor);
+      lcc.saturate();
+    }
   }
+  assert(lcc.getDegree() < INF);
+  assert(lcc.isSaturated());
   return CandidateCut(lcc, lpSolution);
 }
 
