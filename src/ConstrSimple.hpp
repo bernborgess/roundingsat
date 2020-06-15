@@ -47,7 +47,7 @@ std::ostream& operator<<(std::ostream& o, const Term<CF>& t) {
 }
 
 template <typename CF, typename DG>
-struct SimpleCons {
+struct ConstrSimple {
   std::vector<Term<CF>> terms;
   DG rhs = 0;
   Origin orig = Origin::UNKNOWN;
@@ -75,10 +75,10 @@ struct SimpleCons {
 };
 
 template <typename CF, typename DG>
-inline std::ostream& operator<<(std::ostream& o, const SimpleCons<CF, DG>& sc) {
+inline std::ostream& operator<<(std::ostream& o, const ConstrSimple<CF, DG>& sc) {
   o << sc.id << ": ";
   for (auto& t : sc.terms) o << "+ " << t << " ";
   return o << ">= " << sc.rhs;
 }
 
-using SimpleConsInt = SimpleCons<int, long long>;
+using SimpleConsInt = ConstrSimple<int, long long>;

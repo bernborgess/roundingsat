@@ -34,7 +34,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <queue>
 #include "Solver.hpp"
 
-CandidateCut::CandidateCut(int128Constr& in, const soplex::DVectorReal& sol) {
+CandidateCut::CandidateCut(ConstrExp96& in, const soplex::DVectorReal& sol) {
   assert(in.isSaturated());
   assert(in.getDegree() < INF);
   if (in.getDegree() <= 0) return;
@@ -92,7 +92,7 @@ std::ostream& operator<<(std::ostream& o, const CandidateCut& cc) {
   return o << cc.simpcons << " norm " << cc.norm << " ratSlack " << cc.ratSlack;
 }
 
-LpSolver::LpSolver(Solver& slvr, const intConstr& o) : solver(slvr) {
+LpSolver::LpSolver(Solver& slvr, const ConstrExp32& o) : solver(slvr) {
   assert(INFTY == lp.realParam(lp.INFTY));
 
   if (options.verbosity > 1) std::cout << "c Initializing LP" << std::endl;
@@ -523,7 +523,7 @@ void LpSolver::resetBasis() {
   lp.clearBasis();  // and hope next iteration works fine
 }
 
-void LpSolver::convertConstraint(intConstr& c, soplex::DSVectorReal& row, Val& rhs) {
+void LpSolver::convertConstraint(ConstrExp32& c, soplex::DSVectorReal& row, Val& rhs) {
   assert(row.max() >= (int)c.vars.size());
   rhs = c.getRhs();
   for (Var v : c.vars) {
@@ -535,7 +535,7 @@ void LpSolver::convertConstraint(intConstr& c, soplex::DSVectorReal& row, Val& r
   assert(validRhs(rhs));
 }
 
-void LpSolver::addConstraint(intConstr& c, bool removable) {
+void LpSolver::addConstraint(ConstrExp32& c, bool removable) {
   ID id = c.id;
   assert(id != ID_Trivial);
   toRemove.erase(id);

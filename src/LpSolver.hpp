@@ -30,7 +30,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include "SimpleCons.hpp"
+#include "ConstrSimple.hpp"
 #include "SolverStructs.hpp"
 #include "aux.hpp"
 #include "globals.hpp"
@@ -68,7 +68,7 @@ struct CandidateCut {
   double ratSlack = 0;
 
   CandidateCut(){};
-  CandidateCut(int128Constr& in, const soplex::DVectorReal& sol);
+  CandidateCut(ConstrExp96& in, const soplex::DVectorReal& sol);
   CandidateCut(const Constr& in, CRef cr, const soplex::DVectorReal& sol);
   double cosOfAngleTo(const CandidateCut& other) const;
 
@@ -102,11 +102,11 @@ class LpSolver {
 
   std::vector<CandidateCut> candidateCuts;
 
-  int128Constr lcc;
-  intConstr ic;
+  ConstrExp96 lcc;
+  ConstrExp32 ic;
 
  public:
-  LpSolver(Solver& solver, const intConstr& objective);
+  LpSolver(Solver& solver, const ConstrExp32& objective);
   void setNbVariables(int n);
 
   // @return: false if inconsistency detected, true otherwise
@@ -115,7 +115,7 @@ class LpSolver {
   // @return: false if inconsistency detected, true otherwise
   void inProcess();
 
-  void addConstraint(intConstr& c, bool removable);
+  void addConstraint(ConstrExp32& c, bool removable);
   void addConstraint(CRef cr, bool removable);
   void removeConstraint(ID id);
 
@@ -128,7 +128,7 @@ class LpSolver {
   LpStatus _checkFeasibility(bool inProcessing);
   void _inProcess();
 
-  void convertConstraint(intConstr& c, soplex::DSVectorReal& row, Val& rhs);
+  void convertConstraint(ConstrExp32& c, soplex::DSVectorReal& row, Val& rhs);
   void resetBasis();
   void createLinearCombinationFarkas(soplex::DVectorReal& mults);
   CandidateCut createLinearCombinationGomory(soplex::DVectorReal& mults);
@@ -150,7 +150,7 @@ class LpSolver {
 
 class LpSolver {
  public:
-  LpSolver(Solver& solver, const intConstr& objective) {
+  LpSolver(Solver& solver, const ConstrExp32& objective) {
     _unused(solver);
     _unused(objective);
   };
@@ -162,7 +162,7 @@ class LpSolver {
   }
   void inProcess() {}
 
-  void addConstraint(intConstr& c, bool removable) {
+  void addConstraint(ConstrExp32& c, bool removable) {
     _unused(c);
     _unused(removable);
   }

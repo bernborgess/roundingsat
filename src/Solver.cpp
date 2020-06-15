@@ -78,7 +78,7 @@ void Solver::init() {
   logConstraint.initializeLogging(logger);
 }
 
-void Solver::initLP(intConstr& objective) {
+void Solver::initLP(ConstrExp32& objective) {
   if (options.lpPivotRatio == 0) return;
   bool pureCNF = objective.vars.size() == 0;
   for (CRef cr : constraints) {
@@ -472,7 +472,7 @@ bool Solver::analyze() {
   return true;
 }
 
-bool Solver::extractCore(const IntSet& assumptions, intConstr& outCore, Lit l_assump) {
+bool Solver::extractCore(const IntSet& assumptions, ConstrExp32& outCore, Lit l_assump) {
   assert(!conflConstraint.isReset());
   outCore.reset();
 
@@ -556,7 +556,7 @@ bool Solver::extractCore(const IntSet& assumptions, intConstr& outCore, Lit l_as
 // ---------------------------------------------------------------------
 // Constraint management
 
-CRef Solver::attachConstraint(intConstr& constraint, bool locked) {
+CRef Solver::attachConstraint(ConstrExp32& constraint, bool locked) {
   assert(constraint.isSortedInDecreasingCoefOrder());
   assert(constraint.isSaturated());
   assert(constraint.hasNoZeroes());
@@ -780,7 +780,7 @@ ID Solver::addInputConstraint(bool addToLP) {
   return id;
 }
 
-ID Solver::addConstraint(const intConstr& c, Origin orig, bool addToLP) {
+ID Solver::addConstraint(const ConstrExp32& c, Origin orig, bool addToLP) {
   // NOTE: copy to tmpConstraint guarantees original constraint is not changed and does not need logger
   c.copyTo(tmpConstraint);
   tmpConstraint.orig = orig;
@@ -956,7 +956,7 @@ void Solver::presolve() {
  * @param solution: if SAT, full variable assignment satisfying all constraints, otherwise untouched
  */
 // TODO: use a coroutine / yield instead of a SolveState return value
-SolveState Solver::solve(const IntSet& assumptions, intConstr& core, std::vector<bool>& solution) {
+SolveState Solver::solve(const IntSet& assumptions, ConstrExp32& core, std::vector<bool>& solution) {
   backjumpTo(0);  // ensures assumptions are reset
   if (firstRun) presolve();
   std::vector<int> assumptions_lim = {0};

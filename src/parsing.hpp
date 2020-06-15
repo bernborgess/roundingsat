@@ -45,9 +45,9 @@ int read_number(const std::string& s) {  // TODO: should also read larger number
   return answer;
 }
 
-void opb_read(std::istream& in, Solver& solver, intConstr& objective) {
+void opb_read(std::istream& in, Solver& solver, ConstrExp32& objective) {
   assert(objective.isReset());
-  intConstr input;  // TODO: make input use multiple precision to avoid overflow errors
+  ConstrExp32 input;  // TODO: make input use multiple precision to avoid overflow errors
   input.resize(solver.getNbVars() + 1);
   bool first_constraint = true;
   _unused(first_constraint);
@@ -114,9 +114,9 @@ void opb_read(std::istream& in, Solver& solver, intConstr& objective) {
   solver.setNbOrigVars(solver.getNbVars());
 }
 
-void wcnf_read(std::istream& in, long long top, Solver& solver, intConstr& objective) {
+void wcnf_read(std::istream& in, long long top, Solver& solver, ConstrExp32& objective) {
   assert(objective.isReset());
-  intConstr input;
+  ConstrExp32 input;
   input.resize(solver.getNbVars() + 1);
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == 'c')
@@ -148,7 +148,7 @@ void wcnf_read(std::istream& in, long long top, Solver& solver, intConstr& objec
 }
 
 void cnf_read(std::istream& in, Solver& solver) {
-  intConstr input;
+  ConstrExp32 input;
   input.resize(solver.getNbVars() + 1);
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == 'c')
@@ -165,7 +165,7 @@ void cnf_read(std::istream& in, Solver& solver) {
   solver.setNbOrigVars(solver.getNbVars());
 }
 
-void file_read(std::istream& in, Solver& solver, intConstr& objective) {
+void file_read(std::istream& in, Solver& solver, ConstrExp32& objective) {
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == 'c') continue;
     if (line[0] == 'p') {

@@ -62,9 +62,9 @@ set(header_files
     src/run.hpp
     src/typedefs.hpp
     src/globals.hpp
-    src/SimpleCons.hpp
+    src/ConstrSimple.hpp
     src/parsing.hpp
-    src/Constraint.hpp
+    src/ConstrExp.hpp
     src/quit.hpp
 )
 

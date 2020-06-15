@@ -65,7 +65,7 @@ void ConstraintAllocator::capacity(uint32_t min_cap) {
 }
 
 // TODO: allow constraints with 10^18 bit degree
-CRef ConstraintAllocator::alloc(intConstr& constraint, bool locked) {
+CRef ConstraintAllocator::alloc(ConstrExp32& constraint, bool locked) {
   assert(constraint.getDegree() > 0);
   assert(constraint.getDegree() < INF);
   assert(constraint.isSaturated());

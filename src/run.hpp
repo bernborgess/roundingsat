@@ -30,18 +30,18 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include "Constraint.hpp"
+#include "ConstrExp.hpp"
 #include "Solver.hpp"
 #include "typedefs.hpp"
 
 namespace run {
 std::vector<bool> solution;
-intConstr aux;
-intConstr core;
+ConstrExp32 aux;
+ConstrExp32 core;
 Val upper_bound;
 Val lower_bound;
 Solver solver;
-intConstr objective;
+ConstrExp32 objective;
 
 inline bool foundSolution() { return solution.size() > 0; }
 
@@ -53,7 +53,7 @@ inline void printObjBounds(Val lower, Val upper) {
     printf("c bounds          - >= %10lld\n", lower);
 }
 
-void handleNewSolution(const intConstr& origObj, ID& lastUpperBound) {
+void handleNewSolution(const ConstrExp32& origObj, ID& lastUpperBound) {
   Val prev_val = upper_bound;
   _unused(prev_val);
   upper_bound = -origObj.getRhs();
@@ -72,12 +72,12 @@ void handleNewSolution(const intConstr& origObj, ID& lastUpperBound) {
 struct LazyVar {
   int mult;  // TODO: add long long to int check?
   Val rhs;
-  std::vector<Lit> lhs;  // TODO: refactor lhs and introducedVars to one SimpleCons
+  std::vector<Lit> lhs;  // TODO: refactor lhs and introducedVars to one ConstrSimple
   std::vector<Var> introducedVars;
   ID atLeastID = ID_Undef;
   ID atMostID = ID_Undef;
 
-  LazyVar(intConstr& core, Var startvar, int m) : mult(m), rhs(core.getDegree()), introducedVars{startvar} {
+  LazyVar(ConstrExp32& core, Var startvar, int m) : mult(m), rhs(core.getDegree()), introducedVars{startvar} {
     assert(core.isCardinality());
     lhs.reserve(core.vars.size());
     for (Var v : core.vars) lhs.push_back(core.getLit(v));
@@ -134,7 +134,7 @@ std::ostream& operator<<(std::ostream& o, const std::shared_ptr<LazyVar> lv) {
   return o;
 }
 
-void checkLazyVariables(longConstr& reformObj, std::vector<std::shared_ptr<LazyVar>>& lazyVars) {
+void checkLazyVariables(ConstrExp64& reformObj, std::vector<std::shared_ptr<LazyVar>>& lazyVars) {
   for (int i = 0; i < (int)lazyVars.size(); ++i) {
     std::shared_ptr<LazyVar> lv = lazyVars[i];
     if (reformObj.getLit(lv->getCurrentVar()) == 0) {
@@ -158,7 +158,7 @@ void checkLazyVariables(longConstr& reformObj, std::vector<std::shared_ptr<LazyV
   }
 }
 
-void addLowerBound(const intConstr& origObj, Val lower_bound, ID& lastLowerBound) {
+void addLowerBound(const ConstrExp32& origObj, Val lower_bound, ID& lastLowerBound) {
   origObj.copyTo(aux);
   aux.addRhs(lower_bound);
   solver.dropExternal(lastLowerBound, true, true, true);
@@ -167,7 +167,7 @@ void addLowerBound(const intConstr& origObj, Val lower_bound, ID& lastLowerBound
   if (lastLowerBound == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
 }
 
-void handleInconsistency(longConstr& reformObj, const intConstr& origObj,
+void handleInconsistency(ConstrExp64& reformObj, const ConstrExp32& origObj,
                          std::vector<std::shared_ptr<LazyVar>>& lazyVars, ID& lastLowerBound) {
   // take care of derived unit lits and remove zeroes
   reformObj.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), false);
@@ -239,7 +239,7 @@ void handleInconsistency(longConstr& reformObj, const intConstr& origObj,
   addLowerBound(origObj, lower_bound, lastLowerBound);
 }
 
-void optimize(intConstr& origObj) {
+void optimize(ConstrExp32& origObj) {
   assert(origObj.vars.size() > 0);
   // NOTE: -origObj.getDegree() keeps track of the offset of the reformulated objective (or after removing unit lits)
   origObj.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), false);
@@ -252,7 +252,7 @@ void optimize(intConstr& origObj) {
   if (opt_coef_sum >= (Val)INF)
     quit::exit_ERROR({"Sum of coefficients in objective function exceeds 10^9."});  // TODO: remove restriction
 
-  longConstr reformObj;
+  ConstrExp64 reformObj;
   origObj.copyTo(reformObj);
   ID lastUpperBound = ID_Undef;
   ID lastLowerBound = ID_Undef;
@@ -313,7 +313,7 @@ void optimize(intConstr& origObj) {
         assert(lastLowerBound != ID_Undef);
         assert(lastLowerBound != ID_Unsat);
         aux.initializeLogging(solver.logger);
-        longConstr coreAggregate;
+        ConstrExp64 coreAggregate;
         coreAggregate.initializeLogging(solver.logger);
         coreAggregate.resize(solver.getNbVars() + 1);
         origObj.copyTo(aux);

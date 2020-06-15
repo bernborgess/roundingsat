@@ -31,7 +31,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #pragma once
 
 #include <ostream>
-#include "Constraint.hpp"
+#include "ConstrExp.hpp"
 #include "typedefs.hpp"
 
 struct CRef {
@@ -98,8 +98,8 @@ struct Constr {  // internal solver constraint optimized for fast propagation
   double strength() const;
   void undoFalsified(int i);
   template <typename S, typename L>
-  inline void toConstraint(Constraint<S, L>& out) const {
-    assert(out.isReset());  // don't use a Constraint used by other stuff
+  inline void toConstraint(ConstrExp<S, L>& out) const {
+    assert(out.isReset());  // don't use a ConstrExp used by other stuff
     out.addRhs(degree);
     for (size_t i = 0; i < size(); ++i) {
       assert(coef(i) != 0);
@@ -111,8 +111,8 @@ struct Constr {  // internal solver constraint optimized for fast propagation
     if (out.plogger) out.resetBuffer(id);
   }
   template <typename CF, typename DG>
-  SimpleCons<CF, DG> toSimpleCons() const {
-    SimpleCons<CF, DG> result;
+  ConstrSimple<CF, DG> toSimpleCons() const {
+    ConstrSimple<CF, DG> result;
     result.rhs = degree;
     result.id = id;
     result.orig = getOrigin();
@@ -137,7 +137,7 @@ struct ConstraintAllocator {
   uint32_t at = 0, cap = 0;
   uint32_t wasted = 0;  // for GC
   void capacity(uint32_t min_cap);
-  CRef alloc(intConstr& constraint, bool locked);
+  CRef alloc(ConstrExp32& constraint, bool locked);
   Constr& operator[](CRef cr) { return (Constr&)*(memory + cr.ofs); }
   const Constr& operator[](CRef cr) const { return (Constr&)*(memory + cr.ofs); }
 };

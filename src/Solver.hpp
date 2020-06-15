@@ -54,9 +54,9 @@ class Solver {
   ConstraintAllocator ca;
   IntSet tmpSet;
   IntSet actSet;
-  intConstr tmpConstraint;
-  bigConstr conflConstraint;  // functions as old confl_data
-  intConstr logConstraint;
+  ConstrExp32 tmpConstraint;
+  ConstrExpArb conflConstraint;  // functions as old confl_data
+  ConstrExp32 logConstraint;
   OrderHeap order_heap;
 
   std::vector<CRef> constraints;
@@ -87,7 +87,7 @@ class Solver {
 
   Solver();
   void init();                        // call after having read options
-  void initLP(intConstr& objective);  // TODO: fix when decoupling Solver and LpSolver
+  void initLP(ConstrExp32& objective);  // TODO: fix when decoupling Solver and LpSolver
 
   int getNbVars() const { return n; }
   void setNbVars(long long nvars);
@@ -98,11 +98,11 @@ class Solver {
   const std::vector<int>& getPos() const { return Pos; }
   int decisionLevel() const { return trail_lim.size(); }
 
-  ID addConstraint(const intConstr& c, Origin orig, bool addToLP);
+  ID addConstraint(const ConstrExp32& c, Origin orig, bool addToLP);
   ID addConstraint(const SimpleConsInt& c, Origin orig, bool addToLP);
   void dropExternal(ID id, bool erasable, bool forceDelete, bool removeFromLP);
   int getNbConstraints() const { return constraints.size(); }
-  void getIthConstraint(int i, intConstr& out) const { return ca[constraints[i]].toConstraint(out); }
+  void getIthConstraint(int i, ConstrExp32& out) const { return ca[constraints[i]].toConstraint(out); }
 
   /**
    * @return:
@@ -116,7 +116,7 @@ class Solver {
    * 	if core is the empty constraint, at least one assumption is falsified at root
    * @param solution: if SAT, full variable assignment satisfying all constraints, otherwise untouched
    */
-  SolveState solve(const IntSet& assumptions, intConstr& core, std::vector<bool>& solution);
+  SolveState solve(const IntSet& assumptions, ConstrExp32& core, std::vector<bool>& solution);
 
  private:
   void presolve();
@@ -150,14 +150,14 @@ class Solver {
 
   void recomputeLBD(Constr& C);
   bool analyze();
-  bool extractCore(const IntSet& assumptions, intConstr& outCore, Lit l_assump = 0);
+  bool extractCore(const IntSet& assumptions, ConstrExp32& outCore, Lit l_assump = 0);
 
   // ---------------------------------------------------------------------
   // Constraint management
 
-  CRef attachConstraint(intConstr& constraint, bool locked);
+  CRef attachConstraint(ConstrExp32& constraint, bool locked);
   template <typename S, typename L>
-  void learnConstraint(Constraint<S, L>& c, Origin orig) {
+  void learnConstraint(ConstrExp<S, L>& c, Origin orig) {
     assert(orig == Origin::LEARNED || orig == Origin::FARKAS || orig == Origin::LEARNEDFARKAS ||
            orig == Origin::GOMORY);
     c.orig = orig;

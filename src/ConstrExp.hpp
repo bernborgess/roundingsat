@@ -34,9 +34,9 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <functional>
 #include <memory>
 #include <sstream>
+#include "ConstrSimple.hpp"
 #include "IntSet.hpp"
 #include "Logger.hpp"
-#include "SimpleCons.hpp"
 #include "Stats.hpp"
 #include "aux.hpp"
 #include "globals.hpp"
@@ -45,7 +45,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
 
 template <typename SMALL, typename LARGE>  // LARGE should be able to fit sums of SMALL
-struct Constraint {
+struct ConstrExp {
   LARGE degree = 0;
   LARGE rhs = 0;
   std::vector<Var> vars;
@@ -93,10 +93,10 @@ struct Constraint {
   }
 
  public:
-  Constraint() { reset(); }
+  ConstrExp() { reset(); }
 
   template <typename CF, typename DG>
-  void init(const SimpleCons<CF, DG>& sc) {
+  void init(const ConstrSimple<CF, DG>& sc) {
     // TODO: assert whether CF/DG can fit SMALL/LARGE? Not always possible.
     assert(isReset());
     addRhs(sc.rhs);
@@ -109,7 +109,7 @@ struct Constraint {
   }
 
   template <typename S, typename L>
-  void copyTo(Constraint<S, L>& out) const {
+  void copyTo(ConstrExp<S, L>& out) const {
     // TODO: assert whether S/L can fit SMALL/LARGE? Not always possible.
     assert(out.isReset());
     out.degree = static_cast<L>(degree);
@@ -131,8 +131,8 @@ struct Constraint {
   }
 
   template <typename CF, typename DG>
-  SimpleCons<CF, DG> toSimpleCons() {
-    SimpleCons<CF, DG> result;
+  ConstrSimple<CF, DG> toSimpleCons() {
+    ConstrSimple<CF, DG> result;
     result.rhs = static_cast<DG>(getRhs());
     result.terms.reserve(vars.size());
     for (Var v : vars)
@@ -362,7 +362,7 @@ struct Constraint {
   }
 
   template <typename S, typename L>
-  void addUp(Constraint<S, L>& c, const SMALL& cmult = 1, const SMALL& thismult = 1) {
+  void addUp(ConstrExp<S, L>& c, const SMALL& cmult = 1, const SMALL& thismult = 1) {
     assert(cmult >= 1);
     assert(thismult >= 1);
     if (plogger) proofBuffer << proofMult(thismult) << c.proofBuffer.str() << proofMult(cmult) << "+ ";
@@ -791,7 +791,7 @@ struct Constraint {
 };
 
 template <typename S, typename L>
-std::ostream& operator<<(std::ostream& o, const Constraint<S, L>& C) {
+std::ostream& operator<<(std::ostream& o, const ConstrExp<S, L>& C) {
   std::vector<Var> vars = C.vars;
   std::sort(vars.begin(), vars.end(), [](Var v1, Var v2) { return v1 < v2; });
   for (Var v : vars) {
@@ -802,7 +802,7 @@ std::ostream& operator<<(std::ostream& o, const Constraint<S, L>& C) {
   return o;
 }
 
-using intConstr = Constraint<int, long long>;
-using longConstr = Constraint<long long, __int128>;
-using int128Constr = Constraint<__int128, __int128>;
-using bigConstr = Constraint<bigint, bigint>;
+using ConstrExp32 = ConstrExp<int, long long>;
+using ConstrExp64 = ConstrExp<long long, __int128>;
+using ConstrExp96 = ConstrExp<__int128, __int128>;
+using ConstrExpArb = ConstrExp<bigint, bigint>;
