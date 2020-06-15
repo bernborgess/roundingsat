@@ -23,26 +23,60 @@ declare -a arr_default=(
 "opb/dec"
 )
 
+declare -a arr_dec=(
+"cnf/ec_rand4regsplit-v030-n1.cnf_UNSATISFIABLE"
+"opb/dec/air01.0.s.opb_SATISFIABLE"
+"opb/dec/air01.0.u.opb_UNSATISFIABLE"
+"opb/dec/air02.0.s.opb_SATISFIABLE"
+"opb/dec/air02.0.u.opb_UNSATISFIABLE"
+"opb/dec/air06.0.s.opb_SATISFIABLE"
+"opb/dec/air06.0.u.opb_UNSATISFIABLE"
+"opb/dec/bm23.0.s.opb_SATISFIABLE"
+"opb/dec/bm23.0.u.opb_UNSATISFIABLE"
+"opb/dec/cracpb1.0.s.opb_SATISFIABLE"
+"opb/dec/cracpb1.0.u.opb_UNSATISFIABLE"
+"opb/dec/diamond.0.d.opb_UNSATISFIABLE"
+"opb/dec/lp4l.0.s.opb_SATISFIABLE"
+"opb/dec/lp4l.0.u.opb_UNSATISFIABLE"
+"opb/dec/p0040.0.s.opb_SATISFIABLE"
+"opb/dec/p0040.0.u.opb_UNSATISFIABLE"
+"opb/dec/p0291.0.s.opb_SATISFIABLE"
+"opb/dec/p0291.0.u.opb_UNSATISFIABLE"
+"opb/dec/pipex.0.s.opb_SATISFIABLE"
+"opb/dec/pipex.0.u.opb_UNSATISFIABLE"
+"opb/dec/sentoy.0.s.opb_SATISFIABLE"
+"opb/dec/sentoy.0.u.opb_UNSATISFIABLE"
+"opb/dec/stein9.0.s.opb_SATISFIABLE"
+"opb/dec/stein9.0.u.opb_UNSATISFIABLE"
+"opb/dec/stein15.0.s.opb_SATISFIABLE"
+"opb/dec/stein15.0.u.opb_UNSATISFIABLE"
+)
+
 echo "########## simple #########"
 echo ""
-for folder in "${arr_default[@]}"; do
-    echo $folder
-    for formula in $SCRIPTPATH/instances/$folder/*; do
-        echo "running $formula"
-        logfile=${formula/instances/logs}
-        mkdir -p `dirname $logfile`
-        echo -n "" > $logfile.proof
-        echo -n "" > $logfile.formula
-        timeout $time $binary $formula --proof-log=$logfile > /dev/null
-        echo "verifying $logfile"
-        wc -l $logfile.proof
-        veripb $logfile.formula $logfile.proof -d --arbitraryPrecision
-        errors=`expr $? + $errors`
-        echo $errors
-        tested=`expr 1 + $tested`
-        echo $tested
-        echo ""
-    done
+
+for j in "${arr_dec[@]}"; do
+    formula="$(cut -d'_' -f1 <<<$j)"
+    formula="$SCRIPTPATH/instances/$formula"
+    obj="$(cut -d'_' -f2 <<<$j)"
+    echo "running $formula"
+    logfile=${formula/instances/logs}
+    mkdir -p `dirname $logfile`
+    echo -n "" > $logfile.proof
+    echo -n "" > $logfile.formula
+    output=`timeout $time $binary $formula --proof-log=$logfile 2>&1 | awk '/^o|SATISFIABLE|.*Assertion.*/ {print $2}'`
+    if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
+        errors=`expr 1000 + $errors`
+        echo "wrong output: $output vs $obj"
+    fi
+    echo "verifying $logfile"
+    wc -l $logfile.proof
+    veripb $logfile.formula $logfile.proof -d --arbitraryPrecision
+    errors=`expr $? + $errors`
+    echo $errors
+    tested=`expr 1 + $tested`
+    echo $tested
+    echo ""
 done
 
 declare -a arr_modes=(
@@ -54,30 +88,31 @@ declare -a arr_modes=(
 )
 
 declare -a arr_opt=(
-"enigma_0"
-"stein9_5"
-"stein15_9"
-"stein27_18"
-"stein45_30"
-"p0033_3089"
-"p0040_62027"
-"p0201_7615"
-"p0282_258411"
-"p0291_7609041"
-"p0548_8691"
-"mod008_307"
-"mod010_6548"
-"air01_6796"
-"air02_7810"
-"air03_340160"
-"air06_49649"
-"pipex_788263"
-"sentoy_-7772"
-"bm23_34"
-"l152lav_4722"
-"lp4l_2967"
-"lseu_1120"
-"cracpb1_22199"
+"maxsat/driverlog01bc.wcsp.dir.wcnf_2245"
+"opb/opt/enigma.opb.opb_0"
+"opb/opt/stein9.opb_5"
+"opb/opt/stein15.opb_9"
+"opb/opt/stein27.opb_18"
+"opb/opt/stein45.opb_30"
+"opb/opt/p0033.opb_3089"
+"opb/opt/p0040.opb_62027"
+"opb/opt/p0201.opb_7615"
+"opb/opt/p0282.opb_258411"
+"opb/opt/p0291.opb_7609041"
+"opb/opt/p0548.opb_8691"
+"opb/opt/mod008.opb_307"
+"opb/opt/mod010.opb_6548"
+"opb/opt/air01.opb_6796"
+"opb/opt/air02.opb_7810"
+"opb/opt/air03.opb_340160"
+"opb/opt/air06.opb_49649"
+"opb/opt/pipex.opb_788263"
+"opb/opt/sentoy.opb_-7772"
+"opb/opt/bm23.opb_34"
+"opb/opt/l152lav.opb_4722"
+"opb/opt/lp4l.opb_2967"
+"opb/opt/lseu.opb_1120"
+"opb/opt/cracpb1.opb_22199"
 )
 
 for mode in "${arr_modes[@]}"; do
@@ -85,7 +120,7 @@ for mode in "${arr_modes[@]}"; do
     echo ""
     for j in "${arr_opt[@]}"; do
         formula="$(cut -d'_' -f1 <<<$j)"
-        formula="$SCRIPTPATH/instances/opb/opt/$formula.opb"
+        formula="$SCRIPTPATH/instances/$formula"
         obj="$(cut -d'_' -f2 <<<$j)"
         echo "running $formula"
         logfile=${formula/instances/logs}
