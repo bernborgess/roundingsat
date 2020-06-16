@@ -40,10 +40,17 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 class Logger;
 
 enum SolveState { SAT, UNSAT, INCONSISTENT, INTERRUPTED, INPROCESSED, RESTARTED };
-enum WatchStatus { DROPWATCH, KEEPWATCH, CONFLICTING };
 
 class Solver {
   friend class LpSolver;
+  friend class Constr;
+  friend class Clause;
+  friend class Cardinality;
+  template <typename CF, typename DG>
+  friend class Counting;
+  template <typename CF, typename DG>
+  friend class Watched;
+
   // ---------------------------------------------------------------------
   // Members
  private:
@@ -55,7 +62,7 @@ class Solver {
   IntSet tmpSet;
   IntSet actSet;
   ConstrExp32 tmpConstraint;
-  ConstrExp64 conflConstraint;  // functions as old confl_data
+  ConstrExpArb conflConstraint;  // functions as old confl_data
   ConstrExp32 logConstraint;
   OrderHeap order_heap;
 
@@ -80,10 +87,11 @@ class Solver {
   bool firstRun = true;
 
   std::shared_ptr<LpSolver> lpSolver;
-  std::vector<SimpleConsInt> learnedStack;
+  std::vector<ConstrSimple32> learnedStack;
 
  public:
   std::shared_ptr<Logger> logger;
+  ConstrExpStore ceStore;
 
   Solver();
   void init();                          // call after having read options
@@ -98,8 +106,8 @@ class Solver {
   const std::vector<int>& getPos() const { return Pos; }
   int decisionLevel() const { return trail_lim.size(); }
 
-  std::pair<ID, ID> addConstraint(const ConstrExp32& c, Origin orig, bool addToLP);    // formula line id, processed id
-  std::pair<ID, ID> addConstraint(const SimpleConsInt& c, Origin orig, bool addToLP);  // formula line id, processed id
+  std::pair<ID, ID> addConstraint(const ConstrExp32& c, Origin orig, bool addToLP);     // formula line id, processed id
+  std::pair<ID, ID> addConstraint(const ConstrSimple32& c, Origin orig, bool addToLP);  // formula line id, processed id
   void dropExternal(ID id, bool erasable, bool forceDelete, bool removeFromLP);
   int getNbConstraints() const { return constraints.size(); }
   void getIthConstraint(int i, ConstrExp32& out) const { return ca[constraints[i]].toConstraint(out); }
@@ -177,7 +185,7 @@ class Solver {
   // Solving
 
   double luby(double y, int i);
-  Val lhs(Constr& C, const std::vector<bool>& sol);
+  BigVal lhs(Constr& C, const std::vector<bool>& sol);
   bool checksol(const std::vector<bool>& sol);
   Lit pickBranchLit();
 };

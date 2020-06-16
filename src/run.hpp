@@ -54,8 +54,7 @@ inline void printObjBounds(Val lower, Val upper) {
 }
 
 ID handleNewSolution(const ConstrExp32& origObj, ID& lastUpperBound) {
-  Val prev_val = upper_bound;
-  _unused(prev_val);
+  [[maybe_unused]] Val prev_val = upper_bound;
   upper_bound = -origObj.getRhs();
   for (Var v : origObj.vars) upper_bound += origObj.coefs[v] * solution[v];
   assert(upper_bound < prev_val);
@@ -96,7 +95,7 @@ struct LazyVar {
 
   void addAtLeastConstraint() {
     // X >= k + y1 + ... + yi
-    SimpleConsInt sc;
+    ConstrSimple32 sc;
     sc.rhs = rhs;
     sc.terms.reserve(lhs.size() + introducedVars.size());
     for (Lit l : lhs) sc.terms.emplace_back(1, l);
@@ -109,7 +108,7 @@ struct LazyVar {
   void addAtMostConstraint() {
     // X =< k + y1 + ... + yi-1 + (1+n-k-i)yi
     assert(getCurrentVar() == introducedVars.back());
-    SimpleConsInt sc;
+    ConstrSimple32 sc;
     sc.rhs = -rhs;
     sc.terms.reserve(lhs.size() + introducedVars.size());
     for (Lit l : lhs) sc.terms.emplace_back(-1, l);
@@ -175,8 +174,7 @@ ID handleInconsistency(ConstrExp64& reformObj, const ConstrExp32& origObj,
                        std::vector<std::shared_ptr<LazyVar>>& lazyVars, ID& lastLowerBound) {
   // take care of derived unit lits and remove zeroes
   reformObj.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), false);
-  Val prev_lower = lower_bound;
-  _unused(prev_lower);
+  [[maybe_unused]] Val prev_lower = lower_bound;
   lower_bound = -reformObj.getDegree();
   if (core.getDegree() == 0) {  // apparently only unit assumptions were derived
     assert(lower_bound > prev_lower);

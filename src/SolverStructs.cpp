@@ -32,20 +32,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Options.hpp"
 #include "globals.hpp"
 
-double Constr::strength() const {
-  if (isSimple()) return size() / (double)degree;
-  double coefsum = 0;
-  for (unsigned int i = 0; i < size(); ++i) coefsum += coef(i);
-  return coefsum / (double)degree;
-}
-
-void Constr::undoFalsified(int i) {
-  assert(!isSimple());
-  assert(isCounting() || isWatched(i));
-  ++stats.NWATCHLOOKUPSBJ;
-  slack += rs::abs(data[i]);
-}
-
 void ConstraintAllocator::capacity(uint32_t min_cap) {
   if (cap >= min_cap) return;
 
@@ -64,47 +50,29 @@ void ConstraintAllocator::capacity(uint32_t min_cap) {
   memory = (uint32_t*)xrealloc(memory, sizeof(uint32_t) * cap);
 }
 
-// TODO: allow constraints with 10^18 bit degree
-CRef ConstraintAllocator::alloc(ConstrExp32& constraint, bool locked, ID id) {
-  assert(constraint.getDegree() > 0);
-  assert(constraint.getDegree() < INF);
-  assert(constraint.isSaturated());
-  // as the constraint is saturated, the coefficients are between 1 and 1e9 as well.
-  assert(!constraint.vars.empty());
-  assert(id > ID_Trivial);
-  assert(constraint.orig != Origin::UNKNOWN);
-  unsigned int length = constraint.vars.size();
-  bool asClause = options.clauseProp && constraint.getDegree() == 1;
-  bool asCard = !asClause && options.cardProp && constraint.isCardinality();
-
-  // note: coefficients can be arbitrarily ordered (we don't sort them in descending order for example)
-  // during maintenance of watches the order will be shuffled.
-  uint32_t old_at = at;
-  at += Constr::sz_constr(length + ((asClause || asCard) ? 0 : length));
-  capacity(at);
-  Constr* constr = (Constr*)(memory + old_at);
-  new (constr) Constr;
-  constr->id = id;
-  constr->act = 0;
-  constr->degree = constraint.getDegree();
-  constr->header = {locked, (unsigned int)constraint.orig, 0x07FFFFFF, 0, 0, length};
-  constr->ntrailpops = -1;
-  constr->slack =
-      asClause ? std::numeric_limits<Val>::min() : (asCard ? std::numeric_limits<Val>::min() + 1 : -constr->degree);
-  constr->watchIdx = 0;
-  assert(asClause == constr->isClause());
-  assert(asCard == constr->isCard());
-  for (unsigned int i = 0; i < length; ++i) {
-    Var v = constraint.vars[i];
-    assert(constraint.getLit(v) != 0);
-    if (constr->isSimple())
-      constr->data[i] = constraint.getLit(v);
-    else {
-      constr->data[(i << 1)] = rs::abs(constraint.coefs[v]);
-      constr->data[(i << 1) + 1] = constraint.getLit(v);
-    }
+CRef ConstraintAllocator::alloc(unsigned int nTerms, ConstrType type) {
+  Constr* constr = (Constr*)(memory + at);
+  switch (type) {
+    case ConstrType::CLAUSE:
+      new (constr) Clause;
+      break;
+    case ConstrType::CARDINALITY:
+      new (constr) Cardinality;
+      break;
+    case ConstrType::COUNTING:
+      new (constr) Counting32;
+      break;
+    case ConstrType::WATCHED:
+      new (constr) Watched32;
+      break;
+    default:
+      assert(false);
   }
-  return CRef{old_at};
+  CRef result = CRef{at};
+  at += constr->getMemSize(nTerms);
+  capacity(at);
+
+  return result;
 }
 
 // segment tree (fast implementation of priority queue).

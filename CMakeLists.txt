@@ -2,13 +2,13 @@ cmake_minimum_required(VERSION 3.5)
 project(RoundingSat2)
 
 set(CMAKE_CXX_STANDARD 17)
-#find_package(Boost REQUIRED)
+find_package(Boost REQUIRED)
 
 if (NOT CMAKE_BUILD_TYPE)
     message(WARNING "Please use -DCMAKE_BUILD_TYPE=[build_type] where [build_type] is one of: Debug, Release, RelWithDebInfo and MinSizeRel")
 endif()
 
-set(build_static "ON"
+set(build_static "OFF"
     CACHE STRING "Build and use static libraries.")
 
 set(profile_flags "OFF"
@@ -64,6 +64,8 @@ set(source_files
     src/quit.cpp
     src/LpSolver.cpp
     src/SolverStructs.cpp
+    src/Constr.cpp
+    src/ConstrExp.cpp
 )
 
 set(header_files
@@ -82,6 +84,7 @@ set(header_files
     src/parsing.hpp
     src/ConstrExp.hpp
     src/quit.hpp
+    src/Constr.hpp
 )
 
 set(all_files ${source_files} ${header_files})

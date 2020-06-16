@@ -49,8 +49,7 @@ void opb_read(std::istream& in, Solver& solver, ConstrExp32& objective) {
   assert(objective.isReset());
   ConstrExp32 input;  // TODO: make input use multiple precision to avoid overflow errors
   input.resize(solver.getNbVars() + 1);
-  bool first_constraint = true;
-  _unused(first_constraint);
+  [[maybe_unused]] bool first_constraint = true;
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == '*') continue;
     for (char& c : line)

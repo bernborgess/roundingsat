@@ -62,13 +62,13 @@ struct AdditionData {
 };
 
 struct CandidateCut {
-  SimpleConsInt simpcons;
+  ConstrSimple32 simpcons;
   CRef cr = CRef_Undef;
   double norm = 1;
   double ratSlack = 0;
 
   CandidateCut(){};
-  CandidateCut(ConstrExp96& in, const soplex::DVectorReal& sol);
+  CandidateCut(ConstrExpArb& in, const soplex::DVectorReal& sol);
   CandidateCut(const Constr& in, CRef cr, const soplex::DVectorReal& sol);
   double cosOfAngleTo(const CandidateCut& other) const;
 
@@ -77,6 +77,7 @@ struct CandidateCut {
 };
 std::ostream& operator<<(std::ostream& o, const CandidateCut& cc);
 
+class Solver;
 class LpSolver {
   soplex::SoPlex lp;
   Solver& solver;
@@ -102,7 +103,7 @@ class LpSolver {
 
   std::vector<CandidateCut> candidateCuts;
 
-  ConstrExp96 lcc;
+  ConstrExpArb lcc;
   ConstrExp32 ic;
 
  public:
@@ -150,27 +151,15 @@ class LpSolver {
 
 class LpSolver {
  public:
-  LpSolver(Solver& solver, const ConstrExp32& objective) {
-    _unused(solver);
-    _unused(objective);
-  };
-  void setNbVariables(int n) { _unused(n); };
+  LpSolver([[maybe_unused]] Solver& solver, [[maybe_unused]] const ConstrExp32& objective){};
+  void setNbVariables([[maybe_unused]] int n){};
 
-  LpStatus checkFeasibility(bool inProcessing = false) {
-    _unused(inProcessing);
-    return LpStatus::UNDETERMINED;
-  }
+  LpStatus checkFeasibility([[maybe_unused]] bool inProcessing = false) { return LpStatus::UNDETERMINED; }
   void inProcess() {}
 
-  void addConstraint(ConstrExp32& c, bool removable) {
-    _unused(c);
-    _unused(removable);
-  }
-  void addConstraint(CRef cr, bool removable) {
-    _unused(cr);
-    _unused(removable);
-  }
-  void removeConstraint(ID id) { _unused(id); }
+  void addConstraint([[maybe_unused]] ConstrExp32& c, [[maybe_unused]] bool removable) {}
+  void addConstraint([[maybe_unused]] CRef cr, [[maybe_unused]] bool removable) {}
+  void removeConstraint([[maybe_unused]] ID id) {}
 };
 
 #endif  // WITHSOPLEX

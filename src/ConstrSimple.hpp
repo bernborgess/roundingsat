@@ -37,6 +37,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 template <typename CF>
 struct Term {
+  Term() : c(0), l(0) {}
   Term(const CF& x, Lit y) : c(x), l(y) {}
   CF c;
   Lit l;
@@ -55,7 +56,7 @@ struct ConstrSimple {
   std::string proofLine = std::to_string(ID_Trivial) + " ";
 
   void toNormalFormLit() {
-    for (auto& t : terms) {
+    for (Term<CF>& t : terms) {
       if (t.c < 0) {
         rhs -= t.c;
         t.c = -t.c;
@@ -65,7 +66,7 @@ struct ConstrSimple {
   }
 
   void toNormalFormVar() {
-    for (auto& t : terms) {
+    for (Term<CF>& t : terms) {
       if (t.l < 0) {
         rhs -= t.c;
         t.c = -t.c;
@@ -77,8 +78,8 @@ struct ConstrSimple {
 
 template <typename CF, typename DG>
 inline std::ostream& operator<<(std::ostream& o, const ConstrSimple<CF, DG>& sc) {
-  for (auto& t : sc.terms) o << "+ " << t << " ";
+  for (const Term<CF>& t : sc.terms) o << "+ " << t << " ";
   return o << ">= " << sc.rhs;
 }
 
-using SimpleConsInt = ConstrSimple<int, long long>;
+using ConstrSimple32 = ConstrSimple<int, long long>;

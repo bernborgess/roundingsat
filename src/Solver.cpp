@@ -30,6 +30,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "Solver.hpp"
 #include <cmath>
+#include "Constr.hpp"
 #include "aux.hpp"
 #include "globals.hpp"
 
@@ -42,7 +43,6 @@ Solver::Solver() : order_heap(activity) {
   ca.cap = 0;
   ca.wasted = 0;
   ca.capacity(1024 * 1024);  // 4MB
-  assert(sizeof(Constr) == 12 * sizeof(uint32_t));
 }
 
 void Solver::setNbVars(long long nvars) {
@@ -55,6 +55,7 @@ void Solver::setNbVars(long long nvars) {
   Reason.resize(nvars + 1, CRef_Undef);
   activity.resize(nvars + 1, 1 / actLimitV);
   phase.resize(nvars + 1);
+  ceStore.resize(nvars + 1);
   tmpConstraint.resize(nvars + 1);
   conflConstraint.resize(nvars + 1);
   logConstraint.resize(nvars + 1);
@@ -83,7 +84,7 @@ void Solver::initLP(ConstrExp32& objective) {
   bool pureCNF = objective.vars.size() == 0;
   for (CRef cr : constraints) {
     if (!pureCNF) break;
-    pureCNF = ca[cr].isClause();
+    pureCNF = (ca[cr].degree() == 1);
   }
   if (pureCNF) return;
   lpSolver = std::make_shared<LpSolver>(*this, objective);
@@ -150,7 +151,7 @@ void Solver::undoOne() {
   Lit l = trail.back();
   if (qhead == (int)trail.size()) {
     for (const Watch& w : adj[-l])
-      if (w.idx >= 0 && w.idx % 2 == 0) ca[w.cref].undoFalsified(w.idx);
+      if (w.idx >= INF) ca[w.cref].undoFalsified(w.idx);
     --qhead;
   }
   Var v = toVar(l);
@@ -190,7 +191,7 @@ bool Solver::runPropagation(bool onlyUnitPropagation) {
     for (int it_ws = 0; it_ws < (int)ws.size(); ++it_ws) {
       int idx = ws[it_ws].idx;
       if (idx < 0 && isTrue(Level, idx + INF)) {
-        assert(ca[ws[it_ws].cref].isClause());
+        assert(dynamic_cast<Clause*>(&(ca[ws[it_ws].cref])) != nullptr);
         continue;
       }  // blocked literal check
       CRef cr = ws[it_ws].cref;
@@ -201,7 +202,7 @@ bool Solver::runPropagation(bool onlyUnitPropagation) {
         ++stats.NTRAILPOPS;
         for (int i = 0; i <= it_ws; ++i) {
           const Watch& w = ws[i];
-          if (w.idx >= 0 && w.idx % 2 == 0) ca[w.cref].undoFalsified(w.idx);
+          if (w.idx >= INF) ca[w.cref].undoFalsified(w.idx);
         }
         --qhead;
         Constr& C = ca[cr];
@@ -220,178 +221,12 @@ bool Solver::runPropagation(bool onlyUnitPropagation) {
 }
 
 WatchStatus Solver::checkForPropagation(CRef cr, int& idx, Lit p) {
+  assert(isFalse(Level, p));
   Constr& C = ca[cr];
   if (C.isMarkedForDelete()) return WatchStatus::DROPWATCH;
-
-  assert(isFalse(Level, p));
   ++stats.NWATCHLOOKUPS;
-  int* data = C.data;
 
-  if (C.isClause()) {
-    assert(idx < 0);
-    assert(p == data[0] || p == data[1]);
-    assert(C.size() > 1);
-    int widx = 0;
-    Lit watch = data[0];
-    Lit otherwatch = data[1];
-    if (p == data[1]) {
-      widx = 1;
-      watch = data[1];
-      otherwatch = data[0];
-    }
-    assert(p == watch);
-    assert(p != otherwatch);
-    if (isTrue(Level, otherwatch)) {
-      idx = otherwatch - INF;         // set new blocked literal
-      return WatchStatus::KEEPWATCH;  // constraint is satisfied
-    }
-    const unsigned int Csize = C.size();
-    for (unsigned int i = 2; i < Csize; ++i) {
-      Lit l = data[i];
-      if (!isFalse(Level, l)) {
-        int mid = i / 2 + 1;
-        data[i] = data[mid];
-        data[mid] = watch;
-        data[widx] = l;
-        adj[l].emplace_back(cr, otherwatch - INF);
-        stats.NWATCHCHECKS += i - 1;
-        return WatchStatus::DROPWATCH;
-      }
-    }
-    stats.NWATCHCHECKS += Csize - 2;
-    assert(isFalse(Level, watch));
-    for (unsigned int i = 2; i < Csize; ++i) assert(isFalse(Level, data[i]));
-    if (isFalse(Level, otherwatch))
-      return WatchStatus::CONFLICTING;
-    else {
-      assert(!isTrue(Level, otherwatch));
-      ++stats.NPROPCLAUSE;
-      propagate(otherwatch, cr);
-    }
-    ++stats.NPROPCHECKS;
-    return WatchStatus::KEEPWATCH;
-  }
-
-  assert(idx >= 0);
-  unsigned int& watchIdx = C.watchIdx;
-  const Val degree = C.degree;
-  if (C.isCard()) {
-    assert(idx % 2 == 1);
-    unsigned int widx = idx;
-    widx = widx >> 1;
-    assert(data[widx] == p);
-    const unsigned int Csize = C.size();
-    if (!options.idxProp || C.ntrailpops < stats.NTRAILPOPS) {
-      C.ntrailpops = stats.NTRAILPOPS;
-      watchIdx = degree + 1;
-    }
-    assert(watchIdx > degree);
-    stats.NWATCHCHECKS -= watchIdx;
-    for (; watchIdx < Csize; ++watchIdx) {
-      Lit l = data[watchIdx];
-      if (!isFalse(Level, l)) {
-        unsigned int mid = (watchIdx + degree + 1) / 2;
-        assert(mid <= watchIdx);
-        assert(mid > degree);
-        data[watchIdx] = data[mid];
-        data[mid] = data[widx];
-        data[widx] = l;
-        adj[l].emplace_back(cr, (widx << 1) + 1);
-        stats.NWATCHCHECKS += watchIdx + 1;
-        return WatchStatus::DROPWATCH;
-      }
-    }
-    stats.NWATCHCHECKS += watchIdx;
-    assert(isFalse(Level, data[widx]));
-    for (unsigned int i = degree + 1; i < Csize; ++i) assert(isFalse(Level, data[i]));
-    for (unsigned int i = 0; i <= degree; ++i)
-      if (i != widx && isFalse(Level, data[i])) return WatchStatus::CONFLICTING;
-    for (unsigned int i = 0; i <= degree; ++i) {
-      Lit l = data[i];
-      if (i != widx && !isTrue(Level, l)) {
-        ++stats.NPROPCARD;
-        propagate(l, cr);
-      }
-    }
-    stats.NPROPCHECKS += degree + 1;
-    return WatchStatus::KEEPWATCH;
-  }
-
-  assert(idx % 2 == 0);
-  assert(data[idx + 1] == p);
-  const unsigned int Csize2 = 2 * C.size();
-  const Coef ClargestCoef = C.largestCoef();
-  const Coef c = data[idx];
-
-  Val& slack = C.slack;
-  if (C.isCounting()) {  // use counting propagation
-    slack -= c;
-    if (slack < 0) return WatchStatus::CONFLICTING;
-    if (slack < ClargestCoef) {
-      if (!options.idxProp || C.ntrailpops < stats.NTRAILPOPS) {
-        C.ntrailpops = stats.NTRAILPOPS;
-        watchIdx = 0;
-      }
-      stats.NPROPCHECKS -= watchIdx >> 1;
-      for (; watchIdx < Csize2 && data[watchIdx] > slack; watchIdx += 2) {
-        const Lit l = data[watchIdx + 1];
-        if (isUnknown(Pos, l)) {
-          stats.NPROPCLAUSE += (degree == 1);
-          stats.NPROPCARD += (degree != 1 && ClargestCoef == 1);
-          ++stats.NPROPCOUNTING;
-          propagate(l, cr);
-        }
-      }
-      stats.NPROPCHECKS += watchIdx >> 1;
-    }
-    return WatchStatus::KEEPWATCH;
-  }
-
-  // use watched propagation
-  if (!options.idxProp || C.ntrailpops < stats.NTRAILPOPS) {
-    C.ntrailpops = stats.NTRAILPOPS;
-    watchIdx = 0;
-  }
-  assert(c < 0);
-  slack += c;
-  if (!options.supProp ||
-      slack - c >= ClargestCoef) {  // look for new watches if previously, slack was at least ClargestCoef
-    stats.NWATCHCHECKS -= watchIdx >> 1;
-    for (; watchIdx < Csize2 && slack < ClargestCoef; watchIdx += 2) {  // NOTE: first innermost loop of RoundingSat
-      const Coef cf = data[watchIdx];
-      const Lit l = data[watchIdx + 1];
-      if (cf > 0 && !isFalse(Level, l)) {
-        slack += cf;
-        data[watchIdx] = -cf;
-        adj[l].emplace_back(cr, watchIdx);
-      }
-    }
-    stats.NWATCHCHECKS += watchIdx >> 1;
-    if (slack < ClargestCoef) {
-      assert(watchIdx == Csize2);
-      watchIdx = 0;
-    }
-  }  // else we did not find enough watches last time, so we can skip looking for them now
-
-  if (slack >= ClargestCoef) {
-    data[idx] = -c;
-    return WatchStatus::DROPWATCH;
-  }
-  if (slack < 0) return WatchStatus::CONFLICTING;
-  // keep the watch, check for propagation
-  stats.NPROPCHECKS -= watchIdx >> 1;
-  for (; watchIdx < Csize2 && rs::abs(data[watchIdx]) > slack;
-       watchIdx += 2) {  // NOTE: second innermost loop of RoundingSat
-    const Lit l = data[watchIdx + 1];
-    if (isUnknown(Pos, l)) {
-      stats.NPROPCLAUSE += (degree == 1);
-      stats.NPROPCARD += (degree != 1 && ClargestCoef == 1);
-      ++stats.NPROPWATCH;
-      propagate(l, cr);
-    }
-  }
-  stats.NPROPCHECKS += watchIdx >> 1;
-  return WatchStatus::KEEPWATCH;
+  return C.checkForPropagation(cr, idx, p, *this);
 }
 
 // ---------------------------------------------------------------------
@@ -516,8 +351,8 @@ bool Solver::extractCore(const IntSet& assumptions, ConstrExp32& outCore, Lit l_
   assert(conflConstraint.getSlack(Level) < 0);
 
   // analyze conflict
-  //  BigVal assumpslk = conflConstraint.getSlack(assumptions);
-  __int128 assumpslk = conflConstraint.getSlack(assumptions);
+  BigVal assumpslk = conflConstraint.getSlack(assumptions);
+  //  int128 assumpslk = conflConstraint.getSlack(assumptions);
   while (assumpslk >= 0) {
     if (asynch_interrupt) return false;
     Lit l = trail.back();
@@ -567,28 +402,46 @@ CRef Solver::attachConstraint(ConstrExp32& constraint, bool locked) {
   assert(constraint.isSortedInDecreasingCoefOrder());
   assert(constraint.isSaturated());
   assert(constraint.hasNoZeroes());
-  assert(constraint.hasNoUnits(Level));
+  assert(constraint.hasNoUnits(getLevel()));
   assert(constraint.getDegree() > 0);
   assert(constraint.getDegree() < INF);
   assert(constraint.vars.size() > 0);
+  assert(constraint.getSlack(getLevel()) >= 0);
+  assert(constraint.orig != Origin::UNKNOWN);
 
-  CRef cr = ca.alloc(constraint, locked, logger ? constraint.logProofLineWithInfo("Attach", stats) : ++crefID);
+  unsigned int length = constraint.vars.size();
+  CRef cr = CRef_Undef;
+  if (options.clauseProp && constraint.getDegree() == 1)
+    cr = ca.alloc(length, ConstrType::CLAUSE);
+  else if (options.cardProp && constraint.isCardinality())
+    cr = ca.alloc(length, ConstrType::CARDINALITY);
+  else {
+    Val watchSum = -constraint.degree;
+    unsigned int minWatches = 1;  // sorted per decreasing coefs, so we can skip the first, largest coef
+    for (; minWatches < length && watchSum < 0; ++minWatches)
+      watchSum += rs::abs(constraint.coefs[constraint.vars[minWatches]]);
+    if (options.countingProp == 1 || options.countingProp > (1 - minWatches / (double)length))
+      cr = ca.alloc(length, ConstrType::COUNTING);
+    else
+      cr = ca.alloc(length, ConstrType::WATCHED);
+  }
   constraints.push_back(cr);
+
   Constr& C = ca[cr];
-  int* data = C.data;
+  C.initialize(constraint, locked, cr, *this, logger ? constraint.logProofLineWithInfo("Attach", stats) : ++crefID);
 
   bool learned = (C.getOrigin() == Origin::LEARNED);
   if (learned) {
     stats.LEARNEDLENGTHSUM += C.size();
-    stats.LEARNEDDEGREESUM += C.degree;
+    stats.LEARNEDDEGREESUM += C.degree();
   } else {
     stats.EXTERNLENGTHSUM += C.size();
-    stats.EXTERNDEGREESUM += C.degree;
+    stats.EXTERNDEGREESUM += C.degree();
   }
-  if (C.degree == 1) {
+  if (C.degree() == 1) {
     stats.NCLAUSESLEARNED += learned;
     stats.NCLAUSESEXTERN += !learned;
-  } else if (C.isCard() || C.largestCoef() == 1) {
+  } else if (C.largestCoef() == 1) {
     stats.NCARDINALITIESLEARNED += learned;
     stats.NCARDINALITIESEXTERN += !learned;
   } else {
@@ -604,106 +457,6 @@ CRef Solver::attachConstraint(ConstrExp32& constraint, bool locked) {
   stats.NLPLEARNEDFARKAS += C.getOrigin() == Origin::LEARNEDFARKAS;
   stats.NLPFARKAS += C.getOrigin() == Origin::FARKAS;
 
-  if (C.isSimple()) {
-    if (C.degree >= C.size()) {
-      assert(decisionLevel() == 0);
-      for (unsigned int i = 0; i < C.size(); ++i) {
-        assert(isUnknown(Pos, data[i]));
-        propagate(data[i], cr);
-      }
-      return cr;
-    }
-
-    unsigned int watch = 0;
-    for (unsigned int i = 0; i < C.size(); ++i) {
-      Lit l = data[i];
-      if (!isFalse(Level, l)) {
-        data[i] = data[watch];
-        data[watch++] = l;
-        if (watch > C.degree + 1) break;
-      }
-    }
-    assert(watch >= C.degree);  // we found enough watches to satisfy the constraint
-    if (isFalse(Level, data[C.degree])) {
-      for (unsigned int i = 0; i < C.degree; ++i) {
-        assert(!isFalse(Level, data[i]));
-        if (!isTrue(Level, data[i])) propagate(data[i], cr);
-      }
-      for (unsigned int i = C.degree + 1; i < C.size(); ++i) {  // ensure last watch is last falsified literal
-        Lit l = data[i];
-        assert(isFalse(Level, l));
-        if (Level[-l] > Level[-data[C.degree]]) {
-          data[i] = data[C.degree];
-          data[C.degree] = l;
-        }
-      }
-    }
-    if (C.isClause())
-      for (unsigned int i = 0; i < 2; ++i) adj[data[i]].emplace_back(cr, data[1 - i] - INF);  // add blocked literal
-    else
-      for (unsigned int i = 0; i <= C.degree; ++i) adj[data[i]].emplace_back(cr, (i << 1) + 1);  // add watch index
-    return cr;
-  }
-
-  Val watchSum = -C.degree - C.largestCoef();
-  unsigned int minWatches = 0;
-  for (; minWatches < 2 * C.size() && watchSum < 0; minWatches += 2) watchSum += data[minWatches];
-  minWatches >>= 1;
-  assert(C.size() > 0);
-  assert(minWatches > 0);
-  C.setCounting(options.countingProp == 1 || options.countingProp > (1 - minWatches / (float)C.size()));
-
-  if (C.isCounting()) {  // use counting propagation
-    ++stats.NCOUNTING;
-    for (unsigned int i = 0; i < 2 * C.size(); i += 2) {
-      Lit l = data[i + 1];
-      adj[l].emplace_back(cr, i);
-      if (!isFalse(Level, l) || Pos[toVar(l)] >= qhead) C.slack += data[i];
-    }
-    assert(C.slack >= 0);
-    if (C.slack < C.largestCoef()) {  // propagate
-      for (unsigned int i = 0; i < 2 * C.size() && data[i] > C.slack; i += 2)
-        if (isUnknown(Pos, data[i + 1])) {
-          propagate(data[i + 1], cr);
-        }
-    }
-    return cr;
-  }
-
-  // watched propagation
-  ++stats.NWATCHED;
-  for (unsigned int i = 0; i < 2 * C.size() && C.slack < C.largestCoef(); i += 2) {
-    Lit l = data[i + 1];
-    if (!isFalse(Level, l) || Pos[toVar(l)] >= qhead) {
-      assert(!C.isWatched(i));
-      C.slack += data[i];
-      data[i] = -data[i];
-      adj[l].emplace_back(cr, i);
-    }
-  }
-  assert(C.slack >= 0);
-  if (C.slack < C.largestCoef()) {
-    // set sufficient falsified watches
-    std::vector<unsigned int> falsifiedIdcs;
-    falsifiedIdcs.reserve(C.size());
-    for (unsigned int i = 0; i < 2 * C.size(); i += 2)
-      if (isFalse(Level, data[i + 1]) && Pos[rs::abs(data[i + 1])] < qhead) falsifiedIdcs.push_back(i);
-    std::sort(falsifiedIdcs.begin(), falsifiedIdcs.end(),
-              [&](unsigned i1, unsigned i2) { return Pos[rs::abs(data[i1 + 1])] > Pos[rs::abs(data[i2 + 1])]; });
-    Val diff = C.largestCoef() - C.slack;
-    for (unsigned int i : falsifiedIdcs) {
-      assert(!C.isWatched(i));
-      diff -= data[i];
-      data[i] = -data[i];
-      adj[data[i + 1]].emplace_back(cr, i);
-      if (diff <= 0) break;
-    }
-    // perform initial propagation
-    for (unsigned int i = 0; i < 2 * C.size() && rs::abs(data[i]) > C.slack; i += 2)
-      if (isUnknown(Pos, data[i + 1])) {
-        propagate(data[i + 1], cr);
-      }
-  }
   return cr;
 }
 
@@ -791,14 +544,13 @@ std::pair<ID, ID> Solver::addConstraint(const ConstrExp32& c, Origin orig, bool 
   return addInputConstraint(addToLP);
 }
 
-std::pair<ID, ID> Solver::addConstraint(const SimpleConsInt& c, Origin orig, bool addToLP) {
+std::pair<ID, ID> Solver::addConstraint(const ConstrSimple32& c, Origin orig, bool addToLP) {
   tmpConstraint.init(c);
   tmpConstraint.orig = orig;
   return addInputConstraint(addToLP);
 }
 
-void Solver::removeConstraint(Constr& C, bool override) {
-  _unused(override);
+void Solver::removeConstraint(Constr& C, [[maybe_unused]] bool override) {
   assert(override || !C.isLocked());
   assert(!C.isMarkedForDelete());
   assert(!external.count(C.id));
@@ -863,7 +615,7 @@ void Solver::reduceDB() {
   for (CRef& cr : constraints) {
     Constr& C = ca[cr];
     if (C.isMarkedForDelete() || external.count(C.id)) continue;
-    Val eval = -C.degree;
+    BigVal eval = -C.degree();
     for (int j = 0; j < (int)C.size() && eval < 0; ++j)
       if (isUnit(Level, C.lit(j))) eval += C.coef(j);
     if (eval >= 0)
@@ -910,8 +662,8 @@ double Solver::luby(double y, int i) {
   return std::pow(y, seq);
 }
 
-Val Solver::lhs(Constr& C, const std::vector<bool>& sol) {
-  Val result = 0;
+BigVal Solver::lhs(Constr& C, const std::vector<bool>& sol) {
+  BigVal result = 0;
   for (size_t j = 0; j < C.size(); ++j) {
     Lit l = C.lit(j);
     result += ((l > 0) == sol[toVar(l)]) * C.coef(j);
@@ -921,7 +673,7 @@ Val Solver::lhs(Constr& C, const std::vector<bool>& sol) {
 bool Solver::checksol(const std::vector<bool>& sol) {
   for (CRef cr : constraints) {
     Constr& C = ca[cr];
-    if (C.getOrigin() == Origin::FORMULA && lhs(C, sol) < C.degree) return false;
+    if (C.getOrigin() == Origin::FORMULA && lhs(C, sol) < C.degree()) return false;
   }
   return true;
 }

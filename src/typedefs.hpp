@@ -30,7 +30,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-//#include <boost/multiprecision/cpp_int.hpp>  //  Integer types.
+#include <boost/multiprecision/cpp_int.hpp>  //  Integer types.
 #include <cassert>
 #include <iostream>
 #include <limits>
@@ -38,37 +38,38 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <unordered_map>
 #include <vector>
 
-// using bigint = boost::multiprecision::cpp_int;
-// using BigCoef = bigint;
-// using BigVal = bigint;
+using int128 = __int128;  // NOTE: int128_t from Boost should work too, using a slightly less efficient extra sign bit.
+using bigint = boost::multiprecision::cpp_int;
+using BigCoef = bigint;
+using BigVal = bigint;
 
 namespace rs {  // RoundingSat namespace
 template <typename T>
 inline T abs(const T& x) {
   return std::abs(x);
 }
-// template <>
-// inline bigint abs(const bigint& x) {
-//  return boost::multiprecision::abs(x);
-//}
+template <>
+inline bigint abs(const bigint& x) {
+  return boost::multiprecision::abs(x);
+}
 
 template <typename T>
 inline T gcd(const T& x, const T& y) {
   return std::gcd(x, y);
 }
-// template <>
-// inline bigint gcd(const bigint& x, const bigint& y) {
-//  return boost::multiprecision::gcd(x, y);
-//}
+template <>
+inline bigint gcd(const bigint& x, const bigint& y) {
+  return boost::multiprecision::gcd(x, y);
+}
 
 template <typename T>
 inline T lcm(const T& x, const T& y) {
   return std::lcm(x, y);
 }
-// template <>
-// inline bigint lcm(const bigint& x, const bigint& y) {
-//  return boost::multiprecision::lcm(x, y);
-//}
+template <>
+inline bigint lcm(const bigint& x, const bigint& y) {
+  return boost::multiprecision::lcm(x, y);
+}
 }  // namespace rs
 
 using ID = uint64_t;
@@ -82,8 +83,8 @@ using Coef = int;
 using Val = long long;
 inline Var toVar(Lit l) { return rs::abs(l); }
 
-const Coef INF = 1e9 + 1;       // based on max value of int that still allows addition of two ints
-const Val INF_long = 1e15 + 1;  // based on max long range captured by double
+const int INF = 1e9 + 1;              // based on max value of int that still allows addition of two ints
+const long long INF_long = 1e15 + 1;  // based on max long range captured by double
 
 using IntVecIt = std::vector<int>::iterator;
 

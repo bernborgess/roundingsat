@@ -57,9 +57,7 @@ struct Logger {
     proof_out.flush();
   }
 
-  void logComment(const std::string& comment, const Stats& sts) {
-    _unused(comment);
-    _unused(sts);
+  void logComment([[maybe_unused]] const std::string& comment, [[maybe_unused]] const Stats& sts) {
 #if !NDEBUG
     proof_out << "* " << sts.getDetTime() << " " << comment << "\n";
 #endif

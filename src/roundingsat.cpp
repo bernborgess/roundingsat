@@ -43,13 +43,9 @@ Stats stats;
 // ---------------------------------------------------------------------
 // Exit and interrupt
 
-static void SIGINT_interrupt(int signum) {
-  _unused(signum);
-  asynch_interrupt = true;
-}
+static void SIGINT_interrupt([[maybe_unused]] int signum) { asynch_interrupt = true; }
 
-static void SIGINT_exit(int signum) {
-  _unused(signum);
+static void SIGINT_exit([[maybe_unused]] int signum) {
   printf("\n*** INTERRUPTED ***\n");
   exit(1);
 }

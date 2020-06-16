@@ -147,7 +147,7 @@ echo "########## no proofs ##########"
 echo ""
 for j in "${arr_opt[@]}"; do
     formula="$(cut -d'_' -f1 <<<$j)"
-    formula="$SCRIPTPATH/instances/opb/opt/$formula.opb"
+    formula="$SCRIPTPATH/instances/$formula"
     obj="$(cut -d'_' -f2 <<<$j)"
     echo "running $formula"
     logfile=${formula/instances/logs}

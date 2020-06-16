@@ -34,7 +34,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <queue>
 #include "Solver.hpp"
 
-CandidateCut::CandidateCut(ConstrExp96& in, const soplex::DVectorReal& sol) {
+CandidateCut::CandidateCut(ConstrExpArb& in, const soplex::DVectorReal& sol) {
   assert(in.isSaturated());
   assert(in.getDegree() < INF);
   if (in.getDegree() <= 0) return;
@@ -45,7 +45,7 @@ CandidateCut::CandidateCut(ConstrExp96& in, const soplex::DVectorReal& sol) {
 
 CandidateCut::CandidateCut(const Constr& in, CRef cref, const soplex::DVectorReal& sol)
     : simpcons(in.toSimpleCons<Coef, Val>()), cr(cref) {
-  assert(in.degree > 0);
+  assert(in.degree() > 0);
   simpcons.toNormalFormVar();
   initialize(sol);
   assert(cr != CRef_Undef);
@@ -56,10 +56,10 @@ void CandidateCut::initialize(const soplex::DVectorReal& sol) {
             [](const Term<Coef>& t1, const Term<Coef>& t2) { return t1.l < t2.l; });
   assert(norm == 1);
   norm = 0;
-  for (const auto& p : simpcons.terms) norm += (double)p.c * (double)p.c;
+  for (const Term<Coef>& p : simpcons.terms) norm += (double)p.c * (double)p.c;
   norm = std::sqrt(norm);
   ratSlack = -simpcons.rhs;
-  for (auto& p : simpcons.terms) ratSlack += (double)p.c * sol[p.l];
+  for (Term<Coef>& p : simpcons.terms) ratSlack += (double)p.c * sol[p.l];
   assert(norm >= 0);
   if (norm == 0) norm = 1;
   ratSlack /= norm;
@@ -167,7 +167,7 @@ void LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
   assert(mult > 0);
 
   for (int r = 0; r < mults.dim(); ++r) {
-    __int128 factor = mults[r] * mult;
+    bigint factor = static_cast<bigint>(mults[r] * mult);
     assert(factor >= 0);
     if (factor == 0) continue;
     assert(lp.lhsReal(r) != INFTY);
@@ -177,7 +177,7 @@ void LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
   }
   lcc.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
   assert(lcc.hasNoZeroes());
-  lcc.weakenSmalls(lcc.absCoeffSum() / (double)lcc.vars.size() * options.intolerance);
+  lcc.weakenSmalls(lcc.absCoeffSum() / static_cast<bigint>((double)lcc.vars.size() / options.intolerance));
   lcc.saturateAndFixOverflow(solver.getLevel(), options.weakenFull);
 }
 
@@ -186,9 +186,9 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   double mult = getScaleFactor(mults, false);
   if (mult == 0) return CandidateCut();
 
-  std::vector<std::pair<__int128, int>> slacks;
+  std::vector<std::pair<bigint, int>> slacks;
   for (int r = 0; r < mults.dim(); ++r) {
-    __int128 factor = mults[r] * mult;
+    bigint factor = static_cast<bigint>(mults[r] * mult);
     if (factor == 0) continue;
     rowToConstraint(r);
     if (factor < 0) ic.invert();
@@ -197,20 +197,20 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     slacks.emplace_back(-factor, r);
   }
 
-  __int128 b = lcc.getRhs();
+  bigint b = lcc.getRhs();
   for (Var v : lcc.vars)
     if (lpSolution[v] > 0.5) b -= lcc.coefs[v];
   if (b == 0) return CandidateCut();
 
   assert(mult > 0);
-  __int128 divisor = mult;
+  bigint divisor = static_cast<bigint>(mult);
   while ((b % divisor) == 0) ++divisor;
   lcc.applyMIR(divisor, [&](Var v) -> Lit { return lpSolution[v] <= 0.5 ? v : -v; });
 
   // round up the slack variables MIR style and cancel out the slack variables
-  __int128 bmodd = aux::mod_safe(b, divisor);
+  bigint bmodd = aux::mod_safe(b, divisor);
   for (unsigned i = 0; i < slacks.size(); ++i) {
-    __int128 factor =
+    bigint factor =
         bmodd * aux::floordiv_safe(slacks[i].first, divisor) + std::min(aux::mod_safe(slacks[i].first, divisor), bmodd);
     if (factor == 0) continue;
     rowToConstraint(slacks[i].second);
@@ -226,14 +226,15 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     lcc.reset();
   else {
     assert(lcc.hasNoZeroes());
-    lcc.weakenSmalls(lcc.absCoeffSum() / (double)lcc.vars.size() * options.intolerance);
+    lcc.weakenSmalls(lcc.absCoeffSum() / static_cast<bigint>((double)lcc.vars.size() / options.intolerance));
     if (lcc.getDegree() >= INF) {
-      divisor = aux::ceildiv<__int128>(lcc.getDegree(), INF - 1);
+      divisor = aux::ceildiv<bigint>(lcc.getDegree(), INF - 1);
       for (Var v : lcc.vars) {
-        __int128 rem = aux::mod_safe(lcc.coefs[v], divisor);
+        bigint rem = aux::mod_safe(lcc.coefs[v], divisor);
         if (rem == 0) continue;
         assert(rem > 0);
-        if ((double)divisor * lpSolution[v] < rem)
+        assert(divisor <= static_cast<bigint>(1e300));
+        if (divisor.convert_to<double>() * lpSolution[v] < rem.convert_to<double>())
           lcc.weaken(divisor - rem, v);
         else
           lcc.weaken(-rem, v);
@@ -269,8 +270,7 @@ void LpSolver::constructGomoryCandidates() {
   }
   std::priority_queue<std::pair<double, int>> fracrows(std::less<std::pair<double, int>>(), fracrowvec);
 
-  double last = 0.5;
-  _unused(last);
+  [[maybe_unused]] double last = 0.5;
   for (int i = 0; i < options.gomoryCutLimit && !fracrows.empty(); ++i) {
     assert(last >= fracrows.top().first);
     last = fracrows.top().first;
@@ -302,8 +302,7 @@ void LpSolver::constructLearnedCandidates() {
 }
 
 void LpSolver::addFilteredCuts() {
-  for (const auto& cc : candidateCuts) {
-    _unused(cc);
+  for ([[maybe_unused]] const CandidateCut& cc : candidateCuts) {
     assert(cc.norm != 0);
   }
   std::sort(candidateCuts.begin(), candidateCuts.end(), [](const CandidateCut& x1, const CandidateCut& x2) {
@@ -323,7 +322,7 @@ void LpSolver::addFilteredCuts() {
   }
 
   for (int i : keptCuts) {
-    auto& cc = candidateCuts[i];
+    CandidateCut& cc = candidateCuts[i];
     if (cc.cr == CRef_Undef) {  // Gomory cut
       ic.init(cc.simpcons);
       ic.postProcess(solver.getLevel(), solver.getPos(), true, stats);

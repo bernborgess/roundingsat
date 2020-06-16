@@ -43,8 +43,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <unordered_set>
 #include <vector>
 
-#define _unused(x) ((void)(x))  // marks variables unused in release mode
-
 template <typename T, typename U>
 std::ostream& operator<<(std::ostream& os, const std::pair<T, U>& p) {
   os << p.first << "," << p.second;
@@ -115,12 +113,12 @@ inline T floordiv(const T& p, const T& q) {
 template <typename T>
 inline T ceildiv_safe(const T& p, const T& q) {
   assert(q > 0);
-  return (p < 0) ? (-floordiv(T(-p), q)) : ceildiv(p, q);
+  return (p < 0) ? (-floordiv<T>(-p, q)) : ceildiv(p, q);
 }
 template <typename T>
 inline T floordiv_safe(const T& p, const T& q) {
   assert(q > 0);
-  return (p < 0) ? (-ceildiv(-p, q)) : floordiv(p, q);
+  return (p < 0) ? (-ceildiv<T>(-p, q)) : floordiv(p, q);
 }
 template <typename T>
 inline T mod_safe(const T& p, const T& q) {
