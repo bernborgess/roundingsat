@@ -30,7 +30,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include <boost/multiprecision/cpp_int.hpp>  //  Integer types.
+//#include <boost/multiprecision/cpp_int.hpp>  //  Integer types.
 #include <cassert>
 #include <iostream>
 #include <limits>
@@ -38,37 +38,37 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <unordered_map>
 #include <vector>
 
-using bigint = boost::multiprecision::cpp_int;
-using BigCoef = bigint;
-using BigVal = bigint;
+// using bigint = boost::multiprecision::cpp_int;
+// using BigCoef = bigint;
+// using BigVal = bigint;
 
 namespace rs {  // RoundingSat namespace
 template <typename T>
 inline T abs(const T& x) {
   return std::abs(x);
 }
-template <>
-inline bigint abs(const bigint& x) {
-  return boost::multiprecision::abs(x);
-}
+// template <>
+// inline bigint abs(const bigint& x) {
+//  return boost::multiprecision::abs(x);
+//}
 
 template <typename T>
 inline T gcd(const T& x, const T& y) {
   return std::gcd(x, y);
 }
-template <>
-inline bigint gcd(const bigint& x, const bigint& y) {
-  return boost::multiprecision::gcd(x, y);
-}
+// template <>
+// inline bigint gcd(const bigint& x, const bigint& y) {
+//  return boost::multiprecision::gcd(x, y);
+//}
 
 template <typename T>
 inline T lcm(const T& x, const T& y) {
   return std::lcm(x, y);
 }
-template <>
-inline bigint lcm(const bigint& x, const bigint& y) {
-  return boost::multiprecision::lcm(x, y);
-}
+// template <>
+// inline bigint lcm(const bigint& x, const bigint& y) {
+//  return boost::multiprecision::lcm(x, y);
+//}
 }  // namespace rs
 
 using ID = uint64_t;

@@ -55,7 +55,7 @@ class Solver {
   IntSet tmpSet;
   IntSet actSet;
   ConstrExp32 tmpConstraint;
-  ConstrExpArb conflConstraint;  // functions as old confl_data
+  ConstrExp64 conflConstraint;  // functions as old confl_data
   ConstrExp32 logConstraint;
   OrderHeap order_heap;
 
@@ -86,7 +86,7 @@ class Solver {
   std::shared_ptr<Logger> logger;
 
   Solver();
-  void init();                        // call after having read options
+  void init();                          // call after having read options
   void initLP(ConstrExp32& objective);  // TODO: fix when decoupling Solver and LpSolver
 
   int getNbVars() const { return n; }

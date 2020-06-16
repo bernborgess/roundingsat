@@ -510,7 +510,8 @@ bool Solver::extractCore(const IntSet& assumptions, ConstrExp32& outCore, Lit l_
   assert(conflConstraint.getSlack(Level) < 0);
 
   // analyze conflict
-  BigVal assumpslk = conflConstraint.getSlack(assumptions);
+  //  BigVal assumpslk = conflConstraint.getSlack(assumptions);
+  __int128 assumpslk = conflConstraint.getSlack(assumptions);
   while (assumpslk >= 0) {
     if (asynch_interrupt) return false;
     Lit l = trail.back();

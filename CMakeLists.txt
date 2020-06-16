@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.5)
 project(RoundingSat2)
 
 set(CMAKE_CXX_STANDARD 17)
-find_package(Boost REQUIRED)
+#find_package(Boost REQUIRED)
 
 if (NOT CMAKE_BUILD_TYPE)
     message(WARNING "Please use -DCMAKE_BUILD_TYPE=[build_type] where [build_type] is one of: Debug, Release, RelWithDebInfo and MinSizeRel")

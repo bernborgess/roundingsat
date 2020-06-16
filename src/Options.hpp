@@ -40,7 +40,7 @@ struct Options {
   bool printSol = false;
   enum OPTMODE { LINEAR, COREGUIDED, LAZYCOREGUIDED, HYBRID, LAZYHYBRID };
   std::vector<std::string> optModeMap = {"linear", "core-guided", "lazy-core-guided", "hybrid", "lazy-hybrid"};
-  OPTMODE optMode = LINEAR;
+  OPTMODE optMode = LAZYHYBRID;
 
   int verbosity = 1;
   bool clauseProp = true;

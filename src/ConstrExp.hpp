@@ -805,4 +805,4 @@ std::ostream& operator<<(std::ostream& o, const ConstrExp<S, L>& C) {
 using ConstrExp32 = ConstrExp<int, long long>;
 using ConstrExp64 = ConstrExp<long long, __int128>;
 using ConstrExp96 = ConstrExp<__int128, __int128>;
-using ConstrExpArb = ConstrExp<bigint, bigint>;
+// using ConstrExpArb = ConstrExp<bigint, bigint>;
