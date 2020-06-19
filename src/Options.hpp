@@ -68,6 +68,9 @@ struct Options {
   bool weakenFull = false;
   bool weakenNonImplying = false;
 
+  bool bumpOnlyFalse = false;
+  bool bumpCanceling = true;
+
   enum OPTIONS {
     HELP,
     PRINTSOL,
@@ -91,31 +94,37 @@ struct Options {
     LPGOMCUTLIM,
     CAMAXDIV,
     CAWEAKENFULL,
-    CAWEAKENNONIMPLYING
+    CAWEAKENNONIMPLYING,
+    BUMPONLYFALSE,
+    BUMPCANCELING,
   };
-  std::vector<std::string> opts = {"help",
-                                   "print-sol",
-                                   "verbosity",
-                                   "var-decay",
-                                   "rinc",
-                                   "rfirst",
-                                   "opt-mode",
-                                   "prop-counting",
-                                   "prop-clause",
-                                   "prop-card",
-                                   "prop-idx",
-                                   "prop-sup",
-                                   "proof-log",
-                                   "lp",
-                                   "lp-budget",
-                                   "lp-cut-gomory",
-                                   "lp-cut-learned",
-                                   "lp-intolerance",
-                                   "lp-maxcutcos",
-                                   "lp-gomcutlim",
-                                   "ca-maxdiv",
-                                   "ca-weaken-full",
-                                   "ca-weaken-nonimplying"};
+  std::vector<std::string> opts = {
+      "help",
+      "print-sol",
+      "verbosity",
+      "var-decay",
+      "rinc",
+      "rfirst",
+      "opt-mode",
+      "prop-counting",
+      "prop-clause",
+      "prop-card",
+      "prop-idx",
+      "prop-sup",
+      "proof-log",
+      "lp",
+      "lp-budget",
+      "lp-cut-gomory",
+      "lp-cut-learned",
+      "lp-intolerance",
+      "lp-maxcutcos",
+      "lp-gomcutlim",
+      "ca-maxdiv",
+      "ca-weaken-full",
+      "ca-weaken-nonimplying",
+      "bump-only-false",
+      "bump-canceling",
+  };
 
   typedef bool (*func)(double);
   template <typename T>
@@ -214,6 +223,10 @@ struct Options {
     getOptionNum(
         opt_val, opts[OPTIONS::CAWEAKENNONIMPLYING], [](double x) -> bool { return x == 0 || x == 1; },
         weakenNonImplying);
+    getOptionNum(
+        opt_val, opts[OPTIONS::BUMPONLYFALSE], [](double x) -> bool { return x == 0 || x == 1; }, bumpOnlyFalse);
+    getOptionNum(
+        opt_val, opts[OPTIONS::BUMPCANCELING], [](double x) -> bool { return x == 0 || x == 1; }, bumpCanceling);
   }
 
   constexpr static int colwidth = 14;
@@ -277,5 +290,10 @@ struct Options {
              "Weaken non-divisible non-falsified literals in reason constraints completely", "0 or 1", weakenFull);
     usageVal(opts[OPTIONS::CAWEAKENNONIMPLYING], "Weaken non-implying falsified literals from reason constraints",
              "0 or 1", weakenNonImplying);
+    usageVal(opts[OPTIONS::BUMPONLYFALSE],
+             "Bump activity of literals encountered during conflict analysis only when falsified", "0 or 1",
+             bumpOnlyFalse);
+    usageVal(opts[OPTIONS::BUMPCANCELING],
+             "Bump activity of literals encountered during conflict analysis when canceling", "0 or 1", bumpCanceling);
   }
 };

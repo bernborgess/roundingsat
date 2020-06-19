@@ -413,7 +413,9 @@ bool Solver::analyze() {
   stats.NADDEDLITERALS += conflConstraint.vars.size();
   conflConstraint.removeUnitsAndZeroes(Level, Pos);
   assert(actSet.size() == 0);  // will hold the literals that need their activity bumped
-  for (Var v : conflConstraint.vars) actSet.add(conflConstraint.getLit(v));
+  for (Var v : conflConstraint.vars) {
+    if (!options.bumpOnlyFalse || isFalse(Level, conflConstraint.getLit(v))) actSet.add(v);
+  }
   while (decisionLevel() > 0) {
     if (asynch_interrupt) return false;
     Lit l = trail.back();
@@ -454,7 +456,11 @@ bool Solver::analyze() {
       assert(tmpConstraint.getCoef(l) > tmpConstraint.getSlack(Level));
       tmpConstraint.weakenDivideRound(getLevel(), l, options.maxdiv, options.weakenFull);
       assert(tmpConstraint.getSlack(Level) <= 0);
-      for (Var v : tmpConstraint.vars) actSet.add(tmpConstraint.getLit(v));
+      for (Var v : tmpConstraint.vars) {
+        Lit l = tmpConstraint.getLit(v);
+        if (!options.bumpOnlyFalse || isFalse(Level, l)) actSet.add(v);
+        if (options.bumpCanceling && conflConstraint.getLit(v) == -l) actSet.add(-v);
+      }
       Coef reason_coef_l = tmpConstraint.getCoef(l);
       Coef gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
       conflConstraint.addUp(tmpConstraint, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);

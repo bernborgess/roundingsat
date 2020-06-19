@@ -197,13 +197,7 @@ struct ConstrExp {
   }
   Lit getLit(Lit l) const {  // NOTE: answer of 0 means coef 0 or not in vars
     Var v = toVar(l);
-    if (v >= (Var)coefs.size()) return 0;
-    if (coefs[v] == 0)
-      return 0;
-    else if (coefs[v] < 0)
-      return -v;
-    else
-      return v;
+    return (v >= (Var)coefs.size() || coefs[v] == 0) ? 0 : (coefs[v] < 0 ? -v : v);
   }
 
   bool falsified(const IntVecIt& level, Var v) const {
