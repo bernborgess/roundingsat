@@ -244,7 +244,7 @@ void optimize(ConstrExp32& origObj) {
   // NOTE: -origObj.getDegree() keeps track of the offset of the reformulated objective (or after removing unit lits)
   origObj.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), false);
   lower_bound = -origObj.getDegree();
-  upper_bound = origObj.absCoeffSum() + 1;
+  upper_bound = origObj.absCoeffSum() - origObj.getRhs() + 1;
   core.initializeLogging(solver.logger);
 
   Val opt_coef_sum = 0;
