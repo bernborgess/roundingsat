@@ -164,13 +164,15 @@ void LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
   assert(ic.isReset());
   double mult = getScaleFactor(mults, true);
   if (mult == 0) return;
+  assert(mult > 0);
 
   for (int r = 0; r < mults.dim(); ++r) {
-    if (mults[r] == 0) continue;
-    assert(mults[r] > 0);
+    __int128 factor = mults[r] * mult;
+    assert(factor >= 0);
+    if (factor == 0) continue;
     assert(lp.lhsReal(r) != INFTY);
     rowToConstraint(r);
-    lcc.addUp(ic, mults[r] * mult);
+    lcc.addUp(ic, factor);
     ic.reset();
   }
   lcc.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
