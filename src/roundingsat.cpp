@@ -68,6 +68,10 @@ int main(int argc, char** argv) {
   signal(SIGTERM, SIGINT_interrupt);
   signal(SIGXCPU, SIGINT_interrupt);
 
+  std::cout << "c RoundingSat 2\n";
+  std::cout << "c branch " << EXPANDED(GIT_BRANCH) << "\n";
+  std::cout << "c commit " << EXPANDED(GIT_COMMIT_HASH) << std::endl;
+
   options.parseCommandLine(argc, argv);
   run::solver.init();
 

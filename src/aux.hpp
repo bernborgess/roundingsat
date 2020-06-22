@@ -30,6 +30,9 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
+#define EXPANDED(x) STR(x)
+#define STR(x) #x
+
 #include <sys/resource.h>
 #include <algorithm>
 #include <cassert>
