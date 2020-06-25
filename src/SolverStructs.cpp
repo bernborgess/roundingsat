@@ -65,13 +65,13 @@ void ConstraintAllocator::capacity(uint32_t min_cap) {
 }
 
 // TODO: allow constraints with 10^18 bit degree
-CRef ConstraintAllocator::alloc(ConstrExp32& constraint, bool locked) {
+CRef ConstraintAllocator::alloc(ConstrExp32& constraint, bool locked, ID id) {
   assert(constraint.getDegree() > 0);
   assert(constraint.getDegree() < INF);
   assert(constraint.isSaturated());
   // as the constraint is saturated, the coefficients are between 1 and 1e9 as well.
   assert(!constraint.vars.empty());
-  assert(constraint.id > 0);
+  assert(id > ID_Trivial);
   assert(constraint.orig != Origin::UNKNOWN);
   unsigned int length = constraint.vars.size();
   bool asClause = options.clauseProp && constraint.getDegree() == 1;
@@ -84,7 +84,7 @@ CRef ConstraintAllocator::alloc(ConstrExp32& constraint, bool locked) {
   capacity(at);
   Constr* constr = (Constr*)(memory + old_at);
   new (constr) Constr;
-  constr->id = constraint.id;
+  constr->id = id;
   constr->act = 0;
   constr->degree = constraint.getDegree();
   constr->header = {locked, (unsigned int)constraint.orig, 0x07FFFFFF, 0, 0, length};

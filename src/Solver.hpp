@@ -98,8 +98,8 @@ class Solver {
   const std::vector<int>& getPos() const { return Pos; }
   int decisionLevel() const { return trail_lim.size(); }
 
-  ID addConstraint(const ConstrExp32& c, Origin orig, bool addToLP);
-  ID addConstraint(const SimpleConsInt& c, Origin orig, bool addToLP);
+  std::pair<ID, ID> addConstraint(const ConstrExp32& c, Origin orig, bool addToLP);    // formula line id, processed id
+  std::pair<ID, ID> addConstraint(const SimpleConsInt& c, Origin orig, bool addToLP);  // formula line id, processed id
   void dropExternal(ID id, bool erasable, bool forceDelete, bool removeFromLP);
   int getNbConstraints() const { return constraints.size(); }
   void getIthConstraint(int i, ConstrExp32& out) const { return ca[constraints[i]].toConstraint(out); }
@@ -161,14 +161,10 @@ class Solver {
     assert(orig == Origin::LEARNED || orig == Origin::FARKAS || orig == Origin::LEARNEDFARKAS ||
            orig == Origin::GOMORY);
     c.orig = orig;
-    if (c.plogger)
-      c.logProofLineWithInfo("Learn", stats);
-    else
-      c.id = ++crefID;
     learnedStack.push_back(c.template toSimpleCons<Coef, Val>());
   }
   CRef processLearnedStack();
-  ID addInputConstraint(bool addToLP);
+  std::pair<ID, ID> addInputConstraint(bool addToLP);
   void removeConstraint(Constr& C, bool override = false);
 
   // ---------------------------------------------------------------------

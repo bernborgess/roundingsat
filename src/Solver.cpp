@@ -408,7 +408,7 @@ void Solver::recomputeLBD(Constr& C) {
 }
 
 bool Solver::analyze() {
-  if (logger) logger->logComment("analyzing", stats);
+  if (logger) logger->logComment("Analyze", stats);
   assert(conflConstraint.getSlack(Level) < 0);
   stats.NADDEDLITERALS += conflConstraint.vars.size();
   conflConstraint.removeUnitsAndZeroes(Level, Pos);
@@ -572,11 +572,7 @@ CRef Solver::attachConstraint(ConstrExp32& constraint, bool locked) {
   assert(constraint.getDegree() < INF);
   assert(constraint.vars.size() > 0);
 
-  if (logger)
-    constraint.logProofLineWithInfo("Attach", stats);
-  else
-    constraint.id = ++crefID;
-  CRef cr = ca.alloc(constraint, locked);
+  CRef cr = ca.alloc(constraint, locked, logger ? constraint.logProofLineWithInfo("Attach", stats) : ++crefID);
   constraints.push_back(cr);
   Constr& C = ca[cr];
   int* data = C.data;
@@ -750,16 +746,17 @@ CRef Solver::processLearnedStack() {
   return CRef_Undef;
 }
 
-ID Solver::addInputConstraint(bool addToLP) {
+std::pair<ID, ID> Solver::addInputConstraint(bool addToLP) {
   assert(tmpConstraint.orig == Origin::FORMULA || tmpConstraint.orig == Origin::BOUND ||
          tmpConstraint.orig == Origin::COREGUIDED);
   assert(decisionLevel() == 0);
-  if (logger) tmpConstraint.logAsInput();
+  ID input = ID_Undef;
+  if (logger) input = tmpConstraint.logAsInput();
   tmpConstraint.postProcess(Level, Pos, true, stats);
   assert(tmpConstraint.getDegree() < INF);
   if (tmpConstraint.getDegree() <= 0) {
     tmpConstraint.reset();
-    return ID_Undef;  // already satisfied.
+    return {input, ID_Undef};  // already satisfied.
   }
 
   if (tmpConstraint.getSlack(Level) < 0) {
@@ -767,7 +764,7 @@ ID Solver::addInputConstraint(bool addToLP) {
     if (logger) tmpConstraint.logInconsistency(Level, Pos, stats);
     tmpConstraint.reset();
     assert(decisionLevel() == 0);
-    return ID_Unsat;
+    return {input, ID_Unsat};
   }
 
   CRef cr = attachConstraint(tmpConstraint, true);
@@ -779,27 +776,25 @@ ID Solver::addInputConstraint(bool addToLP) {
       conflConstraint.reset();
     }
     assert(decisionLevel() == 0);
-    return ID_Unsat;
+    return {input, ID_Unsat};
   }
   ID id = ca[cr].id;
   if (ca[cr].getOrigin() != Origin::FORMULA) external[id] = cr;
   if (addToLP && lpSolver) lpSolver->addConstraint(cr, false);
-  return id;
+  return {input, id};
 }
 
-ID Solver::addConstraint(const ConstrExp32& c, Origin orig, bool addToLP) {
+std::pair<ID, ID> Solver::addConstraint(const ConstrExp32& c, Origin orig, bool addToLP) {
   // NOTE: copy to tmpConstraint guarantees original constraint is not changed and does not need logger
   c.copyTo(tmpConstraint);
   tmpConstraint.orig = orig;
-  ID result = addInputConstraint(addToLP);
-  return result;
+  return addInputConstraint(addToLP);
 }
 
-ID Solver::addConstraint(const SimpleConsInt& c, Origin orig, bool addToLP) {
+std::pair<ID, ID> Solver::addConstraint(const SimpleConsInt& c, Origin orig, bool addToLP) {
   tmpConstraint.init(c);
   tmpConstraint.orig = orig;
-  ID result = addInputConstraint(addToLP);
-  return result;
+  return addInputConstraint(addToLP);
 }
 
 void Solver::removeConstraint(Constr& C, bool override) {

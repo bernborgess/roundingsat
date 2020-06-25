@@ -51,7 +51,6 @@ struct ConstrExp {
   std::vector<Var> vars;
   std::vector<SMALL> coefs;
   std::vector<bool> used;
-  ID id = ID_Trivial;
   Origin orig = Origin::UNKNOWN;
   std::stringstream proofBuffer;
   std::shared_ptr<Logger> plogger;
@@ -103,9 +102,11 @@ struct ConstrExp {
     for (auto& t : sc.terms) {
       addLhs(t.c, t.l);
     }
-    id = sc.id;
     orig = sc.orig;
-    if (plogger) resetBuffer(id);
+    if (plogger) {
+      proofBuffer.str(std::string());
+      proofBuffer << sc.proofLine;
+    }
   }
 
   template <typename S, typename L>
@@ -114,7 +115,6 @@ struct ConstrExp {
     assert(out.isReset());
     out.degree = static_cast<L>(degree);
     out.rhs = static_cast<L>(rhs);
-    out.id = id;
     out.orig = orig;
     out.vars = vars;
     out.resize(coefs.size());
@@ -137,8 +137,7 @@ struct ConstrExp {
     result.terms.reserve(vars.size());
     for (Var v : vars)
       if (coefs[v] != 0) result.terms.emplace_back((Coef)coefs[v], v);
-    if (plogger) logProofLine();
-    result.id = id;
+    if (plogger) result.proofLine = proofBuffer.str();
     result.orig = orig;
     return result;
   }
@@ -179,7 +178,6 @@ struct ConstrExp {
     vars.clear();
     rhs = 0;
     degree = 0;
-    id = ID_Trivial;
     orig = Origin::UNKNOWN;
     if (plogger) resetBuffer();
   }
@@ -698,33 +696,47 @@ struct ConstrExp {
     return true;
   }
 
-  void logAsInput() {
+  ID logAsInput() {
     assert(plogger);
     toStreamAsOPB(plogger->formula_out);
     plogger->proof_out << "l " << ++plogger->last_formID << "\n";
-    id = ++plogger->last_proofID;
+    ID id = ++plogger->last_proofID;
     resetBuffer(id);  // ensure consistent proofBuffer
+    return id;
   }
 
-  void logProofLine() {  // TODO: avoid successive proof log lines without any operations inbetween
+  ID logProofLine() {
     assert(plogger);
-    plogger->proof_out << "p " << proofBuffer.str() << "0\n";
-    id = ++plogger->last_proofID;
-    resetBuffer(id);  // ensure consistent proofBuffer
+    std::string buffer = proofBuffer.str();
+    assert(buffer.back() == ' ');
+    long long spacecount = 0;
+    for (char const& c : buffer) {
+      spacecount += (c == ' ');
+      if (spacecount > 1) break;
+    }
+    ID id;
+    if (spacecount > 1) {  // non-trivial line
+      id = ++plogger->last_proofID;
+      plogger->proof_out << "p " << buffer << "0\n";
+      resetBuffer(id);
+    } else {  // line is just one id, don't print it
+      id = std::stol(buffer);
+    }
 #if !NDEBUG
     plogger->proof_out << "e " << id << " ";
     toStreamAsOPB(plogger->proof_out);
 #endif
+    return id;
   }
 
-  void logProofLineWithInfo(std::string&& info, const Stats& sts) {
+  ID logProofLineWithInfo(std::string&& info, const Stats& sts) {
     assert(plogger);
     _unused(info);
     _unused(sts);
 #if !NDEBUG
     plogger->logComment(info, sts);
 #endif
-    logProofLine();
+    return logProofLine();
   }
 
   // @pre: reducible to unit over v
@@ -746,15 +758,14 @@ struct ConstrExp {
       rhs = 0;
     }
     degree = 1;
-    logProofLineWithInfo("Unit", sts);
-    plogger->unitIDs.push_back(id);
+    plogger->unitIDs.push_back(logProofLineWithInfo("Unit", sts));
   }
 
   void logInconsistency(const IntVecIt& level, const std::vector<int>& pos, const Stats& sts) {
     assert(plogger);
     removeUnitsAndZeroes(level, pos);
-    logProofLineWithInfo("Inconsistency", sts);
     assert(getSlack(level) < 0);
+    ID id = logProofLineWithInfo("Inconsistency", sts);
     plogger->proof_out << "c " << id << " 0" << std::endl;
   }
 

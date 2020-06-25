@@ -218,10 +218,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     lcc.addUp(ic, rs::abs(factor));
     ic.reset();
   }
-  if (lcc.plogger)
-    lcc.logAsInput();
-  else
-    lcc.id = ++solver.crefID;
+  if (lcc.plogger) lcc.logAsInput();
   // TODO: fix logging for Gomory cuts
 
   lcc.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
@@ -331,12 +328,8 @@ void LpSolver::addFilteredCuts() {
       ic.init(cc.simpcons);
       ic.postProcess(solver.getLevel(), solver.getPos(), true, stats);
       if (ic.getDegree() <= 0) continue;
-      assert(ic.id != ID_Trivial);
       solver.learnConstraint(ic, Origin::GOMORY);
-      // NOTE: learnConstraint fixes a unique ID for ic, needed to add cut as constraint
-      // TODO: not the cleanest way to guarantee a unique ID for Gomory cuts
-      assert(id2row.count(ic.id) == 0);
-      addConstraint(ic, true);
+      addConstraint(ic, true, ic.plogger ? ic.logProofLineWithInfo("Gomory", stats) : ++solver.crefID);
       ic.reset();
     } else {  // learned cut
       ++stats.NLPLEARNEDCUTS;
@@ -395,8 +388,7 @@ void LpSolver::rowToConstraint(int row) {
     assert(el.val != 0);
     ic.addLhs((Coef)el.val, el.idx);
   }
-  ic.id = row2data[row].id;
-  if (ic.plogger) ic.resetBuffer(ic.id);
+  if (ic.plogger) ic.resetBuffer(row2data[row].id);
 }
 
 LpStatus LpSolver::checkFeasibility(bool inProcessing) {
@@ -537,8 +529,7 @@ void LpSolver::convertConstraint(ConstrExp32& c, soplex::DSVectorReal& row, Val&
   assert(validRhs(rhs));
 }
 
-void LpSolver::addConstraint(ConstrExp32& c, bool removable) {
-  ID id = c.id;
+void LpSolver::addConstraint(ConstrExp32& c, bool removable, ID id) {
   assert(id != ID_Trivial);
   toRemove.erase(id);
   if (!id2row.count(id) && !toAdd.count(id)) {
@@ -553,7 +544,7 @@ void LpSolver::addConstraint(CRef cr, bool removable) {
   assert(cr != CRef_Undef);
   assert(cr != CRef_Unsat);
   solver.ca[cr].toConstraint(ic);
-  addConstraint(ic, removable);
+  addConstraint(ic, removable, solver.ca[cr].id);
   ic.reset();
 }
 

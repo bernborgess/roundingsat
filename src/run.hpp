@@ -53,7 +53,7 @@ inline void printObjBounds(Val lower, Val upper) {
     printf("c bounds          - >= %10lld\n", lower);
 }
 
-void handleNewSolution(const ConstrExp32& origObj, ID& lastUpperBound) {
+ID handleNewSolution(const ConstrExp32& origObj, ID& lastUpperBound) {
   Val prev_val = upper_bound;
   _unused(prev_val);
   upper_bound = -origObj.getRhs();
@@ -64,9 +64,11 @@ void handleNewSolution(const ConstrExp32& origObj, ID& lastUpperBound) {
   aux.invert();
   aux.addRhs(-upper_bound + 1);
   solver.dropExternal(lastUpperBound, true, true, true);
-  lastUpperBound = solver.addConstraint(aux, Origin::BOUND, true);
+  std::pair<ID, ID> res = solver.addConstraint(aux, Origin::BOUND, true);
+  lastUpperBound = res.second;
   aux.reset();
   if (lastUpperBound == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
+  return res.first;
 }
 
 struct LazyVar {
@@ -100,7 +102,7 @@ struct LazyVar {
     for (Lit l : lhs) sc.terms.emplace_back(1, l);
     for (Var v : introducedVars) sc.terms.emplace_back(-1, v);
     solver.dropExternal(atLeastID, false, false, true);  // TODO: should be erasable
-    atLeastID = solver.addConstraint(sc, Origin::COREGUIDED, false);
+    atLeastID = solver.addConstraint(sc, Origin::COREGUIDED, false).second;
     if (atLeastID == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
   }
 
@@ -114,14 +116,14 @@ struct LazyVar {
     for (Var v : introducedVars) sc.terms.emplace_back(1, v);
     sc.terms.emplace_back((Coef)(lhs.size() - rhs - introducedVars.size()), getCurrentVar());
     solver.dropExternal(atMostID, false, false, true);  // TODO: should be erasable
-    atMostID = solver.addConstraint(sc, Origin::COREGUIDED, false);
+    atMostID = solver.addConstraint(sc, Origin::COREGUIDED, false).second;
     if (atMostID == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
   }
 
   void addSymBreakingConstraint(Var prevvar) const {
     assert(introducedVars.size() > 1);
     // y-- + ~y >= 1 (equivalent to y-- >= y)
-    if (solver.addConstraint({{{1, prevvar}, {1, -getCurrentVar()}}, 1}, Origin::COREGUIDED, false) == ID_Unsat)
+    if (solver.addConstraint({{{1, prevvar}, {1, -getCurrentVar()}}, 1}, Origin::COREGUIDED, false).second == ID_Unsat)
       quit::exit_UNSAT(solution, upper_bound, solver.logger);
   }
 };
@@ -158,17 +160,19 @@ void checkLazyVariables(ConstrExp64& reformObj, std::vector<std::shared_ptr<Lazy
   }
 }
 
-void addLowerBound(const ConstrExp32& origObj, Val lower_bound, ID& lastLowerBound) {
+ID addLowerBound(const ConstrExp32& origObj, Val lower_bound, ID& lastLowerBound) {
   origObj.copyTo(aux);
   aux.addRhs(lower_bound);
   solver.dropExternal(lastLowerBound, true, true, true);
-  lastLowerBound = solver.addConstraint(aux, Origin::BOUND, true);
+  std::pair<ID, ID> res = solver.addConstraint(aux, Origin::BOUND, true);
+  lastLowerBound = res.second;
   aux.reset();
   if (lastLowerBound == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
+  return res.first;
 }
 
-void handleInconsistency(ConstrExp64& reformObj, const ConstrExp32& origObj,
-                         std::vector<std::shared_ptr<LazyVar>>& lazyVars, ID& lastLowerBound) {
+ID handleInconsistency(ConstrExp64& reformObj, const ConstrExp32& origObj,
+                       std::vector<std::shared_ptr<LazyVar>>& lazyVars, ID& lastLowerBound) {
   // take care of derived unit lits and remove zeroes
   reformObj.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), false);
   Val prev_lower = lower_bound;
@@ -177,8 +181,7 @@ void handleInconsistency(ConstrExp64& reformObj, const ConstrExp32& origObj,
   if (core.getDegree() == 0) {  // apparently only unit assumptions were derived
     assert(lower_bound > prev_lower);
     checkLazyVariables(reformObj, lazyVars);
-    addLowerBound(origObj, lower_bound, lastLowerBound);
-    return;
+    return addLowerBound(origObj, lower_bound, lastLowerBound);
   }
   // figure out an appropriate core
   core.simplifyToCardinality(false);
@@ -225,18 +228,18 @@ void handleInconsistency(ConstrExp64& reformObj, const ConstrExp32& origObj,
     reformObj.addUp(core, mult);
     assert(lower_bound == -reformObj.getDegree());
     // add channeling constraints
-    if (solver.addConstraint(core, Origin::COREGUIDED, false) == ID_Unsat)
+    if (solver.addConstraint(core, Origin::COREGUIDED, false).second == ID_Unsat)
       quit::exit_UNSAT(solution, upper_bound, solver.logger);
     core.invert();
-    if (solver.addConstraint(core, Origin::COREGUIDED, false) == ID_Unsat)
+    if (solver.addConstraint(core, Origin::COREGUIDED, false).second == ID_Unsat)
       quit::exit_UNSAT(solution, upper_bound, solver.logger);
     for (Var v = oldN + 1; v < newN; ++v) {  // add symmetry breaking constraints
-      if (solver.addConstraint({{{1, v}, {1, -v - 1}}, 1}, Origin::COREGUIDED, false) == ID_Unsat)
+      if (solver.addConstraint({{{1, v}, {1, -v - 1}}, 1}, Origin::COREGUIDED, false).second == ID_Unsat)
         quit::exit_UNSAT(solution, upper_bound, solver.logger);
     }
   }
   checkLazyVariables(reformObj, lazyVars);
-  addLowerBound(origObj, lower_bound, lastLowerBound);
+  return addLowerBound(origObj, lower_bound, lastLowerBound);
 }
 
 void optimize(ConstrExp32& origObj) {
@@ -255,7 +258,9 @@ void optimize(ConstrExp32& origObj) {
   ConstrExp64 reformObj;
   origObj.copyTo(reformObj);
   ID lastUpperBound = ID_Undef;
+  ID lastUpperBoundUnprocessed = ID_Undef;
   ID lastLowerBound = ID_Undef;
+  ID lastLowerBoundUnprocessed = ID_Undef;
 
   IntSet assumps;
   std::vector<std::shared_ptr<LazyVar>> lazyVars;
@@ -291,7 +296,7 @@ void optimize(ConstrExp32& origObj) {
     if (reply == SolveState::SAT) {
       assert(foundSolution());
       ++stats.NSOLS;
-      handleNewSolution(origObj, lastUpperBound);
+      lastUpperBoundUnprocessed = handleNewSolution(origObj, lastUpperBound);
       assert((options.optMode != Options::COREGUIDED && options.optMode != Options::LAZYCOREGUIDED) ||
              lower_bound == upper_bound);
     } else if (reply == SolveState::INCONSISTENT) {
@@ -301,7 +306,7 @@ void optimize(ConstrExp32& origObj) {
         assert(solver.decisionLevel() == 0);
         quit::exit_UNSAT(solution, upper_bound, solver.logger);
       }
-      handleInconsistency(reformObj, origObj, lazyVars, lastLowerBound);
+      lastLowerBoundUnprocessed = handleInconsistency(reformObj, origObj, lazyVars, lastLowerBound);
       core.resize(solver.getNbVars() + 1);
     } else
       assert(reply == SolveState::INPROCESSED);  // keep looping
@@ -319,14 +324,12 @@ void optimize(ConstrExp32& origObj) {
         origObj.copyTo(aux);
         aux.invert();
         aux.addRhs(1 - upper_bound);
-        aux.id = lastUpperBound - 1;  // -1 to get the unprocessed formula line
-        aux.resetBuffer(aux.id);
+        aux.resetBuffer(lastUpperBoundUnprocessed);
         coreAggregate.addUp(aux);
         aux.reset();
         origObj.copyTo(aux);
         aux.addRhs(lower_bound);
-        aux.id = lastLowerBound - 1;  // -1 to get the unprocessed formula line
-        aux.resetBuffer(aux.id);
+        aux.resetBuffer(lastLowerBoundUnprocessed);
         coreAggregate.addUp(aux);
         aux.reset();
         assert(coreAggregate.getSlack(solver.getLevel()) < 0);

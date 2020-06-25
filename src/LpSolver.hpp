@@ -115,7 +115,7 @@ class LpSolver {
   // @return: false if inconsistency detected, true otherwise
   void inProcess();
 
-  void addConstraint(ConstrExp32& c, bool removable);
+  void addConstraint(ConstrExp32& c, bool removable, ID id);
   void addConstraint(CRef cr, bool removable);
   void removeConstraint(ID id);
 

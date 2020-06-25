@@ -106,7 +106,6 @@ struct Constr {  // internal solver constraint optimized for fast propagation
       out.addLhs(coef(i), lit(i));
     }
     out.degree = degree;
-    out.id = id;
     out.orig = getOrigin();
     if (out.plogger) out.resetBuffer(id);
   }
@@ -114,7 +113,7 @@ struct Constr {  // internal solver constraint optimized for fast propagation
   ConstrSimple<CF, DG> toSimpleCons() const {
     ConstrSimple<CF, DG> result;
     result.rhs = degree;
-    result.id = id;
+    result.proofLine = std::to_string(id) + " ";
     result.orig = getOrigin();
     result.terms.reserve(size());
     for (unsigned int i = 0; i < size(); ++i) result.terms.emplace_back(coef(i), lit(i));
@@ -137,7 +136,7 @@ struct ConstraintAllocator {
   uint32_t at = 0, cap = 0;
   uint32_t wasted = 0;  // for GC
   void capacity(uint32_t min_cap);
-  CRef alloc(ConstrExp32& constraint, bool locked);
+  CRef alloc(ConstrExp32& constraint, bool locked, ID id);
   Constr& operator[](CRef cr) { return (Constr&)*(memory + cr.ofs); }
   const Constr& operator[](CRef cr) const { return (Constr&)*(memory + cr.ofs); }
 };

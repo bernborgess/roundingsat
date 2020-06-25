@@ -31,6 +31,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #pragma once
 
 #include <iostream>
+#include <sstream>
 #include <vector>
 #include "typedefs.hpp"
 
@@ -51,7 +52,7 @@ struct ConstrSimple {
   std::vector<Term<CF>> terms;
   DG rhs = 0;
   Origin orig = Origin::UNKNOWN;
-  ID id = ID_Trivial;
+  std::string proofLine = std::to_string(ID_Trivial) + " ";
 
   void toNormalFormLit() {
     for (auto& t : terms) {
@@ -76,7 +77,6 @@ struct ConstrSimple {
 
 template <typename CF, typename DG>
 inline std::ostream& operator<<(std::ostream& o, const ConstrSimple<CF, DG>& sc) {
-  o << sc.id << ": ";
   for (auto& t : sc.terms) o << "+ " << t << " ";
   return o << ">= " << sc.rhs;
 }
