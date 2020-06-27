@@ -114,17 +114,6 @@ LpSolver::LpSolver(Solver& slvr, const ConstrExp32& o) : solver(slvr) {
   for (CRef cr : solver.constraints)
     if (solver.ca[cr].getOrigin() == Origin::FORMULA) addConstraint(cr, false);
 
-  // How does RoundingSat perform branch-and-bound minimization?
-  // - F is the objective function, with a trivial lower bound L and trivial upper bound U
-  // - let the rescaled upper bound be UU = 2^ceil(lg(U-L))
-  // - take a set of auxiliary variables such that an exponentially weighted sum (EWS) over the negative (!)
-  // literals of these variables represents some value Y s.t. 0 <= Y <= UU
-  // - let the dynamically changing upper bound of F be UB = UU-Y
-  // - introduce the constraint F-L =< UB = UU-Y
-  // - flip the inequality: -F+L >= -UU+Y
-  // - put -F-Y >= -UU-L in normal form
-  // Now, if all auxiliary variables are true, Y==0, so only the trivial upper bound UU+L is enforced on F.
-  // If all auxiliary variables are false, Y==UU, so F is forced on its trivial lower bound L.
   soplex::DVectorReal objective;
   objective.reDim(getNbVariables());  // NOTE: automatically set to zero
   if (o.vars.size() > 0)
@@ -315,12 +304,13 @@ void LpSolver::addFilteredCuts() {
   for (int i : keptCuts) {
     CandidateCut& cc = candidateCuts[i];
     if (cc.cr == CRef_Undef) {  // Gomory cut
-      ic.init(cc.simpcons);
-      ic.postProcess(solver.getLevel(), solver.getPos(), true, stats);
-      if (ic.getDegree() <= 0) continue;
-      solver.learnConstraint(ic, Origin::GOMORY);
-      addConstraint(ic, true, ic.plogger ? ic.logProofLineWithInfo("Gomory", stats) : ++solver.crefID);
-      ic.reset();
+      ConstrExpArb& ce = solver.ceStore.takeArb();
+      ce.init(cc.simpcons);
+      ce.postProcess(solver.getLevel(), solver.getPos(), true, stats);
+      if (ce.getDegree() <= 0) continue;
+      solver.learnConstraint(ce, Origin::GOMORY);
+      addConstraint(ce, true, ce.plogger ? ce.logProofLineWithInfo("Gomory", stats) : ++solver.crefID);
+      solver.ceStore.leaveArb(ce);
     } else {  // learned cut
       ++stats.NLPLEARNEDCUTS;
       addConstraint(cc.cr, true);
@@ -487,7 +477,7 @@ void LpSolver::_inProcess() {
     return;
   if (!lp.hasSol()) return;
   lp.getPrimal(lpSol);
-  assert(lpSol.dim() == lpSolution.size());
+  assert(lpSol.dim() == (int)lpSolution.size());
   for (int i = 0; i < lpSol.dim(); ++i) lpSolution[i] = lpSol[i];
   lp.getSlacksReal(lpSlackSolution);
   assert((int)solver.phase.size() == getNbVariables());
@@ -506,35 +496,40 @@ void LpSolver::resetBasis() {
   lp.clearBasis();  // and hope next iteration works fine
 }
 
-void LpSolver::convertConstraint(ConstrExp32& c, soplex::DSVectorReal& row, Val& rhs) {
-  assert(row.max() >= (int)c.vars.size());
-  rhs = c.getRhs();
-  for (Var v : c.vars) {
-    Coef coef = c.coefs[v];
-    if (coef == 0) continue;
-    assert(v < lp.numColsReal());
-    row.add(v, coef);
+void LpSolver::convertConstraint(const ConstrSimple64& c, soplex::DSVectorReal& row, double& rhs) {
+  assert(row.max() >= (int)c.terms.size());
+  for (auto& t : c.terms) {
+    if (t.c == 0) continue;
+    assert(t.l>0);
+    assert(t.l < lp.numColsReal());
+    assert(t.c<INF_long);
+    row.add(t.l, t.c);
   }
+  rhs = c.rhs;
   assert(validRhs(rhs));
 }
 
-void LpSolver::addConstraint(ConstrExp32& c, bool removable, ID id) {
+void LpSolver::addConstraint(ConstrExpArb& c, bool removable, ID id) {
   assert(id != ID_Trivial);
   toRemove.erase(id);
   if (!id2row.count(id) && !toAdd.count(id)) {
-    soplex::DSVectorReal row(c.vars.size());
-    Val rhs;
-    convertConstraint(c, row, rhs);
-    toAdd[id] = {row, rhs, removable};
+    if(c.getDegree()>=INF_long){
+      c.weakenDivideRoundRational(lpSolution, aux::ceildiv<bigint>(lcc.getDegree(), INF_long - 1));
+      id = c.plogger ? c.logProofLineWithInfo("LP", stats) : ++solver.crefID;
+    }
+    assert(c.getDegree()<INF_long);
+    assert(c.isSaturated());
+    toAdd[id] = {c.toSimpleCons<long long, int128>(),removable};
   }
 }
 
 void LpSolver::addConstraint(CRef cr, bool removable) {
   assert(cr != CRef_Undef);
   assert(cr != CRef_Unsat);
-  solver.ca[cr].toConstraint(ic);
-  addConstraint(ic, removable, solver.ca[cr].id);
-  ic.reset();
+  ConstrExpArb& ce = solver.ceStore.takeArb();
+  solver.ca[cr].toConstraint(ce);
+  addConstraint(ce, removable, solver.ca[cr].id);
+  solver.ceStore.leaveArb(ce);
 }
 
 void LpSolver::removeConstraint(ID id) {
@@ -570,7 +565,10 @@ void LpSolver::flushConstraints() {
     row2data.reserve(row2data.size() + toAdd.size());
     id2row.reserve(id2row.size() + toAdd.size());
     for (auto& p : toAdd) {
-      rowsToAdd.add(soplex::LPRowReal(p.second.lhs, soplex::LPRowReal::Type::GREATER_EQUAL, p.second.rhs));
+      double rhs;
+      soplex::DSVectorReal row(p.second.cs.terms.size());
+      convertConstraint(p.second.cs,row,rhs);
+      rowsToAdd.add(soplex::LPRowReal(row, soplex::LPRowReal::Type::GREATER_EQUAL, rhs));
       id2row[p.first] = row2data.size();
       row2data.emplace_back(p.first, p.second.removable);
       ++stats.NLPADDEDROWS;

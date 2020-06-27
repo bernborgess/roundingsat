@@ -56,8 +56,7 @@ enum LpStatus { INFEASIBLE, OPTIMAL, PIVOTLIMIT, UNDETERMINED };
 #pragma GCC diagnostic pop
 
 struct AdditionData {
-  soplex::DSVectorReal lhs;
-  Val rhs;
+  ConstrSimple64 cs;
   bool removable;
 };
 
@@ -118,7 +117,7 @@ class LpSolver {
   // @return: false if inconsistency detected, true otherwise
   void inProcess();
 
-  void addConstraint(ConstrExp32& c, bool removable, ID id);
+  void addConstraint(ConstrExpArb& c, bool removable, ID id);
   void addConstraint(CRef cr, bool removable);
   void removeConstraint(ID id);
 
@@ -131,7 +130,7 @@ class LpSolver {
   LpStatus _checkFeasibility(bool inProcessing);
   void _inProcess();
 
-  void convertConstraint(ConstrExp32& c, soplex::DSVectorReal& row, Val& rhs);
+  void convertConstraint(const ConstrSimple64& c, soplex::DSVectorReal& row, double& rhs);
   void resetBasis();
   void createLinearCombinationFarkas(soplex::DVectorReal& mults);
   CandidateCut createLinearCombinationGomory(soplex::DVectorReal& mults);
