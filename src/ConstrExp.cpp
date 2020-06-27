@@ -373,6 +373,36 @@ void ConstrExp<SMALL, LARGE>::weakenDivideRound(const IntVecIt& level, Lit l, bo
 }
 
 template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::weakenNonDivisibleNonFalsifieds(const IntVecIt& level, const LARGE& div,
+                                                              bool fullWeakening, Lit asserting) {
+  assert(div > 0);
+  if (div == 1) return;
+  if (fullWeakening) {
+    for (Var v : vars)
+      if (coefs[v] % div != 0 && !falsified(level, v) && v != toVar(asserting)) weaken(-coefs[v], v);
+  } else {
+    for (Var v : vars)
+      if (coefs[v] % div != 0 && !falsified(level, v)) weaken(-(coefs[v] % div), v);
+  }
+}
+
+template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::weakenDivideRoundRational(const std::vector<double>& assignment, const LARGE& d) {
+  if (d <= 1) return;
+  for (Var v : vars) {
+    LARGE rem = aux::mod_safe<LARGE>(coefs[v], d);
+    if (rem == 0) continue;
+    double d_double = static_cast<double>(d);
+    if (assignment[v] == 0 || (std::isfinite(d_double) && d_double * assignment[v] < static_cast<double>(rem)))
+      weaken(d - rem, v);
+    else
+      weaken(-rem, v);
+  }
+  divide(d);
+  saturate();
+}
+
+template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::applyMIR(const LARGE& d, std::function<Lit(Var)> toLit) {
   assert(d > 0);
   LARGE tmpRhs = rhs;
@@ -539,20 +569,6 @@ void ConstrExp<SMALL, LARGE>::heuristicWeakening(const IntVecIt& level, const st
   if (weakenNonImplying(level, rs::abs(coefs[v_prop]), slk, sts)) slk = getSlack(level);  // slack changed
   assert(slk < rs::abs(coefs[v_prop]));
   weakenNonImplied(level, slk, sts);
-}
-
-template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::weakenNonDivisibleNonFalsifieds(const IntVecIt& level, const LARGE& div,
-                                                              bool fullWeakening, Lit asserting) {
-  assert(div > 0);
-  if (div == 1) return;
-  if (fullWeakening) {
-    for (Var v : vars)
-      if (coefs[v] % div != 0 && !falsified(level, v) && v != toVar(asserting)) weaken(-coefs[v], v);
-  } else {
-    for (Var v : vars)
-      if (coefs[v] % div != 0 && !falsified(level, v)) weaken(-(coefs[v] % div), v);
-  }
 }
 
 template <typename SMALL, typename LARGE>

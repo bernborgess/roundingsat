@@ -68,12 +68,12 @@ struct CandidateCut {
   double ratSlack = 0;
 
   CandidateCut(){};
-  CandidateCut(ConstrExpArb& in, const soplex::DVectorReal& sol);
-  CandidateCut(const Constr& in, CRef cr, const soplex::DVectorReal& sol);
+  CandidateCut(ConstrExpArb& in, const std::vector<double>& sol);
+  CandidateCut(const Constr& in, CRef cr, const std::vector<double>& sol);
   double cosOfAngleTo(const CandidateCut& other) const;
 
  private:
-  void initialize(const soplex::DVectorReal& sol);
+  void initialize(const std::vector<double>& sol);
 };
 std::ostream& operator<<(std::ostream& o, const CandidateCut& cc);
 
@@ -90,7 +90,8 @@ class LpSolver {
       36028797018963968;  // 2^50: 1125899906842624 | 2^55: 36028797018963968 | 2^59: 576460752303423488
   // TODO: properly decide for Gomory cuts
 
-  soplex::DVectorReal lpSolution;
+  soplex::DVectorReal lpSol;
+  std::vector<double> lpSolution;
   soplex::DVectorReal lpSlackSolution;
   soplex::DVectorReal lpMultipliers;
   soplex::DVectorReal upperBounds;

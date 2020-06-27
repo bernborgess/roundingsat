@@ -182,6 +182,7 @@ struct ConstrExp {
   void divideRoundUp(const LARGE& d);
   void weakenDivideRound(const IntVecIt& level, Lit l, bool slackdiv, bool fullWeakening);
   void weakenNonDivisibleNonFalsifieds(const IntVecIt& level, const LARGE& div, bool fullWeakening, Lit asserting);
+  void weakenDivideRoundRational(const std::vector<double>& assignment, const LARGE& d);
   void applyMIR(const LARGE& d, std::function<Lit(Var)> toLit);
 
   bool divideByGCD();

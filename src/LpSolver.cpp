@@ -34,7 +34,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <queue>
 #include "Solver.hpp"
 
-CandidateCut::CandidateCut(ConstrExpArb& in, const soplex::DVectorReal& sol) {
+CandidateCut::CandidateCut(ConstrExpArb& in, const std::vector<double>& sol) {
   assert(in.isSaturated());
   assert(in.getDegree() < INF);
   if (in.getDegree() <= 0) return;
@@ -43,7 +43,7 @@ CandidateCut::CandidateCut(ConstrExpArb& in, const soplex::DVectorReal& sol) {
   initialize(sol);
 }
 
-CandidateCut::CandidateCut(const Constr& in, CRef cref, const soplex::DVectorReal& sol)
+CandidateCut::CandidateCut(const Constr& in, CRef cref, const std::vector<double>& sol)
     : simpcons(in.toSimpleCons<Coef, Val>()), cr(cref) {
   assert(in.degree() > 0);
   simpcons.toNormalFormVar();
@@ -51,7 +51,7 @@ CandidateCut::CandidateCut(const Constr& in, CRef cref, const soplex::DVectorRea
   assert(cr != CRef_Undef);
 }
 
-void CandidateCut::initialize(const soplex::DVectorReal& sol) {
+void CandidateCut::initialize(const std::vector<double>& sol) {
   std::sort(simpcons.terms.begin(), simpcons.terms.end(),
             [](const Term<Coef>& t1, const Term<Coef>& t2) { return t1.l < t2.l; });
   assert(norm == 1);
@@ -59,7 +59,10 @@ void CandidateCut::initialize(const soplex::DVectorReal& sol) {
   for (const Term<Coef>& p : simpcons.terms) norm += (double)p.c * (double)p.c;
   norm = std::sqrt(norm);
   ratSlack = -simpcons.rhs;
-  for (Term<Coef>& p : simpcons.terms) ratSlack += (double)p.c * sol[p.l];
+  for (Term<Coef>& p : simpcons.terms) {
+    assert(p.l > 0);  // simpcons is in var-normal form
+    ratSlack += (double)p.c * sol[p.l];
+  }
   assert(norm >= 0);
   if (norm == 0) norm = 1;
   ratSlack /= norm;
@@ -147,7 +150,8 @@ void LpSolver::setNbVariables(int n) {
   }
   lp.addColsReal(allCols);
 
-  lpSolution.reDim(n);
+  lpSol.reDim(n);
+  lpSolution.resize(n);
   lcc.resize(n);
   ic.resize(n);
   lowerBounds.reDim(n);
@@ -227,21 +231,8 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   else {
     assert(lcc.hasNoZeroes());
     lcc.weakenSmalls(lcc.absCoeffSum() / static_cast<bigint>((double)lcc.vars.size() / options.intolerance));
-    if (lcc.getDegree() >= INF) {
-      divisor = aux::ceildiv<bigint>(lcc.getDegree(), INF - 1);
-      for (Var v : lcc.vars) {
-        bigint rem = aux::mod_safe(lcc.coefs[v], divisor);
-        if (rem == 0) continue;
-        assert(rem > 0);
-        assert(divisor <= static_cast<bigint>(1e300));
-        if (divisor.convert_to<double>() * lpSolution[v] < rem.convert_to<double>())
-          lcc.weaken(divisor - rem, v);
-        else
-          lcc.weaken(-rem, v);
-      }
-      lcc.divide(divisor);
-      lcc.saturate();
-    }
+    if (lcc.getDegree() >= INF)
+      lcc.weakenDivideRoundRational(lpSolution, aux::ceildiv<bigint>(lcc.getDegree(), INF - 1));
   }
   assert(lcc.getDegree() < INF);
   assert(lcc.isSaturated());
@@ -259,7 +250,7 @@ void LpSolver::constructGomoryCandidates() {
     if (asynch_interrupt) return;
     double fractionality = 0;
     if (indices[row] >= 0) {  // basic original variable / column
-      assert(indices[row] < lpSolution.dim());
+      assert(indices[row] < lpSolution.size());
       fractionality = nonIntegrality(lpSolution[indices[row]]);
     } else {  // basic slack variable / row
       assert(-indices[row] - 1 < lpSlackSolution.dim());
@@ -495,7 +486,9 @@ void LpSolver::_inProcess() {
   } else if (lpstat != OPTIMAL)
     return;
   if (!lp.hasSol()) return;
-  lp.getPrimal(lpSolution);
+  lp.getPrimal(lpSol);
+  assert(lpSol.dim() == lpSolution.size());
+  for (int i = 0; i < lpSol.dim(); ++i) lpSolution[i] = lpSol[i];
   lp.getSlacksReal(lpSlackSolution);
   assert((int)solver.phase.size() == getNbVariables());
   for (Var v = 1; v < getNbVariables(); ++v) solver.phase[v] = (lpSolution[v] <= 0.5) ? -v : v;
