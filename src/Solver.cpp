@@ -45,7 +45,7 @@ Solver::Solver() : conflConstraint(ceStore.takeArb()), order_heap(activity) {
   ca.capacity(1024 * 1024);  // 4MB
 }
 
-Solver::~Solver() { ceStore.leaveArb(conflConstraint); }
+Solver::~Solver() { ceStore.leave(conflConstraint); }
 
 void Solver::setNbVars(long long nvars) {
   assert(nvars > 0);
@@ -137,7 +137,7 @@ void Solver::uncheckedEnqueue(Lit p, CRef from) {
       ConstrExpArb& logConstraint = ceStore.takeArb();
       C.toConstraint(logConstraint);
       logConstraint.logUnit(Level, Pos, v, stats);
-      ceStore.leaveArb(logConstraint);
+      ceStore.leave(logConstraint);
       assert(logger->unitIDs.size() == trail.size() + 1);
     }
   }
@@ -305,7 +305,7 @@ bool Solver::analyze(ConstrExpArb& confl) {
       BigCoef gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
       confl.addUp(reason, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
       confl.saturateAndFixOverflow(getLevel(), options.weakenFull);
-      ceStore.leaveArb(reason);
+      ceStore.leave(reason);
       assert(confl.getCoef(-l) == 0);
       assert(confl.getSlack(Level) < 0);
     }
@@ -378,7 +378,7 @@ bool Solver::extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrE
       BigCoef gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
       confl.addUp(reason, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
       confl.saturateAndFixOverflow(getLevel(), options.weakenFull);
-      ceStore.leaveArb(reason);
+      ceStore.leave(reason);
       assert(confl.getCoef(-l) == 0);
       assert(confl.getSlack(Level) < 0);
       assumpslk = confl.getSlack(assumptions);
@@ -532,11 +532,11 @@ std::pair<ID, ID> Solver::addInputConstraint(bool addToLP) {
   if (!runPropagation(confl, true)) {
     if (options.verbosity > 0) puts("c Input conflict");
     if (logger) confl.logInconsistency(Level, Pos, stats);
-    ceStore.leaveArb(confl);
+    ceStore.leave(confl);
     assert(decisionLevel() == 0);
     return {input, ID_Unsat};
   }
-  ceStore.leaveArb(confl);
+  ceStore.leave(confl);
   ID id = ca[cr].id;
   if (ca[cr].getOrigin() != Origin::FORMULA) external[id] = cr;
   if (addToLP && lpSolver) lpSolver->addConstraint(cr, false);

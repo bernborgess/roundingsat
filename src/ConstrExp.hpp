@@ -308,11 +308,11 @@ class ConstrExpStore {
   }
 
   ConstrExp32& take32() { return ce32s.take(); }
-  void leave32(ConstrExp32& ce) { return ce32s.leave(ce); }
+  void leave(ConstrExp32& ce) { return ce32s.leave(ce); }
   ConstrExp64& take64() { return ce64s.take(); }
-  void leave64(ConstrExp64& ce) { return ce64s.leave(ce); }
+  void leave(ConstrExp64& ce) { return ce64s.leave(ce); }
   ConstrExp96& take96() { return ce96s.take(); }
-  void leave96(ConstrExp96& ce) { return ce96s.leave(ce); }
+  void leave(ConstrExp96& ce) { return ce96s.leave(ce); }
   ConstrExpArb& takeArb() { return ceArbs.take(); }
-  void leaveArb(ConstrExpArb& ce) { return ceArbs.leave(ce); }
+  void leave(ConstrExpArb& ce) { return ceArbs.leave(ce); }
 };
