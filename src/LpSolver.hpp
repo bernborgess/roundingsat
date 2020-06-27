@@ -79,6 +79,7 @@ std::ostream& operator<<(std::ostream& o, const CandidateCut& cc);
 
 class Solver;
 class LpSolver {
+  friend class Solver;
   soplex::SoPlex lp;
   Solver& solver;
 
@@ -111,7 +112,7 @@ class LpSolver {
   void setNbVariables(int n);
 
   // @return: false if inconsistency detected, true otherwise
-  // stores inconsistency in solver.conflConstraint
+  // stores inconsistency in lcc
   LpStatus checkFeasibility(bool inProcessing = false);  // TODO: don't use objective function here?
   // @return: false if inconsistency detected, true otherwise
   void inProcess();

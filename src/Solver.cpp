@@ -74,8 +74,8 @@ void Solver::setNbOrigVars(int o_n) {
 
 void Solver::init() {
   if (!options.proofLogName.empty()) logger = std::make_shared<Logger>(options.proofLogName);
+  ceStore.initializeLogging(logger);
   tmpConstraint.initializeLogging(logger);
-  conflConstraint.initializeLogging(logger);
   logConstraint.initializeLogging(logger);
 }
 
@@ -184,7 +184,8 @@ void Solver::propagate(Lit l, CRef reason) {
  * Unit propagation with watched literals.
  * @post: all watches up to trail[qhead] have been propagated
  */
-bool Solver::runPropagation(bool onlyUnitPropagation) {
+bool Solver::runPropagation(ConstrExpArb& confl, bool onlyUnitPropagation) {
+  assert(confl.isReset());
   while (qhead < (int)trail.size()) {
     Lit p = trail[qhead++];
     std::vector<Watch>& ws = adj[-p];
@@ -210,13 +211,21 @@ bool Solver::runPropagation(bool onlyUnitPropagation) {
           cBumpActivity(C);
           recomputeLBD(C);
         }
-        C.toConstraint(conflConstraint);
+        C.toConstraint(confl);
         return false;
       }
     }
   }
   if (onlyUnitPropagation) return true;
-  if (lpSolver) return lpSolver->checkFeasibility() != INFEASIBLE;
+  if (lpSolver) {
+    if (lpSolver->checkFeasibility() == INFEASIBLE) {
+      assert(!lpSolver->lcc.isReset());
+      lpSolver->lcc.copyTo(confl);
+      lpSolver->lcc.reset();
+      return false;
+    }
+    return true;
+  }
   return true;
 }
 
@@ -522,7 +531,7 @@ std::pair<ID, ID> Solver::addInputConstraint(bool addToLP) {
 
   CRef cr = attachConstraint(tmpConstraint, true);
   tmpConstraint.reset();
-  if (!runPropagation(true)) {
+  if (!runPropagation(conflConstraint, true)) {
     if (options.verbosity > 0) puts("c Input conflict");
     if (logger) {
       conflConstraint.logInconsistency(Level, Pos, stats);
@@ -718,9 +727,8 @@ SolveState Solver::solve(const IntSet& assumptions, ConstrExp32& core, std::vect
   bool allClear = false;
   while (true) {
     if (asynch_interrupt) return SolveState::INTERRUPTED;
-    assert(conflConstraint.isReset());
     if (processLearnedStack() == CRef_Unsat) return SolveState::UNSAT;
-    allClear = runPropagation(allClear);
+    allClear = runPropagation(conflConstraint, allClear);
     if (!allClear) {
       assert(!conflConstraint.isReset());
       vDecayActivity();

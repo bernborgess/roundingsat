@@ -479,11 +479,7 @@ LpStatus LpSolver::_checkFeasibility(bool inProcessing) {
 
   createLinearCombinationFarkas(lpMultipliers);
   solver.learnConstraint(lcc, Origin::FARKAS);
-  if (lcc.getSlack(solver.getLevel()) < 0) {
-    lcc.copyTo(solver.conflConstraint);
-    lcc.reset();
-    return INFEASIBLE;
-  }
+  if (lcc.getSlack(solver.getLevel()) < 0) return INFEASIBLE;
   lcc.reset();
   return UNDETERMINED;
 }
@@ -492,8 +488,9 @@ void LpSolver::_inProcess() {
   assert(solver.decisionLevel() == 0);
   LpStatus lpstat = checkFeasibility(true);
   if (lpstat == INFEASIBLE) {
-    assert(solver.conflConstraint.getSlack(solver.getLevel()) < 0);
-    solver.conflConstraint.reset();  // learned Farkas constraint is falsified and will trigger unsatisfiability
+    assert(!lcc.isReset());
+    assert(lcc.getSlack(solver.getLevel()) < 0);
+    lcc.reset();  // learned Farkas constraint is falsified and will trigger unsatisfiability
     return;
   } else if (lpstat != OPTIMAL)
     return;

@@ -148,9 +148,9 @@ class Solver {
   /**
    * Unit propagation with watched literals.
    * @post: all constraints have been checked for propagation under trail[0..qhead[
-   * @return: true if inconsistency is detected, false otherwise. The inconsistency is stored in conflConstraint.
+   * @return: true if inconsistency is detected, false otherwise. The inconsistency is stored in confl.
    */
-  bool runPropagation(bool onlyUnitPropagation = false);
+  bool runPropagation(ConstrExpArb& confl, bool onlyUnitPropagation = false);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p);
 
   // ---------------------------------------------------------------------
