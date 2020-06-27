@@ -79,8 +79,8 @@ const ID ID_Trivial = 1;  // represents constraint 0 >= 0
 
 using Var = int;
 using Lit = int;
-using Coef = int;
-using Val = long long;
+using Coef = int;       // TODO: obsolete
+using Val = long long;  // TODO: obsolete
 inline Var toVar(Lit l) { return rs::abs(l); }
 
 const int INF = 1e9 + 1;              // based on max value of int that still allows addition of two ints

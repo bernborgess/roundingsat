@@ -53,6 +53,11 @@ class Solver {
 
   // ---------------------------------------------------------------------
   // Members
+
+ public:
+  std::shared_ptr<Logger> logger;
+  ConstrExpStore ceStore;
+
  private:
   int n;
   int orig_n;
@@ -62,8 +67,7 @@ class Solver {
   IntSet tmpSet;
   IntSet actSet;
   ConstrExp32 tmpConstraint;
-  ConstrExpArb conflConstraint;  // functions as old confl_data
-  ConstrExp32 logConstraint;
+  ConstrExpArb& conflConstraint;
   OrderHeap order_heap;
 
   std::vector<CRef> constraints;
@@ -90,10 +94,8 @@ class Solver {
   std::vector<ConstrSimple32> learnedStack;
 
  public:
-  std::shared_ptr<Logger> logger;
-  ConstrExpStore ceStore;
-
   Solver();
+  ~Solver();
   void init();                          // call after having read options
   void initLP(ConstrExp32& objective);  // TODO: fix when decoupling Solver and LpSolver
 
@@ -157,8 +159,8 @@ class Solver {
   // Conflict analysis
 
   void recomputeLBD(Constr& C);
-  bool analyze();
-  bool extractCore(const IntSet& assumptions, ConstrExp32& outCore, Lit l_assump = 0);
+  bool analyze(ConstrExpArb& confl);
+  bool extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrExp32& outCore, Lit l_assump = 0);
 
   // ---------------------------------------------------------------------
   // Constraint management

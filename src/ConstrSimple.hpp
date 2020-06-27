@@ -83,3 +83,6 @@ inline std::ostream& operator<<(std::ostream& o, const ConstrSimple<CF, DG>& sc)
 }
 
 using ConstrSimple32 = ConstrSimple<int, long long>;
+using ConstrSimple64 = ConstrSimple<long long, int128>;
+using ConstrSimple96 = ConstrSimple<int128, int128>;
+using ConstrSimpleArb = ConstrSimple<bigint, bigint>;

@@ -37,13 +37,15 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // ---------------------------------------------------------------------
 // Initialization
 
-Solver::Solver() : order_heap(activity) {
+Solver::Solver() : conflConstraint(ceStore.takeArb()), order_heap(activity) {
   ca.memory = NULL;
   ca.at = 0;
   ca.cap = 0;
   ca.wasted = 0;
   ca.capacity(1024 * 1024);  // 4MB
 }
+
+Solver::~Solver() { ceStore.leaveArb(conflConstraint); }
 
 void Solver::setNbVars(long long nvars) {
   assert(nvars > 0);
@@ -56,9 +58,8 @@ void Solver::setNbVars(long long nvars) {
   activity.resize(nvars + 1, 1 / actLimitV);
   phase.resize(nvars + 1);
   ceStore.resize(nvars + 1);
+  assert(conflConstraint.coefs.size() == (size_t)nvars + 1);
   tmpConstraint.resize(nvars + 1);
-  conflConstraint.resize(nvars + 1);
-  logConstraint.resize(nvars + 1);
   order_heap.resize(nvars + 1);
   for (Var v = n + 1; v <= nvars; ++v) phase[v] = -v, order_heap.insert(v);
   if (lpSolver) lpSolver->setNbVariables(nvars + 1);
@@ -76,7 +77,6 @@ void Solver::init() {
   if (!options.proofLogName.empty()) logger = std::make_shared<Logger>(options.proofLogName);
   ceStore.initializeLogging(logger);
   tmpConstraint.initializeLogging(logger);
-  logConstraint.initializeLogging(logger);
 }
 
 void Solver::initLP(ConstrExp32& objective) {
@@ -134,9 +134,10 @@ void Solver::uncheckedEnqueue(Lit p, CRef from) {
     Reason[v] = CRef_Undef;  // no need to keep track of reasons for unit literals
     if (logger) {
       Constr& C = ca[from];
+      ConstrExpArb& logConstraint = ceStore.takeArb();
       C.toConstraint(logConstraint);
       logConstraint.logUnit(Level, Pos, v, stats);
-      logConstraint.reset();
+      ceStore.leaveArb(logConstraint);
       assert(logger->unitIDs.size() == trail.size() + 1);
     }
   }
@@ -251,29 +252,29 @@ void Solver::recomputeLBD(Constr& C) {
   }
 }
 
-bool Solver::analyze() {
+bool Solver::analyze(ConstrExpArb& confl) {
   if (logger) logger->logComment("Analyze", stats);
-  assert(conflConstraint.getSlack(Level) < 0);
-  stats.NADDEDLITERALS += conflConstraint.vars.size();
-  conflConstraint.removeUnitsAndZeroes(Level, Pos);
+  assert(confl.getSlack(Level) < 0);
+  stats.NADDEDLITERALS += confl.vars.size();
+  confl.removeUnitsAndZeroes(Level, Pos);
   assert(actSet.size() == 0);  // will hold the literals that need their activity bumped
-  for (Var v : conflConstraint.vars) {
-    if (!options.bumpOnlyFalse || isFalse(Level, conflConstraint.getLit(v))) actSet.add(v);
+  for (Var v : confl.vars) {
+    if (!options.bumpOnlyFalse || isFalse(Level, confl.getLit(v))) actSet.add(v);
   }
   while (decisionLevel() > 0) {
     if (asynch_interrupt) return false;
     Lit l = trail.back();
-    assert(rs::abs(conflConstraint.getCoef(-l)) < INF);
-    Coef confl_coef_l = static_cast<Coef>(conflConstraint.getCoef(-l));
+    assert(rs::abs(confl.getCoef(-l)) < INF);
+    BigCoef confl_coef_l = confl.getCoef(-l);
     if (confl_coef_l > 0) {
       ++stats.NRESOLVESTEPS;
-      assert(conflConstraint.getSlack(Level) < 0);
-      AssertionStatus status = conflConstraint.isAssertingBefore(Level, decisionLevel());
+      assert(confl.getSlack(Level) < 0);
+      AssertionStatus status = confl.isAssertingBefore(Level, decisionLevel());
       if (status == AssertionStatus::ASSERTING)
         break;
       else if (status == AssertionStatus::FALSIFIED) {
         backjumpTo(decisionLevel() - 1);
-        assert(conflConstraint.getSlack(Level) < 0);
+        assert(confl.getSlack(Level) < 0);
         continue;
       }
       assert(Reason[toVar(l)] != CRef_Undef);
@@ -291,39 +292,40 @@ bool Solver::analyze() {
       stats.NLPENCLEARNEDFARKAS += reasonC.getOrigin() == Origin::LEARNEDFARKAS;
       stats.NLPENCFARKAS += reasonC.getOrigin() == Origin::FARKAS;
 
-      reasonC.toConstraint(tmpConstraint);
-      stats.NADDEDLITERALS += tmpConstraint.vars.size();
-      tmpConstraint.removeUnitsAndZeroes(Level, Pos);  // NOTE: also saturates
+      ConstrExpArb& reason = ceStore.takeArb();
+      reasonC.toConstraint(reason);
+      stats.NADDEDLITERALS += reason.vars.size();
+      reason.removeUnitsAndZeroes(Level, Pos);  // NOTE: also saturates
       if (options.weakenNonImplying)
-        tmpConstraint.weakenNonImplying(Level, tmpConstraint.getCoef(l), tmpConstraint.getSlack(Level),
-                                        stats);  // NOTE: also saturates
-      assert(tmpConstraint.getCoef(l) > tmpConstraint.getSlack(Level));
-      tmpConstraint.weakenDivideRound(getLevel(), l, options.slackdiv, options.weakenFull);
-      assert(tmpConstraint.getSlack(Level) <= 0);
-      for (Var v : tmpConstraint.vars) {
-        Lit l = tmpConstraint.getLit(v);
+        reason.weakenNonImplying(Level, reason.getCoef(l), reason.getSlack(Level),
+                                 stats);  // NOTE: also saturates
+      assert(reason.getCoef(l) > reason.getSlack(Level));
+      reason.weakenDivideRound(getLevel(), l, options.slackdiv, options.weakenFull);
+      assert(reason.getSlack(Level) <= 0);
+      for (Var v : reason.vars) {
+        Lit l = reason.getLit(v);
         if (!options.bumpOnlyFalse || isFalse(Level, l)) actSet.add(v);
-        if (options.bumpCanceling && conflConstraint.getLit(v) == -l) actSet.add(-v);
+        if (options.bumpCanceling && confl.getLit(v) == -l) actSet.add(-v);
       }
-      Coef reason_coef_l = tmpConstraint.getCoef(l);
-      Coef gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
-      conflConstraint.addUp(tmpConstraint, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
-      conflConstraint.saturateAndFixOverflow(getLevel(), options.weakenFull);
-      tmpConstraint.reset();
-      assert(conflConstraint.getCoef(-l) == 0);
-      assert(conflConstraint.getSlack(Level) < 0);
+      const BigCoef& reason_coef_l = reason.getCoef(l);
+      BigCoef gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
+      confl.addUp(reason, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
+      confl.saturateAndFixOverflow(getLevel(), options.weakenFull);
+      ceStore.leaveArb(reason);
+      assert(confl.getCoef(-l) == 0);
+      assert(confl.getSlack(Level) < 0);
     }
     undoOne();
   }
-  assert(conflConstraint.getSlack(Level) < 0);
+  assert(confl.getSlack(Level) < 0);
   for (Lit l : actSet.keys)
     if (l != 0) vBumpActivity(toVar(l));
   actSet.reset();
   return true;
 }
 
-bool Solver::extractCore(const IntSet& assumptions, ConstrExp32& outCore, Lit l_assump) {
-  assert(!conflConstraint.isReset());
+bool Solver::extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrExp32& outCore, Lit l_assump) {
+  assert(!confl.isReset());
   outCore.reset();
 
   if (l_assump != 0) {  // l_assump is an assumption propagated to the opposite value
@@ -355,45 +357,46 @@ bool Solver::extractCore(const IntSet& assumptions, ConstrExp32& outCore, Lit l_
   for (Lit l : decisions) decide(l);
   for (Lit l : props) propagate(l, Reason[toVar(l)]);
 
-  stats.NADDEDLITERALS += conflConstraint.vars.size();
-  conflConstraint.removeUnitsAndZeroes(Level, Pos);
-  assert(conflConstraint.getSlack(Level) < 0);
+  stats.NADDEDLITERALS += confl.vars.size();
+  confl.removeUnitsAndZeroes(Level, Pos);
+  assert(confl.getSlack(Level) < 0);
 
   // analyze conflict
-  BigVal assumpslk = conflConstraint.getSlack(assumptions);
-  //  int128 assumpslk = conflConstraint.getSlack(assumptions);
+  BigVal assumpslk = confl.getSlack(assumptions);
+  //  int128 assumpslk = confl.getSlack(assumptions);
   while (assumpslk >= 0) {
     if (asynch_interrupt) return false;
     Lit l = trail.back();
-    assert(rs::abs(conflConstraint.getCoef(-l)) < INF);
-    Coef confl_coef_l = static_cast<Coef>(conflConstraint.getCoef(-l));
+    assert(rs::abs(confl.getCoef(-l)) < INF);
+    BigCoef confl_coef_l = confl.getCoef(-l);
     if (confl_coef_l > 0) {
-      ca[Reason[toVar(l)]].toConstraint(tmpConstraint);
-      stats.NADDEDLITERALS += tmpConstraint.vars.size();
-      tmpConstraint.removeUnitsAndZeroes(Level, Pos);
+      ConstrExpArb& reason = ceStore.takeArb();
+      ca[Reason[toVar(l)]].toConstraint(reason);
+      stats.NADDEDLITERALS += reason.vars.size();
+      reason.removeUnitsAndZeroes(Level, Pos);
       if (options.weakenNonImplying)
-        tmpConstraint.weakenNonImplying(Level, tmpConstraint.getCoef(l), tmpConstraint.getSlack(Level),
-                                        stats);  // NOTE: also saturates
-      assert(tmpConstraint.getCoef(l) > tmpConstraint.getSlack(Level));
-      tmpConstraint.weakenDivideRound(getLevel(), l, options.slackdiv, options.weakenFull);
-      assert(tmpConstraint.getSlack(Level) <= 0);
-      Coef reason_coef_l = tmpConstraint.getCoef(l);
-      Coef gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
-      conflConstraint.addUp(tmpConstraint, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
-      conflConstraint.saturateAndFixOverflow(getLevel(), options.weakenFull);
-      tmpConstraint.reset();
-      assert(conflConstraint.getCoef(-l) == 0);
-      assert(conflConstraint.getSlack(Level) < 0);
-      assumpslk = conflConstraint.getSlack(assumptions);
+        reason.weakenNonImplying(Level, reason.getCoef(l), reason.getSlack(Level),
+                                 stats);  // NOTE: also saturates
+      assert(reason.getCoef(l) > reason.getSlack(Level));
+      reason.weakenDivideRound(getLevel(), l, options.slackdiv, options.weakenFull);
+      assert(reason.getSlack(Level) <= 0);
+      BigCoef reason_coef_l = reason.getCoef(l);
+      BigCoef gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
+      confl.addUp(reason, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
+      confl.saturateAndFixOverflow(getLevel(), options.weakenFull);
+      ceStore.leaveArb(reason);
+      assert(confl.getCoef(-l) == 0);
+      assert(confl.getSlack(Level) < 0);
+      assumpslk = confl.getSlack(assumptions);
     }
     assert(decisionLevel() == (int)decisions.size());
     undoOne();
   }
-  assert(conflConstraint.getDegree() > 0);
-  assert(conflConstraint.getDegree() < INF);
-  assert(conflConstraint.isSaturated());
-  conflConstraint.copyTo(outCore);
-  conflConstraint.reset();
+  assert(confl.getDegree() > 0);
+  assert(confl.getDegree() < INF);
+  assert(confl.isSaturated());
+  confl.copyTo(outCore);
+  confl.reset();
 
   // weaken non-falsifieds
   for (Var v : outCore.vars)
@@ -527,19 +530,19 @@ std::pair<ID, ID> Solver::addInputConstraint(bool addToLP) {
     tmpConstraint.reset();
     assert(decisionLevel() == 0);
     return {input, ID_Unsat};
-  }
+  }  // TODO: don't check for this here, but just add the constraints to the learned stack?
 
   CRef cr = attachConstraint(tmpConstraint, true);
   tmpConstraint.reset();
-  if (!runPropagation(conflConstraint, true)) {
+  auto& confl = ceStore.takeArb();
+  if (!runPropagation(confl, true)) {
     if (options.verbosity > 0) puts("c Input conflict");
-    if (logger) {
-      conflConstraint.logInconsistency(Level, Pos, stats);
-      conflConstraint.reset();
-    }
+    if (logger) confl.logInconsistency(Level, Pos, stats);
+    ceStore.leaveArb(confl);
     assert(decisionLevel() == 0);
     return {input, ID_Unsat};
   }
+  ceStore.leaveArb(confl);
   ID id = ca[cr].id;
   if (ca[cr].getOrigin() != Origin::FORMULA) external[id] = cr;
   if (addToLP && lpSolver) lpSolver->addConstraint(cr, false);
@@ -753,7 +756,7 @@ SolveState Solver::solve(const IntSet& assumptions, ConstrExp32& core, std::vect
         }
         return SolveState::UNSAT;
       } else if (decisionLevel() >= (int)assumptions_lim.size()) {
-        if (!analyze()) return SolveState::INTERRUPTED;
+        if (!analyze(conflConstraint)) return SolveState::INTERRUPTED;
         assert(conflConstraint.getDegree() > 0);
         assert(conflConstraint.getDegree() < INF);
         assert(conflConstraint.isSaturated());
@@ -763,7 +766,7 @@ SolveState Solver::solve(const IntSet& assumptions, ConstrExp32& core, std::vect
           learnConstraint(conflConstraint, Origin::LEARNED);
         conflConstraint.reset();
       } else {
-        if (!extractCore(assumptions, core)) return SolveState::INTERRUPTED;
+        if (!extractCore(conflConstraint, assumptions, core)) return SolveState::INTERRUPTED;
         return SolveState::INCONSISTENT;
       }
     } else {  // no conflict
@@ -791,7 +794,7 @@ SolveState Solver::solve(const IntSet& assumptions, ConstrExp32& core, std::vect
               backjumpTo(0), core.reset();  // negated assumption is unit
             else {
               ca[Reason[toVar(l)]].toConstraint(conflConstraint);
-              if (!extractCore(assumptions, core, -l)) return SolveState::INTERRUPTED;
+              if (!extractCore(conflConstraint, assumptions, core, -l)) return SolveState::INTERRUPTED;
             }
             return SolveState::INCONSISTENT;
           }

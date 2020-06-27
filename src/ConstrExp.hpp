@@ -244,7 +244,7 @@ using ConstrExp96 = ConstrExp<int128, int128>;
 using ConstrExpArb = ConstrExp<bigint, bigint>;
 
 template <typename CE>
-class Storage {
+class Storage {  // TODO: private constructor for ConstrExp, only accessible to Storage
   size_t n = 0;
   std::vector<std::unique_ptr<CE>> ces;
   std::vector<CE*> availables;
@@ -252,7 +252,7 @@ class Storage {
 
  public:
   void resize(size_t newn) {
-    assert(n < INF);
+    assert(n <= INF);
     n = newn;
     for (auto& ce : ces) ce->resize(n);
   }
@@ -278,9 +278,9 @@ class Storage {
   }
 
   void leave(CE& ce) {
-    assert(ce.isReset());
     assert(std::any_of(ces.begin(), ces.end(), [&](std::unique_ptr<CE>& i) { return i.get() == &ce; }));
     assert(std::none_of(availables.begin(), availables.end(), [&](CE* i) { return i == &ce; }));
+    ce.reset();
     availables.push_back(&ce);
   }
 };
