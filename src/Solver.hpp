@@ -50,6 +50,7 @@ class Solver {
   friend class Counting;
   template <typename CF, typename DG>
   friend class Watched;
+  friend class Arbitrary;
 
   // ---------------------------------------------------------------------
   // Members
@@ -66,7 +67,6 @@ class Solver {
   ConstraintAllocator ca;
   IntSet tmpSet;
   IntSet actSet;
-  ConstrExp32 tmpConstraint;
   ConstrExpArb& conflConstraint;
   OrderHeap order_heap;
 
@@ -165,7 +165,7 @@ class Solver {
   // ---------------------------------------------------------------------
   // Constraint management
 
-  CRef attachConstraint(ConstrExp32& constraint, bool locked);
+  CRef attachConstraint(ConstrExpArb& constraint, bool locked);
   template <typename S, typename L>
   void learnConstraint(ConstrExp<S, L>& c, Origin orig) {
     assert(orig == Origin::LEARNED || orig == Origin::FARKAS || orig == Origin::LEARNEDFARKAS ||
@@ -174,7 +174,7 @@ class Solver {
     learnedStack.push_back(c.template toSimpleCons<Coef, Val>());
   }
   CRef processLearnedStack();
-  std::pair<ID, ID> addInputConstraint(bool addToLP);
+  std::pair<ID, ID> addInputConstraint(ConstrExpArb& ce, bool addToLP);
   void removeConstraint(Constr& C, bool override = false);
 
   // ---------------------------------------------------------------------

@@ -32,8 +32,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Solver.hpp"
 #include "globals.hpp"
 
-void Clause::initialize(const ConstrExp32& constraint, bool locked, CRef cr, Solver& solver, ID _id) {
+void Clause::initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID _id) {
   assert(_id > ID_Trivial);
+  assert(constraint.vars.size() < INF);
+  assert(constraint.getDegree() == 1);
   unsigned int length = constraint.vars.size();
 
   id = _id;
@@ -137,15 +139,16 @@ WatchStatus Clause::checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver
   return WatchStatus::KEEPWATCH;
 }
 
-void Cardinality::initialize(const ConstrExp32& constraint, bool locked, CRef cr, Solver& solver, ID _id) {
+void Cardinality::initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID _id) {
   assert(_id > ID_Trivial);
   assert(constraint.vars.size() < INF);
+  assert(rs::abs(constraint.coefs[constraint.vars[0]]) == 1);
   unsigned int length = constraint.vars.size();
   assert(constraint.getDegree() <= length);
 
   id = _id;
   act = 0;
-  degr = constraint.getDegree();
+  degr = static_cast<unsigned int>(constraint.getDegree());
   header = {0, (unsigned int)constraint.orig, 0x07FFFFFF, 0, locked, length};
   ntrailpops = -1;
   watchIdx = 0;
@@ -248,14 +251,15 @@ WatchStatus Cardinality::checkForPropagation(CRef cr, int& idx, [[maybe_unused]]
 }
 
 template <typename CF, typename DG>
-void Counting<CF, DG>::initialize(const ConstrExp32& constraint, bool locked, CRef cr, Solver& solver, ID _id) {
+void Counting<CF, DG>::initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID _id) {
   assert(_id > ID_Trivial);
+  // TODO: check whether constraint fits in <CF,DG>
   ++stats.NCOUNTING;
   unsigned int length = constraint.vars.size();
 
   id = _id;
   act = 0;
-  degr = constraint.getDegree();
+  degr = static_cast<DG>(constraint.getDegree());
   header = {0, (unsigned int)constraint.orig, 0x07FFFFFF, 0, locked, length};
   ntrailpops = -1;
   watchIdx = 0;
@@ -270,7 +274,7 @@ void Counting<CF, DG>::initialize(const ConstrExp32& constraint, bool locked, CR
     Var v = constraint.vars[i];
     assert(constraint.getLit(v) != 0);
     Lit l = constraint.getLit(v);
-    data[i] = {rs::abs(constraint.coefs[v]), l};
+    data[i] = {static_cast<CF>(rs::abs(constraint.coefs[v])), l};
     adj[l].emplace_back(cr, i + INF);
     if (!isFalse(Level, l) || Pos[toVar(l)] >= qhead) slack += data[i].c;
   }
@@ -332,14 +336,15 @@ void Counting<CF, DG>::undoFalsified(int i) {
 }
 
 template <typename CF, typename DG>
-void Watched<CF, DG>::initialize(const ConstrExp32& constraint, bool locked, CRef cr, Solver& solver, ID _id) {
+void Watched<CF, DG>::initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID _id) {
   assert(_id > ID_Trivial);
+  // TODO: check whether constraint fits in <CF,DG>
   ++stats.NWATCHED;
   unsigned int length = constraint.vars.size();
 
   id = _id;
   act = 0;
-  degr = constraint.getDegree();
+  degr = static_cast<DG>(constraint.getDegree());
   header = {0, (unsigned int)constraint.orig, 0x07FFFFFF, 0, locked, length};
   ntrailpops = -1;
   watchIdx = 0;
@@ -353,7 +358,7 @@ void Watched<CF, DG>::initialize(const ConstrExp32& constraint, bool locked, CRe
   for (unsigned int i = 0; i < length; ++i) {
     Var v = constraint.vars[i];
     assert(constraint.getLit(v) != 0);
-    data[i] = {rs::abs(constraint.coefs[v]), constraint.getLit(v)};
+    data[i] = {static_cast<CF>(rs::abs(constraint.coefs[v])), constraint.getLit(v)};
   }
 
   const CF lrgstCf = rs::abs(data[0].c);
@@ -466,6 +471,87 @@ void Watched<CF, DG>::undoFalsified(int i) {
   ++stats.NWATCHLOOKUPSBJ;
 }
 
+void Arbitrary::initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID _id) {
+  assert(_id > ID_Trivial);
+  ++stats.NCOUNTING;
+  unsigned int length = constraint.vars.size();
+
+  id = _id;
+  act = 0;
+  degr = constraint.getDegree();
+  header = {0, (unsigned int)constraint.orig, 0x07FFFFFF, 0, locked, length};
+  ntrailpops = -1;
+  watchIdx = 0;
+  slack = -degr;
+
+  auto& Level = solver.Level;
+  auto& Pos = solver.Pos;
+  auto& adj = solver.adj;
+  auto& qhead = solver.qhead;
+
+  coefs.resize(length);
+  for (unsigned int i = 0; i < length; ++i) {
+    Var v = constraint.vars[i];
+    assert(constraint.getLit(v) != 0);
+    Lit l = constraint.getLit(v);
+    coefs[i] = rs::abs(constraint.coefs[v]);
+    lits[i] = l;
+    adj[l].emplace_back(cr, i + INF);
+    if (!isFalse(Level, l) || Pos[toVar(l)] >= qhead) slack += coefs[i];
+  }
+
+  assert(slack >= 0);
+  assert(hasCorrectSlack(solver));
+  if (slack < coefs[0]) {  // propagate
+    for (unsigned int i = 0; i < length && coefs[i] > slack; ++i)
+      if (isUnknown(Pos, lits[i])) {
+        assert(isCorrectlyPropagating(solver, i));
+        solver.propagate(lits[i], cr);
+      }
+  }
+}
+
+WatchStatus Arbitrary::checkForPropagation(CRef cr, int& idx, [[maybe_unused]] Lit p, Solver& solver) {
+  auto& Pos = solver.Pos;
+
+  assert(idx >= INF);
+  assert(lits[idx - INF] == p);
+  const unsigned int length = size();
+  const bigint& lrgstCf = coefs[0];
+  const bigint& c = coefs[idx - INF];
+
+  slack -= c;
+  assert(hasCorrectSlack(solver));
+
+  if (slack < 0) {
+    assert(isCorrectlyConflicting(solver));
+    return WatchStatus::CONFLICTING;
+  }
+  if (slack < lrgstCf) {
+    if (!options.idxProp || ntrailpops < stats.NTRAILPOPS) {
+      ntrailpops = stats.NTRAILPOPS;
+      watchIdx = 0;
+    }
+    stats.NPROPCHECKS -= watchIdx;
+    for (; watchIdx < length && coefs[watchIdx] > slack; ++watchIdx) {
+      const Lit l = lits[watchIdx];
+      if (isUnknown(Pos, l)) {
+        ++stats.NPROPCOUNTING;
+        assert(isCorrectlyPropagating(solver, watchIdx));
+        solver.propagate(l, cr);
+      }
+    }
+    stats.NPROPCHECKS += watchIdx;
+  }
+  return WatchStatus::KEEPWATCH;
+}
+
+void Arbitrary::undoFalsified(int i) {
+  assert(i >= INF);
+  slack += coefs[i - INF];
+  ++stats.NWATCHLOOKUPSBJ;
+}
+
 // TODO: keep below test methods?
 
 bool Constr::isCorrectlyConflicting(const Solver& solver) {
@@ -516,6 +602,16 @@ bool Watched<CF, DG>::hasCorrectSlack(const Solver& solver) {
   return (slack == this->watchslack);
 }
 
+bool Arbitrary::hasCorrectSlack(const Solver& solver) {
+  BigVal slack = -degree();
+  for (int i = 0; i < (int)size(); ++i) {
+    if (solver.getPos()[toVar(lit(i))] >= solver.qhead || !isFalse(solver.getLevel(), lit(i))) {
+      slack += coef(i);
+    }
+  }
+  return (slack == this->slack);
+}
+
 template <typename CF, typename DG>
 bool Watched<CF, DG>::hasCorrectWatches([[maybe_unused]] const Solver& solver) {
   if (watchslack >= largestCoef()) return true;
@@ -532,8 +628,8 @@ bool Watched<CF, DG>::hasCorrectWatches([[maybe_unused]] const Solver& solver) {
 
 template class Counting<int, long long>;
 template class Counting<long long, int128>;
-template class Counting<bigint, bigint>;
+template class Counting<int128, int128>;
 
 template class Watched<int, long long>;
 template class Watched<long long, int128>;
-template class Watched<bigint, bigint>;
+template class Watched<int128, int128>;

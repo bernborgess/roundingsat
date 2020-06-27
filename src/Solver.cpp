@@ -59,7 +59,6 @@ void Solver::setNbVars(long long nvars) {
   phase.resize(nvars + 1);
   ceStore.resize(nvars + 1);
   assert(conflConstraint.coefs.size() == (size_t)nvars + 1);
-  tmpConstraint.resize(nvars + 1);
   order_heap.resize(nvars + 1);
   for (Var v = n + 1; v <= nvars; ++v) phase[v] = -v, order_heap.insert(v);
   if (lpSolver) lpSolver->setNbVariables(nvars + 1);
@@ -76,7 +75,6 @@ void Solver::setNbOrigVars(int o_n) {
 void Solver::init() {
   if (!options.proofLogName.empty()) logger = std::make_shared<Logger>(options.proofLogName);
   ceStore.initializeLogging(logger);
-  tmpConstraint.initializeLogging(logger);
 }
 
 void Solver::initLP(ConstrExp32& objective) {
@@ -404,7 +402,7 @@ bool Solver::extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrE
 // ---------------------------------------------------------------------
 // Constraint management
 
-CRef Solver::attachConstraint(ConstrExp32& constraint, bool locked) {
+CRef Solver::attachConstraint(ConstrExpArb& constraint, bool locked) {
   assert(constraint.isSortedInDecreasingCoefOrder());
   assert(constraint.isSaturated());
   assert(constraint.hasNoZeroes());
@@ -418,18 +416,23 @@ CRef Solver::attachConstraint(ConstrExp32& constraint, bool locked) {
   unsigned int length = constraint.vars.size();
   CRef cr = CRef_Undef;
   if (options.clauseProp && constraint.getDegree() == 1)
-    cr = ca.alloc(length, ConstrType::CLAUSE);
+    cr = ca.alloc(length, 1, ConstrType::CLAUSE);
   else if (options.cardProp && constraint.isCardinality())
-    cr = ca.alloc(length, ConstrType::CARDINALITY);
+    cr = ca.alloc(length, 1, ConstrType::CARDINALITY);
   else {
-    Val watchSum = -constraint.degree;
-    unsigned int minWatches = 1;  // sorted per decreasing coefs, so we can skip the first, largest coef
-    for (; minWatches < length && watchSum < 0; ++minWatches)
-      watchSum += rs::abs(constraint.coefs[constraint.vars[minWatches]]);
-    if (options.countingProp == 1 || options.countingProp > (1 - minWatches / (double)length))
-      cr = ca.alloc(length, ConstrType::COUNTING);
-    else
-      cr = ca.alloc(length, ConstrType::WATCHED);
+    bigint maxCoef = rs::abs(constraint.coefs[constraint.vars[0]]);
+    if (maxCoef > limit96) {
+      cr = ca.alloc(length, 1, ConstrType::ARBITRARY);
+    } else {
+      BigVal watchSum = -constraint.degree;
+      unsigned int minWatches = 1;  // sorted per decreasing coefs, so we can skip the first, largest coef
+      for (; minWatches < length && watchSum < 0; ++minWatches)
+        watchSum += rs::abs(constraint.coefs[constraint.vars[minWatches]]);
+      if (options.countingProp == 1 || options.countingProp > (1 - minWatches / (double)length))
+        cr = ca.alloc(length, maxCoef, ConstrType::COUNTING);
+      else
+        cr = ca.alloc(length, maxCoef, ConstrType::WATCHED);
+    }
   }
   constraints.push_back(cr);
 
@@ -471,31 +474,32 @@ CRef Solver::processLearnedStack() {
   // loop back to front as the last constraint in the queue is a result of conflict analysis
   // and we want to first check this constraint to backjump.
   while (learnedStack.size() > 0) {
-    tmpConstraint.init(learnedStack.back());
+    ConstrExpArb& learned = ceStore.takeArb();
+    learned.init(learnedStack.back());
     learnedStack.pop_back();
-    tmpConstraint.removeUnitsAndZeroes(Level, Pos, true);
-    tmpConstraint.sortInDecreasingCoefOrder();
-    int assertionLevel = tmpConstraint.getAssertionLevel(Level, Pos);
+    learned.removeUnitsAndZeroes(Level, Pos, true);
+    learned.sortInDecreasingCoefOrder();
+    int assertionLevel = learned.getAssertionLevel(Level, Pos);
     if (assertionLevel < 0) {
       backjumpTo(0);
-      assert(tmpConstraint.getSlack(Level) < 0);
-      if (logger) tmpConstraint.logInconsistency(Level, Pos, stats);
-      tmpConstraint.reset();
+      assert(learned.getSlack(Level) < 0);
+      if (logger) learned.logInconsistency(Level, Pos, stats);
+      ceStore.leave(learned);
       return CRef_Unsat;
     }
     backjumpTo(assertionLevel);
-    Val slk = tmpConstraint.getSlack(Level);
+    BigVal slk = learned.getSlack(Level);
     assert(slk >= 0);
-    tmpConstraint.heuristicWeakening(Level, Pos, slk, stats);  // TODO: don't always weaken heuristically?
-    tmpConstraint.postProcess(Level, Pos, false, stats);
-    assert(tmpConstraint.isSaturated());
-    if (tmpConstraint.getDegree() <= 0) {
-      tmpConstraint.reset();
+    learned.heuristicWeakening(Level, Pos, slk, stats);  // TODO: don't always weaken heuristically?
+    learned.postProcess(Level, Pos, false, stats);
+    assert(learned.isSaturated());
+    if (learned.getDegree() <= 0) {
+      learned.reset();
       continue;
     }
-    CRef cr = attachConstraint(tmpConstraint, false);
+    CRef cr = attachConstraint(learned, false);
     assert(cr != CRef_Unsat);
-    tmpConstraint.reset();
+    ceStore.leave(learned);
     Constr& C = ca[cr];
     if (assertionLevel < INF)
       recomputeLBD(C);
@@ -505,29 +509,26 @@ CRef Solver::processLearnedStack() {
   return CRef_Undef;
 }
 
-std::pair<ID, ID> Solver::addInputConstraint(bool addToLP) {
-  assert(tmpConstraint.orig == Origin::FORMULA || tmpConstraint.orig == Origin::BOUND ||
-         tmpConstraint.orig == Origin::COREGUIDED);
+std::pair<ID, ID> Solver::addInputConstraint(ConstrExpArb& ce, bool addToLP) {
+  assert(ce.orig == Origin::FORMULA || ce.orig == Origin::BOUND || ce.orig == Origin::COREGUIDED);
   assert(decisionLevel() == 0);
   ID input = ID_Undef;
-  if (logger) input = tmpConstraint.logAsInput();
-  tmpConstraint.postProcess(Level, Pos, true, stats);
-  assert(tmpConstraint.getDegree() < INF);
-  if (tmpConstraint.getDegree() <= 0) {
-    tmpConstraint.reset();
+  if (logger) input = ce.logAsInput();
+  ce.postProcess(Level, Pos, true, stats);
+  assert(ce.getDegree() < INF);
+  if (ce.getDegree() <= 0) {
+    ;
     return {input, ID_Undef};  // already satisfied.
   }
 
-  if (tmpConstraint.getSlack(Level) < 0) {
+  if (ce.getSlack(Level) < 0) {
     if (options.verbosity > 0) puts("c Inconsistent input constraint");
-    if (logger) tmpConstraint.logInconsistency(Level, Pos, stats);
-    tmpConstraint.reset();
+    if (logger) ce.logInconsistency(Level, Pos, stats);
     assert(decisionLevel() == 0);
     return {input, ID_Unsat};
   }  // TODO: don't check for this here, but just add the constraints to the learned stack?
 
-  CRef cr = attachConstraint(tmpConstraint, true);
-  tmpConstraint.reset();
+  CRef cr = attachConstraint(ce, true);
   auto& confl = ceStore.takeArb();
   if (!runPropagation(confl, true)) {
     if (options.verbosity > 0) puts("c Input conflict");
@@ -544,16 +545,22 @@ std::pair<ID, ID> Solver::addInputConstraint(bool addToLP) {
 }
 
 std::pair<ID, ID> Solver::addConstraint(const ConstrExp32& c, Origin orig, bool addToLP) {
-  // NOTE: copy to tmpConstraint guarantees original constraint is not changed and does not need logger
-  c.copyTo(tmpConstraint);
-  tmpConstraint.orig = orig;
-  return addInputConstraint(addToLP);
+  // NOTE: copy to temporary constraint guarantees original constraint is not changed and does not need logger
+  ConstrExpArb& ce = ceStore.takeArb();
+  c.copyTo(ce);
+  ce.orig = orig;
+  std::pair<ID, ID> result = addInputConstraint(ce, addToLP);
+  ceStore.leave(ce);
+  return result;
 }
 
 std::pair<ID, ID> Solver::addConstraint(const ConstrSimple32& c, Origin orig, bool addToLP) {
-  tmpConstraint.init(c);
-  tmpConstraint.orig = orig;
-  return addInputConstraint(addToLP);
+  ConstrExpArb& ce = ceStore.takeArb();
+  ce.init(c);
+  ce.orig = orig;
+  std::pair<ID, ID> result = addInputConstraint(ce, addToLP);
+  ceStore.leave(ce);
+  return result;
 }
 
 void Solver::removeConstraint(Constr& C, [[maybe_unused]] bool override) {

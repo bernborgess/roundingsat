@@ -50,7 +50,7 @@ void ConstraintAllocator::capacity(uint32_t min_cap) {
   memory = (uint32_t*)xrealloc(memory, sizeof(uint32_t) * cap);
 }
 
-CRef ConstraintAllocator::alloc(unsigned int nTerms, ConstrType type) {
+CRef ConstraintAllocator::alloc(unsigned int nTerms, bigint maxCoef, ConstrType type) {
   Constr* constr = (Constr*)(memory + at);
   switch (type) {
     case ConstrType::CLAUSE:
@@ -59,11 +59,30 @@ CRef ConstraintAllocator::alloc(unsigned int nTerms, ConstrType type) {
     case ConstrType::CARDINALITY:
       new (constr) Cardinality;
       break;
+    case ConstrType::ARBITRARY:
+      new (constr) Arbitrary;
+      break;
     case ConstrType::COUNTING:
-      new (constr) Counting32;
+      if (maxCoef <= limit32) {
+        new (constr) Counting32;
+      } else if (maxCoef <= limit64) {
+        new (constr) Counting64;
+      } else if (maxCoef <= limit96) {
+        new (constr) Counting96;
+      } else {
+        assert(false);
+      }
       break;
     case ConstrType::WATCHED:
-      new (constr) Watched32;
+      if (maxCoef <= limit32) {
+        new (constr) Watched32;
+      } else if (maxCoef <= limit64) {
+        new (constr) Watched64;
+      } else if (maxCoef <= limit96) {
+        new (constr) Watched96;
+      } else {
+        assert(false);
+      }
       break;
     default:
       assert(false);

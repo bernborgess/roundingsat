@@ -34,7 +34,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "ConstrSimple.hpp"
 #include "typedefs.hpp"
 
-enum ConstrType { CLAUSE, CARDINALITY, WATCHED, COUNTING };
+enum ConstrType { CLAUSE, CARDINALITY, WATCHED, COUNTING, ARBITRARY };
 enum WatchStatus { DROPWATCH, KEEPWATCH, CONFLICTING };
 
 struct CRef {
@@ -46,11 +46,13 @@ struct CRef {
 };
 const CRef CRef_Undef = {std::numeric_limits<uint32_t>::max()};
 const CRef CRef_Unsat = {std::numeric_limits<uint32_t>::max() - 1};  // TODO: needed?
+const bigint limit32 = bigint(1e9);
+const bigint limit64 = bigint(1e18);
+const bigint limit96 = bigint(1e27);
 
 class Solver;
 // TODO: check all static_cast downcasts of bigints
 struct Constr {  // internal solver constraint optimized for fast propagation
-
   virtual int getMemSize(unsigned int length) const = 0;
   int getMemSize() const { return getMemSize(size()); }
 
@@ -80,7 +82,7 @@ struct Constr {  // internal solver constraint optimized for fast propagation
   BigCoef largestCoef() const { return coef(0); };
   virtual Lit lit(unsigned int i) const = 0;
 
-  virtual void initialize(const ConstrExp32& constraint, bool locked, CRef cr, Solver& solver, ID id) = 0;
+  virtual void initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID id) = 0;
   virtual WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& slvr) = 0;
   virtual void undoFalsified(int i) = 0;
 
@@ -128,7 +130,7 @@ struct Clause final : public Constr {
   BigCoef coef([[maybe_unused]] unsigned int i) const { return 1; }
   Lit lit(unsigned int i) const { return data[i]; }
 
-  void initialize(const ConstrExp32& constraint, bool locked, CRef cr, Solver& solver, ID id);
+  void initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID id);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified([[maybe_unused]] int i) { assert(false); }
 };
@@ -145,7 +147,7 @@ struct Cardinality final : public Constr {
   BigCoef coef([[maybe_unused]] unsigned int i) const { return 1; }
   Lit lit(unsigned int i) const { return data[i]; }
 
-  void initialize(const ConstrExp32& constraint, bool locked, CRef cr, Solver& solver, ID id);
+  void initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID id);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified([[maybe_unused]] int i) { assert(false); }
 };
@@ -166,7 +168,7 @@ struct Counting final : public Constr {
   BigCoef coef(unsigned int i) const { return data[i].c; }
   Lit lit(unsigned int i) const { return data[i].l; }
 
-  void initialize(const ConstrExp32& constraint, bool locked, CRef cr, Solver& solver, ID id);
+  void initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID id);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
 
@@ -175,7 +177,7 @@ struct Counting final : public Constr {
 
 using Counting32 = Counting<int, long long>;
 using Counting64 = Counting<long long, int128>;
-using CountingArb = Counting<bigint, bigint>;
+using Counting96 = Counting<int128, int128>;
 
 template <typename CF, typename DG>
 struct Watched final : public Constr {
@@ -193,7 +195,7 @@ struct Watched final : public Constr {
   BigCoef coef(unsigned int i) const { return rs::abs(data[i].c); }
   Lit lit(unsigned int i) const { return data[i].l; }
 
-  void initialize(const ConstrExp32& constraint, bool locked, CRef cr, Solver& solver, ID id);
+  void initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID id);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
 
@@ -203,4 +205,25 @@ struct Watched final : public Constr {
 
 using Watched32 = Watched<int, long long>;
 using Watched64 = Watched<long long, int128>;
-using WatchedArb = Watched<bigint, bigint>;
+using Watched96 = Watched<int128, int128>;
+
+struct Arbitrary final : public Constr {
+  unsigned int watchIdx;
+  long long ntrailpops;
+  bigint degr;
+  bigint slack;               // sum of non-falsifieds minus w
+  std::vector<bigint> coefs;  // NOTE: seemed not possible to put bigints in below dynamic array
+  Lit lits[];
+
+  int getMemSize(unsigned int length) const { return (sizeof(Arbitrary) + sizeof(Lit) * length) / sizeof(uint32_t); }
+
+  BigVal degree() const { return degr; }
+  BigCoef coef(unsigned int i) const { return coefs[i]; }
+  Lit lit(unsigned int i) const { return lits[i]; }
+
+  void initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID id);
+  WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
+  void undoFalsified(int i);
+
+  bool hasCorrectSlack(const Solver& solver);
+};
