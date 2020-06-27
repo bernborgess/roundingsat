@@ -248,6 +248,7 @@ class Storage {
   size_t n = 0;
   std::vector<std::unique_ptr<CE>> ces;
   std::vector<CE*> availables;
+  std::shared_ptr<Logger> plogger;
 
  public:
   void resize(size_t newn) {
@@ -256,10 +257,17 @@ class Storage {
     for (auto& ce : ces) ce->resize(n);
   }
 
+  void initializeLogging(std::shared_ptr<Logger> lgr) {
+    plogger = lgr;
+    for (auto& ce : ces) ce->initializeLogging(lgr);
+  }
+
   CE& take() {
+    assert(ces.size() < 20);  // Sanity check that no large amounts of ConstrExps are created
     if (availables.size() == 0) {
       ces.emplace_back(std::make_unique<CE>());
       ces.back()->resize(n);
+      ces.back()->initializeLogging(plogger);
       availables.push_back(ces.back().get());
     }
     CE* result = availables.back();
@@ -289,6 +297,13 @@ class ConstrExpStore {
     ce64s.resize(newn);
     ce96s.resize(newn);
     ceArbs.resize(newn);
+  }
+
+  void initializeLogging(std::shared_ptr<Logger> lgr) {
+    ce32s.initializeLogging(lgr);
+    ce64s.initializeLogging(lgr);
+    ce96s.initializeLogging(lgr);
+    ceArbs.initializeLogging(lgr);
   }
 
   ConstrExp32& take32() { return ce32s.take(); }
