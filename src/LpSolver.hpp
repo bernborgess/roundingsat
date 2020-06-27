@@ -84,10 +84,7 @@ class LpSolver {
 
   double lpPivotMult = 1;
   constexpr static double INFTY = 1e100;
-  // NOTE: 2^59 is the maximum possible, given the 64 bits needed for other calculations
-  constexpr static long long maxMult =
-      36028797018963968;  // 2^50: 1125899906842624 | 2^55: 36028797018963968 | 2^59: 576460752303423488
-  // TODO: properly decide for Gomory cuts
+  constexpr static double maxMult = 1e15;  // sufficiently large to reduce rounding errors
 
   soplex::DVectorReal lpSol;
   std::vector<double> lpSolution;
@@ -104,17 +101,12 @@ class LpSolver {
 
   std::vector<CandidateCut> candidateCuts;
 
-  ConstrExpArb lcc;
-  ConstrExp32 ic;
-
  public:
   LpSolver(Solver& solver, const ConstrExp32& objective);
   void setNbVariables(int n);
 
-  // @return: false if inconsistency detected, true otherwise
-  // stores inconsistency in lcc
-  LpStatus checkFeasibility(bool inProcessing = false);  // TODO: don't use objective function here?
-  // @return: false if inconsistency detected, true otherwise
+  LpStatus checkFeasibility(ConstrExpArb& confl,
+                            bool inProcessing = false);  // TODO: don't use objective function here?
   void inProcess();
 
   void addConstraint(ConstrExpArb& c, bool removable, ID id);
@@ -127,15 +119,15 @@ class LpSolver {
 
   void flushConstraints();
 
-  LpStatus _checkFeasibility(bool inProcessing);
+  LpStatus _checkFeasibility(ConstrExpArb& confl, bool inProcessing);
   void _inProcess();
 
   void convertConstraint(const ConstrSimple64& c, soplex::DSVectorReal& row, double& rhs);
   void resetBasis();
-  void createLinearCombinationFarkas(soplex::DVectorReal& mults);
+  void createLinearCombinationFarkas(ConstrExpArb& out, soplex::DVectorReal& mults);
   CandidateCut createLinearCombinationGomory(soplex::DVectorReal& mults);
   double getScaleFactor(soplex::DVectorReal& mults, bool removeNegatives);
-  void rowToConstraint(int row);
+  ConstrExp64& rowToConstraint(int row);
   void constructGomoryCandidates();
   void constructLearnedCandidates();
   void addFilteredCuts();
@@ -149,17 +141,19 @@ class LpSolver {
 };
 
 #else
-
+// TODO: check correspondence to above
 class LpSolver {
  public:
   LpSolver([[maybe_unused]] Solver& solver, [[maybe_unused]] const ConstrExp32& objective){};
   void setNbVariables([[maybe_unused]] int n){};
 
-  LpStatus checkFeasibility([[maybe_unused]] bool inProcessing = false) { return LpStatus::UNDETERMINED; }
+  LpStatus checkFeasibility(ConstrExpArb& confl, [[maybe_unused]] bool inProcessing = false) {
+    return LpStatus::UNDETERMINED;
+  }
   void inProcess() {}
 
-  void addConstraint([[maybe_unused]] ConstrExp32& c, [[maybe_unused]] bool removable) {}
-  void addConstraint([[maybe_unused]] CRef cr, [[maybe_unused]] bool removable) {}
+  void addConstraint([[maybe_unused]] ConstrExpArb& c, [[maybe_unused]] bool removable) {}
+  void addConstraint([[maybe_unused]] CRef cr, [[maybe_unused]] bool removable, ID id) {}
   void removeConstraint([[maybe_unused]] ID id) {}
 };
 

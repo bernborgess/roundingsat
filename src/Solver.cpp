@@ -219,13 +219,7 @@ bool Solver::runPropagation(ConstrExpArb& confl, bool onlyUnitPropagation) {
   }
   if (onlyUnitPropagation) return true;
   if (lpSolver) {
-    if (lpSolver->checkFeasibility() == INFEASIBLE) {
-      assert(!lpSolver->lcc.isReset());
-      lpSolver->lcc.copyTo(confl);
-      lpSolver->lcc.reset();
-      return false;
-    }
-    return true;
+    return lpSolver->checkFeasibility(confl) != INFEASIBLE;
   }
   return true;
 }

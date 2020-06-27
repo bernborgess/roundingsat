@@ -123,10 +123,6 @@ LpSolver::LpSolver(Solver& slvr, const ConstrExp32& o) : solver(slvr) {
   lp.changeObjReal(objective);
 
   if (options.verbosity > 1) std::cout << "c Finished initializing LP" << std::endl;
-  if (solver.logger) {
-    ic.initializeLogging(solver.logger);
-    lcc.initializeLogging(solver.logger);
-  }
 }
 
 void LpSolver::setNbVariables(int n) {
@@ -141,8 +137,6 @@ void LpSolver::setNbVariables(int n) {
 
   lpSol.reDim(n);
   lpSolution.resize(n);
-  lcc.resize(n);
-  ic.resize(n);
   lowerBounds.reDim(n);
   upperBounds.reDim(n);
   assert(getNbVariables() == n);
@@ -151,49 +145,49 @@ void LpSolver::setNbVariables(int n) {
 int LpSolver::getNbVariables() const { return lp.numCols(); }
 int LpSolver::getNbRows() const { return lp.numRows(); }
 
-// BITWISE: -
-void LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
-  assert(lcc.isReset());
-  assert(ic.isReset());
-  double mult = getScaleFactor(mults, true);
-  if (mult == 0) return;
-  assert(mult > 0);
+void LpSolver::createLinearCombinationFarkas(ConstrExpArb& out, soplex::DVectorReal& mults) {
+  assert(out.isReset());
+  double scale = getScaleFactor(mults, true);
+  if (scale == 0) return;
+  assert(scale > 0);
 
   for (int r = 0; r < mults.dim(); ++r) {
-    bigint factor = static_cast<bigint>(mults[r] * mult);
-    assert(factor >= 0);
-    if (factor == 0) continue;
+    bigint factor = static_cast<bigint>(mults[r] * scale);
+    if (factor <= 0) continue;
     assert(lp.lhsReal(r) != INFTY);
-    rowToConstraint(r);
-    lcc.addUp(ic, factor);
-    ic.reset();
+    ConstrExp64& ce = rowToConstraint(r);
+    out.addUp(ce, factor);
+    solver.ceStore.leave64(ce);
   }
-  lcc.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
-  assert(lcc.hasNoZeroes());
-  lcc.weakenSmalls(lcc.absCoeffSum() / static_cast<bigint>((double)lcc.vars.size() / options.intolerance));
-  lcc.saturateAndFixOverflow(solver.getLevel(), options.weakenFull);
+  out.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
+  assert(out.hasNoZeroes());
+  out.weakenSmalls(out.absCoeffSum() / static_cast<bigint>((double)out.vars.size() / options.intolerance));
+  out.saturateAndFixOverflow(solver.getLevel(), options.weakenFull);
 }
 
 CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults) {
-  assert(lcc.isReset());
   double mult = getScaleFactor(mults, false);
   if (mult == 0) return CandidateCut();
+  ConstrExpArb& lcc = solver.ceStore.takeArb();
 
   std::vector<std::pair<bigint, int>> slacks;
   for (int r = 0; r < mults.dim(); ++r) {
     bigint factor = static_cast<bigint>(mults[r] * mult);
     if (factor == 0) continue;
-    rowToConstraint(r);
-    if (factor < 0) ic.invert();
-    lcc.addUp(ic, rs::abs(factor));
-    ic.reset();
+    ConstrExp64& ce = rowToConstraint(r);
+    if (factor < 0) ce.invert();
+    lcc.addUp(ce, rs::abs(factor));
+    solver.ceStore.leave64(ce);
     slacks.emplace_back(-factor, r);
   }
 
   bigint b = lcc.getRhs();
   for (Var v : lcc.vars)
     if (lpSolution[v] > 0.5) b -= lcc.coefs[v];
-  if (b == 0) return CandidateCut();
+  if (b == 0) {
+    solver.ceStore.leaveArb(lcc);
+    return CandidateCut();
+  }
 
   assert(mult > 0);
   bigint divisor = static_cast<bigint>(mult);
@@ -206,10 +200,10 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     bigint factor =
         bmodd * aux::floordiv_safe(slacks[i].first, divisor) + std::min(aux::mod_safe(slacks[i].first, divisor), bmodd);
     if (factor == 0) continue;
-    rowToConstraint(slacks[i].second);
-    if (factor < 0) ic.invert();
-    lcc.addUp(ic, rs::abs(factor));
-    ic.reset();
+    ConstrExp64& ce = rowToConstraint(slacks[i].second);
+    if (factor < 0) ce.invert();
+    lcc.addUp(ce, rs::abs(factor));
+    solver.ceStore.leave64(ce);
   }
   if (lcc.plogger) lcc.logAsInput();
   // TODO: fix logging for Gomory cuts
@@ -225,7 +219,9 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   }
   assert(lcc.getDegree() < INF);
   assert(lcc.isSaturated());
-  return CandidateCut(lcc, lpSolution);
+  CandidateCut result(lcc, lpSolution);
+  solver.ceStore.leaveArb(lcc);
+  return result;
 }
 
 void LpSolver::constructGomoryCandidates() {
@@ -239,7 +235,7 @@ void LpSolver::constructGomoryCandidates() {
     if (asynch_interrupt) return;
     double fractionality = 0;
     if (indices[row] >= 0) {  // basic original variable / column
-      assert(indices[row] < lpSolution.size());
+      assert(indices[row] < (int)lpSolution.size());
       fractionality = nonIntegrality(lpSolution[indices[row]]);
     } else {  // basic slack variable / row
       assert(-indices[row] - 1 < lpSlackSolution.dim());
@@ -261,11 +257,9 @@ void LpSolver::constructGomoryCandidates() {
     lpMultipliers.clear();
     lp.getBasisInverseRowReal(row, lpMultipliers.get_ptr());
     candidateCuts.push_back(createLinearCombinationGomory(lpMultipliers));
-    lcc.reset();
     if (candidateCuts.back().ratSlack >= -options.intolerance) candidateCuts.pop_back();
     for (int i = 0; i < lpMultipliers.dim(); ++i) lpMultipliers[i] = -lpMultipliers[i];
     candidateCuts.push_back(createLinearCombinationGomory(lpMultipliers));
-    lcc.reset();
     if (candidateCuts.back().ratSlack >= -options.intolerance) candidateCuts.pop_back();
   }
 }
@@ -307,9 +301,10 @@ void LpSolver::addFilteredCuts() {
       ConstrExpArb& ce = solver.ceStore.takeArb();
       ce.init(cc.simpcons);
       ce.postProcess(solver.getLevel(), solver.getPos(), true, stats);
-      if (ce.getDegree() <= 0) continue;
-      solver.learnConstraint(ce, Origin::GOMORY);
-      addConstraint(ce, true, ce.plogger ? ce.logProofLineWithInfo("Gomory", stats) : ++solver.crefID);
+      if (ce.getDegree() > 0) {
+        solver.learnConstraint(ce, Origin::GOMORY);
+        addConstraint(ce, true, ce.plogger ? ce.logProofLineWithInfo("Gomory", stats) : ++solver.crefID);
+      }
       solver.ceStore.leaveArb(ce);
     } else {  // learned cut
       ++stats.NLPLEARNEDCUTS;
@@ -329,36 +324,23 @@ void LpSolver::pruneCuts() {
     }
 }
 
-// BITWISE: +log2(maxMult)+log2(1e9) // TODO: check BITWISE
-// @return: multiplier fitting in positive bigint range, s.t. multiplier*largestV <= max128*INF/nbMults
-// @post: no NaN or negative mults (if onlyPositive)
 // NOTE: it is possible that mults are negative (e.g., when calculating Gomory cuts)
 double LpSolver::getScaleFactor(soplex::DVectorReal& mults, bool removeNegatives) {
-  const double max128 = 1e37;  // NOTE: std::numeric_limits<bigint>::max() // TODO: 1e38? Check bits, also for cuts
-  int nbMults = 0;
-  double largest = maxMult / max128;
-  assert(maxMult / largest <= max128);
+  double largest = 0;
   for (int i = 0; i < mults.dim(); ++i) {
-    if (std::isnan(mults[i]) || (removeNegatives && mults[i] < 0)) mults[i] = 0;  // TODO: report NaN to Ambros?
-    if (mults[i] == 0) continue;
-    ++nbMults;
+    if (std::isnan(mults[i]) || std::isinf(mults[i]) || (removeNegatives && mults[i] < 0)) mults[i] = 0;
     largest = std::max(rs::abs(mults[i]), largest);
   }
-  if (nbMults == 0) return 0;
-  assert(nbMults < INF);
-  double mult = maxMult / largest / nbMults * INF;
-  assert(mult > 0);
-  assert(mult <= max128);
-  return mult;
+  if (largest == 0) return 0;
+  return maxMult / largest;
 }
 
-// BITWISE: -
-void LpSolver::rowToConstraint(int row) {
-  assert(ic.isReset());
+ConstrExp64& LpSolver::rowToConstraint(int row) {
+  ConstrExp64& ce = solver.ceStore.take64();
   double rhs = lp.lhsReal(row);
   assert(rs::abs(rhs) != INFTY);
   assert(validRhs(rhs));
-  ic.addRhs(rhs);
+  ce.addRhs(rhs);
 
   lpRow.clear();
   lp.getRowVectorReal(row, lpRow);
@@ -366,14 +348,15 @@ void LpSolver::rowToConstraint(int row) {
     const soplex::Nonzero<double>& el = lpRow.element(i);
     assert(validCoeff(el.val));
     assert(el.val != 0);
-    ic.addLhs((Coef)el.val, el.idx);
+    ce.addLhs((Coef)el.val, el.idx);
   }
-  if (ic.plogger) ic.resetBuffer(row2data[row].id);
+  if (ce.plogger) ce.resetBuffer(row2data[row].id);
+  return ce;
 }
 
-LpStatus LpSolver::checkFeasibility(bool inProcessing) {
+LpStatus LpSolver::checkFeasibility(ConstrExpArb& confl, bool inProcessing) {
   double startTime = aux::cpuTime();
-  LpStatus result = _checkFeasibility(inProcessing);
+  LpStatus result = _checkFeasibility(confl, inProcessing);
   stats.LPTOTALTIME += aux::cpuTime() - startTime;
   return result;
 }
@@ -384,7 +367,7 @@ void LpSolver::inProcess() {
   stats.LPTOTALTIME += aux::cpuTime() - startTime;
 }
 
-LpStatus LpSolver::_checkFeasibility(bool inProcessing) {
+LpStatus LpSolver::_checkFeasibility(ConstrExpArb& confl, bool inProcessing) {
   if (solver.logger) solver.logger->logComment("Checking LP", stats);
   if (options.lpPivotRatio < 0)
     lp.setIntParam(soplex::SoPlex::ITERLIMIT, -1);  // no pivot limit
@@ -458,23 +441,20 @@ LpStatus LpSolver::_checkFeasibility(bool inProcessing) {
     return UNDETERMINED;
   }
 
-  createLinearCombinationFarkas(lpMultipliers);
-  solver.learnConstraint(lcc, Origin::FARKAS);
-  if (lcc.getSlack(solver.getLevel()) < 0) return INFEASIBLE;
-  lcc.reset();
+  createLinearCombinationFarkas(confl, lpMultipliers);
+  solver.learnConstraint(confl, Origin::FARKAS);
+  if (confl.getSlack(solver.getLevel()) < 0) return INFEASIBLE;
+  confl.reset();
   return UNDETERMINED;
 }
 
 void LpSolver::_inProcess() {
   assert(solver.decisionLevel() == 0);
-  LpStatus lpstat = checkFeasibility(true);
-  if (lpstat == INFEASIBLE) {
-    assert(!lcc.isReset());
-    assert(lcc.getSlack(solver.getLevel()) < 0);
-    lcc.reset();  // learned Farkas constraint is falsified and will trigger unsatisfiability
-    return;
-  } else if (lpstat != OPTIMAL)
-    return;
+  ConstrExpArb& confl = solver.ceStore.takeArb();
+  LpStatus lpstat = checkFeasibility(confl, true);
+  assert(lpstat != INFEASIBLE || confl.getSlack(solver.getLevel()) < 0);
+  solver.ceStore.leaveArb(confl);  // in case of unsatisfiability, it will be triggered via the learned Farkas
+  if (lpstat != OPTIMAL) return;
   if (!lp.hasSol()) return;
   lp.getPrimal(lpSol);
   assert(lpSol.dim() == (int)lpSolution.size());
@@ -500,9 +480,9 @@ void LpSolver::convertConstraint(const ConstrSimple64& c, soplex::DSVectorReal& 
   assert(row.max() >= (int)c.terms.size());
   for (auto& t : c.terms) {
     if (t.c == 0) continue;
-    assert(t.l>0);
+    assert(t.l > 0);
     assert(t.l < lp.numColsReal());
-    assert(t.c<INF_long);
+    assert(t.c < INF_long);
     row.add(t.l, t.c);
   }
   rhs = c.rhs;
@@ -513,13 +493,15 @@ void LpSolver::addConstraint(ConstrExpArb& c, bool removable, ID id) {
   assert(id != ID_Trivial);
   toRemove.erase(id);
   if (!id2row.count(id) && !toAdd.count(id)) {
-    if(c.getDegree()>=INF_long){
-      c.weakenDivideRoundRational(lpSolution, aux::ceildiv<bigint>(lcc.getDegree(), INF_long - 1));
+    bigint maxRhs = std::max(c.getDegree(), rs::abs(c.getRhs()));
+    if (maxRhs >= INF_long) {
+      c.weakenDivideRoundRational(lpSolution, aux::ceildiv<bigint>(maxRhs, INF_long - 1));
       id = c.plogger ? c.logProofLineWithInfo("LP", stats) : ++solver.crefID;
     }
-    assert(c.getDegree()<INF_long);
+    assert(c.getDegree() < INF_long);
+    assert(c.getRhs() < INF_long);
     assert(c.isSaturated());
-    toAdd[id] = {c.toSimpleCons<long long, int128>(),removable};
+    toAdd[id] = {c.toSimpleCons<long long, int128>(), removable};
   }
 }
 
@@ -567,7 +549,7 @@ void LpSolver::flushConstraints() {
     for (auto& p : toAdd) {
       double rhs;
       soplex::DSVectorReal row(p.second.cs.terms.size());
-      convertConstraint(p.second.cs,row,rhs);
+      convertConstraint(p.second.cs, row, rhs);
       rowsToAdd.add(soplex::LPRowReal(row, soplex::LPRowReal::Type::GREATER_EQUAL, rhs));
       id2row[p.first] = row2data.size();
       row2data.emplace_back(p.first, p.second.removable);
