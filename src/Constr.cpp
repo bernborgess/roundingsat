@@ -54,7 +54,7 @@ void Clause::initialize(const ConstrExpArb& constraint, bool locked, CRef cr, So
   assert(length >= 1);
   if (length == 1) {
     assert(solver.decisionLevel() == 0);
-    assert(isCorrectlyPropagating(solver, 0));
+    //    assert(isCorrectlyPropagating(solver, 0));
     solver.propagate(data[0], cr);
     return;
   }
@@ -72,7 +72,7 @@ void Clause::initialize(const ConstrExpArb& constraint, bool locked, CRef cr, So
   if (watch == 1) {
     assert(!isFalse(Level, data[0]));
     if (!isTrue(Level, data[0])) {
-      assert(isCorrectlyPropagating(solver, 0));
+      //      assert(isCorrectlyPropagating(solver, 0));
       solver.propagate(data[0], cr);
     }
     for (unsigned int i = 2; i < length; ++i) {  // ensure last watch is last falsified literal
@@ -127,12 +127,12 @@ WatchStatus Clause::checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver
   assert(isFalse(Level, watch));
   for (unsigned int i = 2; i < length; ++i) assert(isFalse(Level, data[i]));
   if (isFalse(Level, otherwatch)) {
-    assert(isCorrectlyConflicting(solver));
+    //    assert(isCorrectlyConflicting(solver));
     return WatchStatus::CONFLICTING;
   } else {
     assert(!isTrue(Level, otherwatch));
     ++stats.NPROPCLAUSE;
-    assert(isCorrectlyPropagating(solver, 1 - widx));
+    //    assert(isCorrectlyPropagating(solver, 1 - widx));
     solver.propagate(otherwatch, cr);
   }
   ++stats.NPROPCHECKS;
@@ -167,7 +167,7 @@ void Cardinality::initialize(const ConstrExpArb& constraint, bool locked, CRef c
     assert(solver.decisionLevel() == 0);
     for (unsigned int i = 0; i < length; ++i) {
       assert(isUnknown(Pos, data[i]));
-      assert(isCorrectlyPropagating(solver, i));
+      //      assert(isCorrectlyPropagating(solver, i));
       solver.propagate(data[i], cr);
     }
     return;
@@ -186,7 +186,7 @@ void Cardinality::initialize(const ConstrExpArb& constraint, bool locked, CRef c
     for (unsigned int i = 0; i < degr; ++i) {
       assert(!isFalse(Level, data[i]));
       if (!isTrue(Level, data[i])) {
-        assert(isCorrectlyPropagating(solver, i));
+        //        assert(isCorrectlyPropagating(solver, i));
         solver.propagate(data[i], cr);
       }
     }
@@ -235,14 +235,14 @@ WatchStatus Cardinality::checkForPropagation(CRef cr, int& idx, [[maybe_unused]]
   for (unsigned int i = degr + 1; i < length; ++i) assert(isFalse(Level, data[i]));
   for (int i = 0; i <= (int)degr; ++i)
     if (i != idx && isFalse(Level, data[i])) {
-      assert(isCorrectlyConflicting(solver));
+      //      assert(isCorrectlyConflicting(solver));
       return WatchStatus::CONFLICTING;
     }
   for (int i = 0; i <= (int)degr; ++i) {
     Lit l = data[i];
     if (i != idx && !isTrue(Level, l)) {
       ++stats.NPROPCARD;
-      assert(isCorrectlyPropagating(solver, i));
+      //      assert(isCorrectlyPropagating(solver, i));
       solver.propagate(l, cr);
     }
   }
@@ -280,11 +280,11 @@ void Counting<CF, DG>::initialize(const ConstrExpArb& constraint, bool locked, C
   }
 
   assert(slack >= 0);
-  assert(hasCorrectSlack(solver));
+  //  assert(hasCorrectSlack(solver));
   if (slack < data[0].c) {  // propagate
     for (unsigned int i = 0; i < length && data[i].c > slack; ++i)
       if (isUnknown(Pos, data[i].l)) {
-        assert(isCorrectlyPropagating(solver, i));
+        //        assert(isCorrectlyPropagating(solver, i));
         solver.propagate(data[i].l, cr);
       }
   }
@@ -301,10 +301,10 @@ WatchStatus Counting<CF, DG>::checkForPropagation(CRef cr, int& idx, [[maybe_unu
   const CF& c = data[idx - INF].c;
 
   slack -= c;
-  assert(hasCorrectSlack(solver));
+  //  assert(hasCorrectSlack(solver));
 
   if (slack < 0) {
-    assert(isCorrectlyConflicting(solver));
+    //    assert(isCorrectlyConflicting(solver));
     return WatchStatus::CONFLICTING;
   }
   if (slack < lrgstCf) {
@@ -319,7 +319,7 @@ WatchStatus Counting<CF, DG>::checkForPropagation(CRef cr, int& idx, [[maybe_unu
         stats.NPROPCLAUSE += (degr == 1);
         stats.NPROPCARD += (degr != 1 && lrgstCf == 1);
         ++stats.NPROPCOUNTING;
-        assert(isCorrectlyPropagating(solver, watchIdx));
+        //        assert(isCorrectlyPropagating(solver, watchIdx));
         solver.propagate(l, cr);
       }
     }
@@ -372,7 +372,7 @@ void Watched<CF, DG>::initialize(const ConstrExpArb& constraint, bool locked, CR
     }
   }
   assert(watchslack >= 0);
-  assert(hasCorrectSlack(solver));
+  //  assert(hasCorrectSlack(solver));
   if (watchslack < lrgstCf) {
     // set sufficient falsified watches
     std::vector<unsigned int> falsifiedIdcs;
@@ -392,7 +392,7 @@ void Watched<CF, DG>::initialize(const ConstrExpArb& constraint, bool locked, CR
     // perform initial propagation
     for (unsigned int i = 0; i < length && rs::abs(data[i].c) > watchslack; ++i)
       if (isUnknown(Pos, data[i].l)) {
-        assert(isCorrectlyPropagating(solver, i));
+        //        assert(isCorrectlyPropagating(solver, i));
         solver.propagate(data[i].l, cr);
       }
   }
@@ -436,15 +436,15 @@ WatchStatus Watched<CF, DG>::checkForPropagation(CRef cr, int& idx, [[maybe_unus
     }
   }  // else we did not find enough watches last time, so we can skip looking for them now
 
-  assert(hasCorrectSlack(solver));
-  assert(hasCorrectWatches(solver));
+  //  assert(hasCorrectSlack(solver));
+  //  assert(hasCorrectWatches(solver));
 
   if (watchslack >= lrgstCf) {
     c = -c;
     return WatchStatus::DROPWATCH;
   }
   if (watchslack < 0) {
-    assert(isCorrectlyConflicting(solver));
+    //    assert(isCorrectlyConflicting(solver));
     return WatchStatus::CONFLICTING;
   }
   // keep the watch, check for propagation
@@ -455,7 +455,7 @@ WatchStatus Watched<CF, DG>::checkForPropagation(CRef cr, int& idx, [[maybe_unus
       stats.NPROPCLAUSE += (degr == 1);
       stats.NPROPCARD += (degr != 1 && lrgstCf == 1);
       ++stats.NPROPWATCH;
-      assert(isCorrectlyPropagating(solver, watchIdx));
+      //      assert(isCorrectlyPropagating(solver, watchIdx));
       solver.propagate(l, cr);
     }  // NOTE: second innermost loop of RoundingSat
   }

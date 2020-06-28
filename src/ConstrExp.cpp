@@ -323,17 +323,31 @@ void ConstrExp<SMALL, LARGE>::invert() {
   degree = calcDegree();
 }
 
+// also removes zeroes
 template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening) {
+void ConstrExp<SMALL, LARGE>::saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening, int bitOverflow,
+                                                     int bitReduce) {
   removeZeroes();
-  saturate();
-  if (degree >= (LARGE)INF) {
-    LARGE div = aux::ceildiv<LARGE>(degree, INF - 1);
+  if (bitOverflow == 0) {
+    saturate();
+    return;
+  }
+  assert(bitReduce > 0);
+  SMALL largest = 0;
+  for (Var v : vars) {
+    largest = std::max(largest, rs::abs(coefs[v]));
+  }
+  largest = std::min<LARGE>(largest, degree);  // takes saturated coefficients into account
+  if (largest == 0) return;
+  if ((int)rs::msb(largest) >= bitOverflow) {
+    LARGE cutoff = 2;
+    cutoff = rs::pow(cutoff, bitReduce) - 1;
+    LARGE div = aux::ceildiv<LARGE>(largest, cutoff);
+    assert(aux::ceildiv<LARGE>(largest, div) <= cutoff);
     weakenNonDivisibleNonFalsifieds(level, div, fullWeakening, 0);
     divideRoundUp(div);
-    saturate();
   }
-  assert(degree < (LARGE)INF);
+  saturate();
 }
 
 template <typename SMALL, typename LARGE>

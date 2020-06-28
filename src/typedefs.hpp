@@ -70,6 +70,27 @@ template <>
 inline bigint lcm(const bigint& x, const bigint& y) {
   return boost::multiprecision::lcm(x, y);
 }
+
+template <typename T>
+inline unsigned msb(const T& x) {
+  assert(x > 0);
+  // return std::bit_floor(x); // C++20
+  return boost::multiprecision::msb(boost::multiprecision::uint128_t(x));
+}
+template <>
+inline unsigned msb(const bigint& x) {
+  assert(x > 0);
+  return boost::multiprecision::msb(x);
+}
+
+template <typename T>
+inline T pow(const T& x, unsigned y) {
+  return std::pow(x, y);
+}
+template <>
+inline bigint pow(const bigint& x, unsigned y) {
+  return boost::multiprecision::pow(x, y);
+}
 }  // namespace rs
 
 using ID = uint64_t;
@@ -81,7 +102,7 @@ using Var = int;
 using Lit = int;
 inline Var toVar(Lit l) { return rs::abs(l); }
 
-const int INF = 1e9 + 1;  // 1e9 is considered the maximum number of variables in the system
+const int INF = 1e9 + 1;  // 1e9 is the maximum number of variables in the system, anything beyond is infinity
 
 using IntVecIt = std::vector<int>::iterator;
 

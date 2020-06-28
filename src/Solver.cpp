@@ -249,7 +249,7 @@ bool Solver::analyze(ConstrExpArb& confl) {
   assert(confl.getSlack(Level) < 0);
   stats.NADDEDLITERALS += confl.vars.size();
   confl.removeUnitsAndZeroes(Level, Pos);
-  confl.saturateAndFixOverflow(getLevel(), options.weakenFull);
+  confl.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
   assert(actSet.size() == 0);  // will hold the literals that need their activity bumped
   for (Var v : confl.vars) {
     if (!options.bumpOnlyFalse || isFalse(Level, confl.getLit(v))) actSet.add(v);
@@ -257,7 +257,6 @@ bool Solver::analyze(ConstrExpArb& confl) {
   while (decisionLevel() > 0) {
     if (asynch_interrupt) return false;
     Lit l = trail.back();
-    assert(rs::abs(confl.getCoef(-l)) < INF);
     BigCoef confl_coef_l = confl.getCoef(-l);
     if (confl_coef_l > 0) {
       ++stats.NRESOLVESTEPS;
@@ -303,7 +302,7 @@ bool Solver::analyze(ConstrExpArb& confl) {
       BigCoef reason_coef_l = reason.getCoef(l);
       BigCoef gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
       confl.addUp(reason, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
-      confl.saturateAndFixOverflow(getLevel(), options.weakenFull);
+      confl.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
       ceStore.leave(reason);
       assert(confl.getCoef(-l) == 0);
       assert(confl.getSlack(Level) < 0);
@@ -352,7 +351,7 @@ bool Solver::extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrE
 
   stats.NADDEDLITERALS += confl.vars.size();
   confl.removeUnitsAndZeroes(Level, Pos);
-  confl.saturateAndFixOverflow(getLevel(), options.weakenFull);
+  confl.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
   assert(confl.getSlack(Level) < 0);
 
   // analyze conflict
@@ -361,7 +360,6 @@ bool Solver::extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrE
   while (assumpslk >= 0) {
     if (asynch_interrupt) return false;
     Lit l = trail.back();
-    assert(rs::abs(confl.getCoef(-l)) < INF);
     BigCoef confl_coef_l = confl.getCoef(-l);
     if (confl_coef_l > 0) {
       ConstrExpArb& reason = ceStore.takeArb();
@@ -377,7 +375,7 @@ bool Solver::extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrE
       BigCoef reason_coef_l = reason.getCoef(l);
       BigCoef gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
       confl.addUp(reason, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
-      confl.saturateAndFixOverflow(getLevel(), options.weakenFull);
+      confl.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
       ceStore.leave(reason);
       assert(confl.getCoef(-l) == 0);
       assert(confl.getSlack(Level) < 0);
@@ -387,7 +385,6 @@ bool Solver::extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrE
     undoOne();
   }
   assert(confl.getDegree() > 0);
-  assert(confl.getDegree() < INF);
   assert(confl.isSaturated());
   confl.copyTo(outCore);
   confl.reset();
@@ -440,7 +437,8 @@ CRef Solver::attachConstraint(ConstrExpArb& constraint, bool locked) {
   Constr& C = ca[cr];
   C.initialize(constraint, locked, cr, *this, logger ? constraint.logProofLineWithInfo("Attach", stats) : ++crefID);
 
-  bool learned = (C.getOrigin() == Origin::LEARNED);
+  bool learned = (C.getOrigin() == Origin::LEARNED || C.getOrigin() == Origin::LEARNEDFARKAS ||
+                  C.getOrigin() == Origin::FARKAS || C.getOrigin() == Origin::GOMORY);
   if (learned) {
     stats.LEARNEDLENGTHSUM += C.size();
     stats.LEARNEDDEGREESUM += C.degree();
@@ -474,8 +472,9 @@ CRef Solver::attachConstraint(ConstrExpArb& constraint, bool locked) {
 CRef Solver::processLearnedStack() {
   // loop back to front as the last constraint in the queue is a result of conflict analysis
   // and we want to first check this constraint to backjump.
+  ConstrExpArb& learned = ceStore.takeArb();
   while (learnedStack.size() > 0) {
-    ConstrExpArb& learned = ceStore.takeArb();
+    learned.reset();
     learned.init(learnedStack.back());
     learnedStack.pop_back();
     learned.removeUnitsAndZeroes(Level, Pos, true);
@@ -495,18 +494,17 @@ CRef Solver::processLearnedStack() {
     learned.postProcess(Level, Pos, false, stats);
     assert(learned.isSaturated());
     if (learned.getDegree() <= 0) {
-      learned.reset();
       continue;
     }
     CRef cr = attachConstraint(learned, false);
     assert(cr != CRef_Unsat);
-    ceStore.leave(learned);
     Constr& C = ca[cr];
     if (assertionLevel < INF)
       recomputeLBD(C);
     else
       C.setLBD(C.size());  // the LBD of non-asserting constraints is undefined, so we take a safe upper bound
   }
+  ceStore.leave(learned);
   return CRef_Undef;
 }
 
@@ -520,7 +518,6 @@ std::pair<ID, ID> Solver::addInputConstraint(ConstrExpArb& ce) {
   ID input = ID_Undef;
   if (logger) input = ce.logAsInput();
   ce.postProcess(Level, Pos, true, stats);
-  assert(ce.getDegree() < INF);
   if (ce.getDegree() <= 0) {
     ;
     return {input, ID_Undef};  // already satisfied.
@@ -769,7 +766,6 @@ SolveState Solver::solve(const IntSet& assumptions, ConstrExpArb& core, std::vec
       } else if (decisionLevel() >= (int)assumptions_lim.size()) {
         if (!analyze(conflConstraint)) return SolveState::INTERRUPTED;
         assert(conflConstraint.getDegree() > 0);
-        assert(conflConstraint.getDegree() < INF);
         assert(conflConstraint.isSaturated());
         if (learnedStack.size() > 0 && learnedStack.back().orig == Origin::FARKAS)
           learnConstraint(conflConstraint, Origin::LEARNEDFARKAS);  // TODO: ugly hack

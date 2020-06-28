@@ -170,8 +170,12 @@ class Solver {
   void learnConstraint(const ConstrExp<S, L>& c, Origin orig) {
     assert(orig == Origin::LEARNED || orig == Origin::FARKAS || orig == Origin::LEARNEDFARKAS ||
            orig == Origin::GOMORY);
-    learnedStack.push_back(c.template toSimpleCons<BigCoef, BigVal>());
-    learnedStack.back().orig = orig;
+    ConstrExpArb& learned = ceStore.takeArb();
+    c.copyTo(learned);
+    learned.orig = orig;
+    learned.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsLearned, options.bitsLearned);
+    learnedStack.push_back(learned.template toSimpleCons<BigCoef, BigVal>());
+    ceStore.leave(learned);
   }
   CRef processLearnedStack();
   std::pair<ID, ID> addInputConstraint(ConstrExpArb& ce);

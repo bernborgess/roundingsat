@@ -180,7 +180,7 @@ void LpSolver::createLinearCombinationFarkas(ConstrExpArb& out, soplex::DVectorR
   out.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
   assert(out.hasNoZeroes());
   out.weakenSmalls(out.absCoeffSum() / static_cast<bigint>((double)out.vars.size() / options.intolerance));
-  out.saturateAndFixOverflow(solver.getLevel(), options.weakenFull);
+  out.saturateAndFixOverflow(solver.getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
 }
 
 CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults) {

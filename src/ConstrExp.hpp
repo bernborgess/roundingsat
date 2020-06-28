@@ -147,7 +147,7 @@ struct ConstrExp {
   void saturate(const std::vector<Var>& vs);
   void saturate();
   bool isSaturated() const;
-  void saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening);
+  void saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening, int bitOverflow, int bitReduce);
 
   template <typename S, typename L>
   void addUp(ConstrExp<S, L>& c, const SMALL& cmult = 1, const SMALL& thismult = 1) {

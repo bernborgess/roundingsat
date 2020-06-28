@@ -47,7 +47,7 @@ struct Options {
   bool cardProp = true;
   bool idxProp = true;
   bool supProp = true;
-  float countingProp = 0.7;
+  float countingProp = 0;
   int resize_factor = 2;
 
   double rinc = 2;
@@ -70,6 +70,10 @@ struct Options {
 
   bool bumpOnlyFalse = false;
   bool bumpCanceling = true;
+
+  int bitsOverflow = 29;
+  int bitsReduced = 60;
+  int bitsLearned = 29;
 
   enum OPTIONS {
     HELP,
@@ -97,6 +101,9 @@ struct Options {
     CAWEAKENNONIMPLYING,
     BUMPONLYFALSE,
     BUMPCANCELING,
+    BITSOVERFLOW,
+    BITSREDUCED,
+    BITSLEARNED,
   };
   std::vector<std::string> opts = {
       "help",
@@ -124,6 +131,9 @@ struct Options {
       "ca-weaken-nonimplying",
       "bump-only-false",
       "bump-canceling",
+      "bits-overflow",
+      "bits-reduced",
+      "bits-learned",
   };
 
   typedef bool (*func)(double);
@@ -227,6 +237,12 @@ struct Options {
         opt_val, opts[OPTIONS::BUMPONLYFALSE], [](double x) -> bool { return x == 0 || x == 1; }, bumpOnlyFalse);
     getOptionNum(
         opt_val, opts[OPTIONS::BUMPCANCELING], [](double x) -> bool { return x == 0 || x == 1; }, bumpCanceling);
+    getOptionNum(
+        opt_val, opts[OPTIONS::BITSOVERFLOW], [](double x) -> bool { return x >= 0; }, bitsOverflow);
+    getOptionNum(
+        opt_val, opts[OPTIONS::BITSREDUCED], [](double x) -> bool { return x >= 0; }, bitsReduced);
+    getOptionNum(
+        opt_val, opts[OPTIONS::BITSLEARNED], [](double x) -> bool { return x >= 0; }, bitsLearned);
   }
 
   constexpr static int colwidth = 14;
@@ -297,5 +313,13 @@ struct Options {
              bumpOnlyFalse);
     usageVal(opts[OPTIONS::BUMPCANCELING],
              "Bump activity of literals encountered during conflict analysis when canceling", "0 or 1", bumpCanceling);
+    usageVal(opts[OPTIONS::BITSOVERFLOW], "Bit width of maximum coefficient during conflict analysis calculations",
+             "int >= 0", bitsOverflow);
+    usageVal(opts[OPTIONS::BITSREDUCED],
+             "Bit width of maximum coefficient after reduction when exceeding " + opts[OPTIONS::BITSOVERFLOW],
+             "int >= 0", bitsReduced);
+    usageVal(opts[OPTIONS::BITSLEARNED],
+             "Bit width of maximum coefficient for learned constraints (0 is unlimited, 1 reduces to cardinalities)",
+             "int >= 0", bitsLearned);
   }
 };
