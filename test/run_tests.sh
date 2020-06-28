@@ -2,6 +2,7 @@
 
 time=$1
 binary=$2
+options=$3
 
 SCRIPTPATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 
@@ -13,8 +14,9 @@ echo "###########################"
 echo "########## START ##########"
 echo "###########################"
 echo ""
-echo "timeout: $1"
-echo "binary: $2"
+echo "timeout: $time"
+echo "binary: $binary"
+echo "options: $options"
 echo ""
 
 declare -a arr_default=(
@@ -64,7 +66,7 @@ for j in "${arr_dec[@]}"; do
     mkdir -p `dirname $logfile`
     echo -n "" > $logfile.proof
     echo -n "" > $logfile.formula
-    output=`timeout $time $binary $formula --proof-log=$logfile 2>&1 | awk '/^o|SATISFIABLE|.*Assertion.*/ {print $2}'`
+    output=`timeout $time $binary $formula $options --proof-log=$logfile 2>&1 | awk '/^o|SATISFIABLE|.*Assertion.*/ {print $2}'`
     if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
         errors=`expr 1000 + $errors`
         echo "wrong output: $output vs $obj"
@@ -127,7 +129,7 @@ for mode in "${arr_modes[@]}"; do
         mkdir -p `dirname $logfile`
         echo -n "" > $logfile.proof
         echo -n "" > $logfile.formula
-        output=`timeout $time $binary $formula --opt-mode=$mode --proof-log=$logfile 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
+        output=`timeout $time $binary $formula $options --opt-mode=$mode --proof-log=$logfile 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
         if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
             errors=`expr 1000 + $errors`
             echo "wrong output: $output vs $obj"
@@ -154,7 +156,7 @@ for j in "${arr_opt[@]}"; do
     mkdir -p `dirname $logfile`
     echo -n "" > $logfile.proof
     echo -n "" > $logfile.formula
-    output=`timeout $time $binary $formula --opt-mode="lazy-hybrid" 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
+    output=`timeout $time $binary $formula $options --opt-mode="lazy-hybrid" 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
     if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
         errors=`expr 1000 + $errors`
         echo "wrong output: $output vs $obj"
