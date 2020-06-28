@@ -91,7 +91,7 @@ class Solver {
   bool firstRun = true;
 
   std::shared_ptr<LpSolver> lpSolver;
-  std::vector<ConstrSimple32> learnedStack;
+  std::vector<ConstrSimpleArb> learnedStack;
 
  public:
   Solver();
@@ -108,9 +108,9 @@ class Solver {
   const std::vector<int>& getPos() const { return Pos; }
   int decisionLevel() const { return trail_lim.size(); }
 
-  std::pair<ID, ID> addConstraint(const ConstrExp32& c, Origin orig, bool addToLP);     // formula line id, processed id
-  std::pair<ID, ID> addConstraint(const ConstrSimple32& c, Origin orig, bool addToLP);  // formula line id, processed id
-  void dropExternal(ID id, bool erasable, bool forceDelete, bool removeFromLP);
+  std::pair<ID, ID> addConstraint(const ConstrExp32& c, Origin orig);     // formula line id, processed id
+  std::pair<ID, ID> addConstraint(const ConstrSimple32& c, Origin orig);  // formula line id, processed id
+  void dropExternal(ID id, bool erasable, bool forceDelete);
   int getNbConstraints() const { return constraints.size(); }
   void getIthConstraint(int i, ConstrExp32& out) const { return ca[constraints[i]].toConstraint(out); }
 
@@ -167,14 +167,14 @@ class Solver {
 
   CRef attachConstraint(ConstrExpArb& constraint, bool locked);
   template <typename S, typename L>
-  void learnConstraint(ConstrExp<S, L>& c, Origin orig) {
+  void learnConstraint(const ConstrExp<S, L>& c, Origin orig) {
     assert(orig == Origin::LEARNED || orig == Origin::FARKAS || orig == Origin::LEARNEDFARKAS ||
            orig == Origin::GOMORY);
-    c.orig = orig;
-    learnedStack.push_back(c.template toSimpleCons<Coef, Val>());
+    learnedStack.push_back(c.template toSimpleCons<BigCoef, BigVal>());
+    learnedStack.back().orig = orig;
   }
   CRef processLearnedStack();
-  std::pair<ID, ID> addInputConstraint(ConstrExpArb& ce, bool addToLP);
+  std::pair<ID, ID> addInputConstraint(ConstrExpArb& ce);
   void removeConstraint(Constr& C, bool override = false);
 
   // ---------------------------------------------------------------------

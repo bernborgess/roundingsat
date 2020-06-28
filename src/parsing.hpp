@@ -101,13 +101,12 @@ void opb_read(std::istream& in, Solver& solver, ConstrExp32& objective) {
       input.addRhs(read_number(line0.substr(line0.find("=") + 1)));
       if (input.getDegree() >= (Val)INF)
         quit::exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
-      if (solver.addConstraint(input, Origin::FORMULA, true).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
+      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
       if (line0.find(" = ") != std::string::npos) {  // Handle equality case with second constraint
         input.invert();
         if (input.getDegree() >= (Val)INF)
           quit::exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
-        if (solver.addConstraint(input, Origin::FORMULA, true).second == ID_Unsat)
-          quit::exit_UNSAT({}, 0, solver.logger);
+        if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
       }
     }
   }
@@ -141,7 +140,7 @@ void wcnf_read(std::istream& in, long long top, Solver& solver, ConstrExp32& obj
       }  // else hard clause
       if (input.getDegree() >= (Val)INF)
         quit::exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
-      if (solver.addConstraint(input, Origin::FORMULA, true).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
+      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
     }
   }
   solver.setNbOrigVars(solver.getNbVars() - objective.vars.size());
@@ -159,7 +158,7 @@ void cnf_read(std::istream& in, Solver& solver) {
       input.addRhs(1);
       Lit l;
       while (is >> l, l) input.addLhs(1, l);
-      if (solver.addConstraint(input, Origin::FORMULA, true).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
+      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
     }
   }
   solver.setNbOrigVars(solver.getNbVars());

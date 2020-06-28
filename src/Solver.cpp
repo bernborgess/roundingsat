@@ -249,6 +249,7 @@ bool Solver::analyze(ConstrExpArb& confl) {
   assert(confl.getSlack(Level) < 0);
   stats.NADDEDLITERALS += confl.vars.size();
   confl.removeUnitsAndZeroes(Level, Pos);
+  confl.saturateAndFixOverflow(getLevel(), options.weakenFull);
   assert(actSet.size() == 0);  // will hold the literals that need their activity bumped
   for (Var v : confl.vars) {
     if (!options.bumpOnlyFalse || isFalse(Level, confl.getLit(v))) actSet.add(v);
@@ -351,6 +352,7 @@ bool Solver::extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrE
 
   stats.NADDEDLITERALS += confl.vars.size();
   confl.removeUnitsAndZeroes(Level, Pos);
+  confl.saturateAndFixOverflow(getLevel(), options.weakenFull);
   assert(confl.getSlack(Level) < 0);
 
   // analyze conflict
@@ -408,7 +410,6 @@ CRef Solver::attachConstraint(ConstrExpArb& constraint, bool locked) {
   assert(constraint.hasNoZeroes());
   assert(constraint.hasNoUnits(getLevel()));
   assert(constraint.getDegree() > 0);
-  assert(constraint.getDegree() < INF);
   assert(constraint.vars.size() > 0);
   assert(constraint.getSlack(getLevel()) >= 0);
   assert(constraint.orig != Origin::UNKNOWN);
@@ -509,9 +510,13 @@ CRef Solver::processLearnedStack() {
   return CRef_Undef;
 }
 
-std::pair<ID, ID> Solver::addInputConstraint(ConstrExpArb& ce, bool addToLP) {
-  assert(ce.orig == Origin::FORMULA || ce.orig == Origin::BOUND || ce.orig == Origin::COREGUIDED);
+std::pair<ID, ID> Solver::addInputConstraint(ConstrExpArb& ce) {
+  assert(ce.orig == Origin::FORMULA || ce.orig == Origin::UPPERBOUND || ce.orig == Origin::LOWERBOUND ||
+         ce.orig == Origin::COREGUIDED);
   assert(decisionLevel() == 0);
+  bool upperbound = ce.orig == Origin::UPPERBOUND;
+  bool lowerbound = ce.orig == Origin::LOWERBOUND;
+  if (upperbound || lowerbound) ce.orig = Origin::BOUND;
   ID input = ID_Undef;
   if (logger) input = ce.logAsInput();
   ce.postProcess(Level, Pos, true, stats);
@@ -539,26 +544,31 @@ std::pair<ID, ID> Solver::addInputConstraint(ConstrExpArb& ce, bool addToLP) {
   }
   ceStore.leave(confl);
   ID id = ca[cr].id;
-  if (ca[cr].getOrigin() != Origin::FORMULA) external[id] = cr;
-  if (addToLP && lpSolver) lpSolver->addConstraint(cr, false);
+  Origin orig = ca[cr].getOrigin();
+  if (orig != Origin::FORMULA) {
+    external[id] = cr;
+  }
+  if (lpSolver && (orig == Origin::BOUND || orig == Origin::FORMULA)) {
+    lpSolver->addConstraint(cr, false, upperbound, lowerbound);
+  }
   return {input, id};
 }
 
-std::pair<ID, ID> Solver::addConstraint(const ConstrExp32& c, Origin orig, bool addToLP) {
+std::pair<ID, ID> Solver::addConstraint(const ConstrExp32& c, Origin orig) {
   // NOTE: copy to temporary constraint guarantees original constraint is not changed and does not need logger
   ConstrExpArb& ce = ceStore.takeArb();
   c.copyTo(ce);
   ce.orig = orig;
-  std::pair<ID, ID> result = addInputConstraint(ce, addToLP);
+  std::pair<ID, ID> result = addInputConstraint(ce);
   ceStore.leave(ce);
   return result;
 }
 
-std::pair<ID, ID> Solver::addConstraint(const ConstrSimple32& c, Origin orig, bool addToLP) {
+std::pair<ID, ID> Solver::addConstraint(const ConstrSimple32& c, Origin orig) {
   ConstrExpArb& ce = ceStore.takeArb();
   ce.init(c);
   ce.orig = orig;
-  std::pair<ID, ID> result = addInputConstraint(ce, addToLP);
+  std::pair<ID, ID> result = addInputConstraint(ce);
   ceStore.leave(ce);
   return result;
 }
@@ -571,7 +581,7 @@ void Solver::removeConstraint(Constr& C, [[maybe_unused]] bool override) {
   ca.wasted += C.getMemSize();
 }
 
-void Solver::dropExternal(ID id, bool erasable, bool forceDelete, bool removeFromLP) {
+void Solver::dropExternal(ID id, bool erasable, bool forceDelete) {
   assert(erasable || !forceDelete);
   if (id == ID_Undef) return;
   auto old_it = external.find(id);
@@ -580,7 +590,6 @@ void Solver::dropExternal(ID id, bool erasable, bool forceDelete, bool removeFro
   external.erase(old_it);
   constr.setLocked(!erasable);
   if (forceDelete) removeConstraint(constr);
-  if (removeFromLP && lpSolver) lpSolver->removeConstraint(id);
 }
 
 // ---------------------------------------------------------------------

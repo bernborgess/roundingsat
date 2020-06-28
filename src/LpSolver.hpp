@@ -60,15 +60,16 @@ struct AdditionData {
   bool removable;
 };
 
+class LpSolver;
 struct CandidateCut {
-  ConstrSimple32 simpcons;
+  ConstrSimple64 simpcons;
   CRef cr = CRef_Undef;
   double norm = 1;
   double ratSlack = 0;
 
   CandidateCut(){};
-  CandidateCut(ConstrExpArb& in, const std::vector<double>& sol);
-  CandidateCut(const Constr& in, CRef cr, const std::vector<double>& sol);
+  CandidateCut(ConstrExpArb& in, const std::vector<double>& sol, LpSolver& lpslvr);
+  CandidateCut(const Constr& in, CRef cr, const std::vector<double>& sol, LpSolver& lpslvr);
   double cosOfAngleTo(const CandidateCut& other) const;
 
  private:
@@ -79,6 +80,8 @@ std::ostream& operator<<(std::ostream& o, const CandidateCut& cc);
 class Solver;
 class LpSolver {
   friend class Solver;
+  friend class CandidateCut;
+
   soplex::SoPlex lp;
   Solver& solver;
 
@@ -94,9 +97,8 @@ class LpSolver {
   soplex::DVectorReal lowerBounds;
   soplex::DSVectorReal lpRow;
 
-  std::unordered_map<ID, int> id2row;
   std::vector<RowData> row2data;
-  std::unordered_set<ID> toRemove;
+  std::unordered_set<int> toRemove;  // rows
   std::unordered_map<ID, AdditionData> toAdd;
 
   std::vector<CandidateCut> candidateCuts;
@@ -109,15 +111,15 @@ class LpSolver {
                             bool inProcessing = false);  // TODO: don't use objective function here?
   void inProcess();
 
-  void addConstraint(ConstrExpArb& c, bool removable, ID id);
-  void addConstraint(CRef cr, bool removable);
-  void removeConstraint(ID id);
+  void addConstraint(ConstrExpArb& c, bool removable, bool upperbound = false, bool lowerbound = false);
+  void addConstraint(CRef cr, bool removable, bool upperbound = false, bool lowerbound = false);
 
  private:
   int getNbVariables() const;
   int getNbRows() const;
 
   void flushConstraints();
+  void shrinkToFit(ConstrExpArb& c);
 
   LpStatus _checkFeasibility(ConstrExpArb& confl, bool inProcessing);
   void _inProcess();
@@ -134,10 +136,8 @@ class LpSolver {
   void pruneCuts();
 
   inline static double nonIntegrality(double a) { return rs::abs(std::round(a) - a); }
-  inline static bool validCoeff(double a) { return std::round(a) == a && rs::abs(a) < INF; }
-  inline static bool validRhs(double a) {
-    return std::round(a) == a && a < INF_long && a > -INF_long;
-  }  // NOTE: double type can only store ranges of integers up to ~9e15
+  inline static bool validVal(double a) { return std::round(a) == a && std::abs(a) < INF_long; }
+  // NOTE: double type can only store ranges of integers up to ~9e15
 };
 
 #else
@@ -147,14 +147,15 @@ class LpSolver {
   LpSolver([[maybe_unused]] Solver& solver, [[maybe_unused]] const ConstrExp32& objective){};
   void setNbVariables([[maybe_unused]] int n){};
 
-  LpStatus checkFeasibility(ConstrExpArb& confl, [[maybe_unused]] bool inProcessing = false) {
+  LpStatus checkFeasibility([[maybe_unused]] ConstrExpArb& confl, [[maybe_unused]] bool inProcessing = false) {
     return LpStatus::UNDETERMINED;
   }
   void inProcess() {}
 
-  void addConstraint([[maybe_unused]] ConstrExpArb& c, [[maybe_unused]] bool removable) {}
-  void addConstraint([[maybe_unused]] CRef cr, [[maybe_unused]] bool removable, ID id) {}
-  void removeConstraint([[maybe_unused]] ID id) {}
+  void addConstraint([[maybe_unused]] ConstrExpArb& c, [[maybe_unused]] bool removable,
+                     [[maybe_unused]] bool upperbound, [[maybe_unused]] bool lowerbound) {}
+  void addConstraint([[maybe_unused]] CRef cr, [[maybe_unused]] bool removable, [[maybe_unused]] bool upperbound,
+                     [[maybe_unused]] bool lowerbound) {}
 };
 
 #endif  // WITHSOPLEX

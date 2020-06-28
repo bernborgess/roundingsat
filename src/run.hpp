@@ -62,8 +62,8 @@ ID handleNewSolution(const ConstrExp32& origObj, ID& lastUpperBound) {
   origObj.copyTo(aux);
   aux.invert();
   aux.addRhs(-upper_bound + 1);
-  solver.dropExternal(lastUpperBound, true, true, true);
-  std::pair<ID, ID> res = solver.addConstraint(aux, Origin::BOUND, true);
+  solver.dropExternal(lastUpperBound, true, true);
+  std::pair<ID, ID> res = solver.addConstraint(aux, Origin::UPPERBOUND);
   lastUpperBound = res.second;
   aux.reset();
   if (lastUpperBound == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
@@ -85,8 +85,8 @@ struct LazyVar {
   }
 
   ~LazyVar() {
-    solver.dropExternal(atLeastID, false, false, false);
-    solver.dropExternal(atMostID, false, false, false);
+    solver.dropExternal(atLeastID, false, false);
+    solver.dropExternal(atMostID, false, false);
   }
 
   Var getCurrentVar() const { return introducedVars.back(); }
@@ -100,8 +100,8 @@ struct LazyVar {
     sc.terms.reserve(lhs.size() + introducedVars.size());
     for (Lit l : lhs) sc.terms.emplace_back(1, l);
     for (Var v : introducedVars) sc.terms.emplace_back(-1, v);
-    solver.dropExternal(atLeastID, false, false, true);  // TODO: should be erasable
-    atLeastID = solver.addConstraint(sc, Origin::COREGUIDED, false).second;
+    solver.dropExternal(atLeastID, false, false);  // TODO: should be erasable
+    atLeastID = solver.addConstraint(sc, Origin::COREGUIDED).second;
     if (atLeastID == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
   }
 
@@ -114,15 +114,15 @@ struct LazyVar {
     for (Lit l : lhs) sc.terms.emplace_back(-1, l);
     for (Var v : introducedVars) sc.terms.emplace_back(1, v);
     sc.terms.emplace_back((Coef)(lhs.size() - rhs - introducedVars.size()), getCurrentVar());
-    solver.dropExternal(atMostID, false, false, true);  // TODO: should be erasable
-    atMostID = solver.addConstraint(sc, Origin::COREGUIDED, false).second;
+    solver.dropExternal(atMostID, false, false);  // TODO: should be erasable
+    atMostID = solver.addConstraint(sc, Origin::COREGUIDED).second;
     if (atMostID == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
   }
 
   void addSymBreakingConstraint(Var prevvar) const {
     assert(introducedVars.size() > 1);
     // y-- + ~y >= 1 (equivalent to y-- >= y)
-    if (solver.addConstraint({{{1, prevvar}, {1, -getCurrentVar()}}, 1}, Origin::COREGUIDED, false).second == ID_Unsat)
+    if (solver.addConstraint({{{1, prevvar}, {1, -getCurrentVar()}}, 1}, Origin::COREGUIDED).second == ID_Unsat)
       quit::exit_UNSAT(solution, upper_bound, solver.logger);
   }
 };
@@ -162,8 +162,8 @@ void checkLazyVariables(ConstrExp64& reformObj, std::vector<std::shared_ptr<Lazy
 ID addLowerBound(const ConstrExp32& origObj, Val lower_bound, ID& lastLowerBound) {
   origObj.copyTo(aux);
   aux.addRhs(lower_bound);
-  solver.dropExternal(lastLowerBound, true, true, true);
-  std::pair<ID, ID> res = solver.addConstraint(aux, Origin::BOUND, true);
+  solver.dropExternal(lastLowerBound, true, true);
+  std::pair<ID, ID> res = solver.addConstraint(aux, Origin::LOWERBOUND);
   lastLowerBound = res.second;
   aux.reset();
   if (lastLowerBound == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
@@ -226,13 +226,13 @@ ID handleInconsistency(ConstrExp64& reformObj, const ConstrExp32& origObj,
     reformObj.addUp(core, mult);
     assert(lower_bound == -reformObj.getDegree());
     // add channeling constraints
-    if (solver.addConstraint(core, Origin::COREGUIDED, false).second == ID_Unsat)
+    if (solver.addConstraint(core, Origin::COREGUIDED).second == ID_Unsat)
       quit::exit_UNSAT(solution, upper_bound, solver.logger);
     core.invert();
-    if (solver.addConstraint(core, Origin::COREGUIDED, false).second == ID_Unsat)
+    if (solver.addConstraint(core, Origin::COREGUIDED).second == ID_Unsat)
       quit::exit_UNSAT(solution, upper_bound, solver.logger);
     for (Var v = oldN + 1; v < newN; ++v) {  // add symmetry breaking constraints
-      if (solver.addConstraint({{{1, v}, {1, -v - 1}}, 1}, Origin::COREGUIDED, false).second == ID_Unsat)
+      if (solver.addConstraint({{{1, v}, {1, -v - 1}}, 1}, Origin::COREGUIDED).second == ID_Unsat)
         quit::exit_UNSAT(solution, upper_bound, solver.logger);
     }
   }

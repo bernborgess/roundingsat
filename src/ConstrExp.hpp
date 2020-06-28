@@ -98,12 +98,12 @@ struct ConstrExp {
   }
 
   template <typename CF, typename DG>
-  ConstrSimple<CF, DG> toSimpleCons() {
+  ConstrSimple<CF, DG> toSimpleCons() const {
     ConstrSimple<CF, DG> result;
     result.rhs = static_cast<DG>(rhs);
     result.terms.reserve(vars.size());
     for (Var v : vars)
-      if (coefs[v] != 0) result.terms.emplace_back((Coef)coefs[v], v);
+      if (coefs[v] != 0) result.terms.emplace_back(static_cast<CF>(coefs[v]), v);
     if (plogger) result.proofLine = proofBuffer.str();
     result.orig = orig;
     return result;

@@ -34,32 +34,39 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <queue>
 #include "Solver.hpp"
 
-CandidateCut::CandidateCut(ConstrExpArb& in, const std::vector<double>& sol) {
+CandidateCut::CandidateCut(ConstrExpArb& in, const std::vector<double>& sol, LpSolver& lpslvr) {
   assert(in.isSaturated());
-  assert(in.getDegree() < INF);
-  if (in.getDegree() <= 0) return;
-  simpcons = in.toSimpleCons<Coef, Val>();
+  lpslvr.shrinkToFit(in);
+  simpcons = in.toSimpleCons<long long, int128>();
   // NOTE: simpcons is already in var-normal form
   initialize(sol);
 }
 
-CandidateCut::CandidateCut(const Constr& in, CRef cref, const std::vector<double>& sol)
-    : simpcons(in.toSimpleCons<Coef, Val>()), cr(cref) {
+CandidateCut::CandidateCut(const Constr& in, CRef cref, const std::vector<double>& sol, LpSolver& lpslvr) : cr(cref) {
   assert(in.degree() > 0);
-  simpcons.toNormalFormVar();
+  ConstrExpArb& tmp = lpslvr.solver.ceStore.takeArb();
+  in.toConstraint(tmp);
+  lpslvr.shrinkToFit(tmp);
+  if (tmp.getDegree() <= 0) {
+    lpslvr.solver.ceStore.leave(tmp);
+    return;
+  }
+  simpcons = tmp.toSimpleCons<long long, int128>();
+  // NOTE: simpcons is already in var-normal form
+  lpslvr.solver.ceStore.leave(tmp);
   initialize(sol);
   assert(cr != CRef_Undef);
 }
 
 void CandidateCut::initialize(const std::vector<double>& sol) {
   std::sort(simpcons.terms.begin(), simpcons.terms.end(),
-            [](const Term<Coef>& t1, const Term<Coef>& t2) { return t1.l < t2.l; });
+            [](const Term<long long>& t1, const Term<long long>& t2) { return t1.l < t2.l; });
   assert(norm == 1);
   norm = 0;
-  for (const Term<Coef>& p : simpcons.terms) norm += (double)p.c * (double)p.c;
+  for (const Term<long long>& p : simpcons.terms) norm += (double)p.c * (double)p.c;
   norm = std::sqrt(norm);
   ratSlack = -simpcons.rhs;
-  for (Term<Coef>& p : simpcons.terms) {
+  for (Term<long long>& p : simpcons.terms) {
     assert(p.l > 0);  // simpcons is in var-normal form
     ratSlack += (double)p.c * sol[p.l];
   }
@@ -110,6 +117,14 @@ LpSolver::LpSolver(Solver& slvr, const ConstrExp32& o) : solver(slvr) {
 
   setNbVariables(slvr.getNbVars());
 
+  // add two empty rows for objective bound constraints
+  assert(ID_Trivial == 1);
+  for (ID id = 0; id <= ID_Trivial; ++id) {
+    soplex::DSVectorReal row(0);
+    lp.addRowReal(soplex::LPRowReal(row, soplex::LPRowReal::Type::GREATER_EQUAL, 0));
+    row2data.emplace_back(id, false);
+  }
+
   // add all formula constraints
   for (CRef cr : solver.constraints)
     if (solver.ca[cr].getOrigin() == Origin::FORMULA) addConstraint(cr, false);
@@ -136,7 +151,7 @@ void LpSolver::setNbVariables(int n) {
   lp.addColsReal(allCols);
 
   lpSol.reDim(n);
-  lpSolution.resize(n);
+  lpSolution.resize(n, 0);
   lowerBounds.reDim(n);
   upperBounds.reDim(n);
   assert(getNbVariables() == n);
@@ -214,12 +229,8 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   else {
     assert(lcc.hasNoZeroes());
     lcc.weakenSmalls(lcc.absCoeffSum() / static_cast<bigint>((double)lcc.vars.size() / options.intolerance));
-    if (lcc.getDegree() >= INF)
-      lcc.weakenDivideRoundRational(lpSolution, aux::ceildiv<bigint>(lcc.getDegree(), INF - 1));
   }
-  assert(lcc.getDegree() < INF);
-  assert(lcc.isSaturated());
-  CandidateCut result(lcc, lpSolution);
+  CandidateCut result(lcc, lpSolution, *this);
   solver.ceStore.leave(lcc);
   return result;
 }
@@ -268,8 +279,13 @@ void LpSolver::constructLearnedCandidates() {
   for (CRef cr : solver.constraints) {
     if (asynch_interrupt) return;
     const Constr& c = solver.ca[cr];
-    if (id2row.count(c.id) == 0) {
-      candidateCuts.emplace_back(c, cr, lpSolution);
+    if (c.getOrigin() == Origin::LEARNED || c.getOrigin() == Origin::LEARNEDFARKAS || c.getOrigin() == Origin::GOMORY) {
+      bool containsNonOriginalVars = false;
+      for (unsigned int i = 0; i < c.size() && !containsNonOriginalVars; ++i) {
+        containsNonOriginalVars = rs::abs(c.lit(i)) > solver.getNbOrigVars();
+      }
+      if (containsNonOriginalVars) continue;
+      candidateCuts.emplace_back(c, cr, lpSolution, *this);
       if (candidateCuts.back().ratSlack >= -options.intolerance) candidateCuts.pop_back();
     }
   }
@@ -297,19 +313,20 @@ void LpSolver::addFilteredCuts() {
 
   for (int i : keptCuts) {
     CandidateCut& cc = candidateCuts[i];
+    ConstrExpArb& ce = solver.ceStore.takeArb();
+    ce.init(cc.simpcons);
+    ce.postProcess(solver.getLevel(), solver.getPos(), true, stats);
+    assert(ce.getDegree() < INF_long);
+    assert(ce.getRhs() < INF_long);
+    assert(ce.isSaturated());
+    assert(ce.getDegree() > 0);
     if (cc.cr == CRef_Undef) {  // Gomory cut
-      ConstrExpArb& ce = solver.ceStore.takeArb();
-      ce.init(cc.simpcons);
-      ce.postProcess(solver.getLevel(), solver.getPos(), true, stats);
-      if (ce.getDegree() > 0) {
-        solver.learnConstraint(ce, Origin::GOMORY);
-        addConstraint(ce, true, ce.plogger ? ce.logProofLineWithInfo("Gomory", stats) : ++solver.crefID);
-      }
-      solver.ceStore.leave(ce);
+      solver.learnConstraint(ce, Origin::GOMORY);
     } else {  // learned cut
       ++stats.NLPLEARNEDCUTS;
-      addConstraint(cc.cr, true);
     }
+    addConstraint(ce, true);
+    solver.ceStore.leave(ce);
   }
 }
 
@@ -320,7 +337,7 @@ void LpSolver::pruneCuts() {
   for (int r = 0; r < getNbRows(); ++r)
     if (row2data[r].removable && lpMultipliers[r] == 0) {
       ++stats.NLPDELETEDCUTS;
-      removeConstraint(row2data[r].id);
+      toRemove.insert(r);
     }
 }
 
@@ -339,16 +356,16 @@ ConstrExp64& LpSolver::rowToConstraint(int row) {
   ConstrExp64& ce = solver.ceStore.take64();
   double rhs = lp.lhsReal(row);
   assert(rs::abs(rhs) != INFTY);
-  assert(validRhs(rhs));
+  assert(validVal(rhs));
   ce.addRhs(rhs);
 
   lpRow.clear();
   lp.getRowVectorReal(row, lpRow);
   for (int i = 0; i < lpRow.size(); ++i) {
     const soplex::Nonzero<double>& el = lpRow.element(i);
-    assert(validCoeff(el.val));
+    assert(validVal(el.val));
     assert(el.val != 0);
-    ce.addLhs((Coef)el.val, el.idx);
+    ce.addLhs((long long)el.val, el.idx);
   }
   if (ce.plogger) ce.resetBuffer(row2data[row].id);
   return ce;
@@ -486,72 +503,60 @@ void LpSolver::convertConstraint(const ConstrSimple64& c, soplex::DSVectorReal& 
     row.add(t.l, t.c);
   }
   rhs = c.rhs;
-  assert(validRhs(rhs));
+  assert(validVal(rhs));
 }
 
-void LpSolver::addConstraint(ConstrExpArb& c, bool removable, ID id) {
-  assert(id != ID_Trivial);
-  toRemove.erase(id);
-  if (!id2row.count(id) && !toAdd.count(id)) {
-    bigint maxRhs = std::max(c.getDegree(), rs::abs(c.getRhs()));
-    if (maxRhs >= INF_long) {
-      c.weakenDivideRoundRational(lpSolution, aux::ceildiv<bigint>(maxRhs, INF_long - 1));
-      id = c.plogger ? c.logProofLineWithInfo("LP", stats) : ++solver.crefID;
-    }
-    assert(c.getDegree() < INF_long);
-    assert(c.getRhs() < INF_long);
-    assert(c.isSaturated());
+void LpSolver::addConstraint(ConstrExpArb& c, bool removable, bool upperbound, bool lowerbound) {
+  shrinkToFit(c);
+  ID id = c.plogger ? c.logProofLineWithInfo("LP", stats) : ++solver.crefID;
+  if (upperbound || lowerbound) {
+    assert(upperbound != lowerbound);
+    double rhs;
+    soplex::DSVectorReal row(c.vars.size());
+    convertConstraint(c.toSimpleCons<long long, int128>(), row, rhs);
+    lp.changeRowReal(lowerbound, soplex::LPRowReal(row, soplex::LPRowReal::Type::GREATER_EQUAL, rhs));
+    row2data[lowerbound] = {id, false};  // so upper bound resides in row[0]
+  } else {
     toAdd[id] = {c.toSimpleCons<long long, int128>(), removable};
   }
 }
 
-void LpSolver::addConstraint(CRef cr, bool removable) {
+void LpSolver::addConstraint(CRef cr, bool removable, bool upperbound, bool lowerbound) {
   assert(cr != CRef_Undef);
   assert(cr != CRef_Unsat);
   ConstrExpArb& ce = solver.ceStore.takeArb();
   solver.ca[cr].toConstraint(ce);
-  addConstraint(ce, removable, solver.ca[cr].id);
+  addConstraint(ce, removable, upperbound, lowerbound);
   solver.ceStore.leave(ce);
-}
-
-void LpSolver::removeConstraint(ID id) {
-  toAdd.erase(id);
-  if (id2row.count(id)) toRemove.insert(id);
 }
 
 // TODO: exploit lp.changeRowReal for more efficiency, e.g. when replacing the upper and lower bound on the objective
 void LpSolver::flushConstraints() {
   if (toRemove.size() > 0) {  // first remove rows
     std::vector<int> rowsToRemove(getNbRows(), 0);
-    for (ID id : toRemove) {
+    for (int row : toRemove) {
       ++stats.NLPDELETEDROWS;
-      rowsToRemove[id2row[id]] = -1;
-      id2row.erase(id);
+      rowsToRemove[row] = -1;
     }
     lp.removeRowsReal(rowsToRemove.data());  // TODO: use other removeRowsReal method?
     for (int r = 0; r < (int)rowsToRemove.size(); ++r) {
       int newrow = rowsToRemove[r];
       if (newrow < 0 || newrow == r) continue;
       row2data[newrow] = row2data[r];
-      id2row[row2data[newrow].id] = newrow;
     }
     row2data.resize(getNbRows());
     toRemove.clear();
-    assert((int)id2row.size() == getNbRows());
-    for (int r = 0; r < (int)row2data.size(); ++r) assert(id2row[row2data[r].id] == r);
   }
 
   if (toAdd.size() > 0) {  // then add rows
     soplex::LPRowSetReal rowsToAdd;
     rowsToAdd.reMax(toAdd.size());
     row2data.reserve(row2data.size() + toAdd.size());
-    id2row.reserve(id2row.size() + toAdd.size());
     for (auto& p : toAdd) {
       double rhs;
       soplex::DSVectorReal row(p.second.cs.terms.size());
       convertConstraint(p.second.cs, row, rhs);
       rowsToAdd.add(soplex::LPRowReal(row, soplex::LPRowReal::Type::GREATER_EQUAL, rhs));
-      id2row[p.first] = row2data.size();
       row2data.emplace_back(p.first, p.second.removable);
       ++stats.NLPADDEDROWS;
     }
@@ -562,6 +567,21 @@ void LpSolver::flushConstraints() {
   lpSlackSolution.reDim(getNbRows());
   lpMultipliers.reDim(getNbRows());
   assert((int)row2data.size() == getNbRows());
+}
+
+void LpSolver::shrinkToFit(ConstrExpArb& c) {
+  bigint maxRhs = std::max(c.getDegree(), rs::abs(c.getRhs()));
+  if (maxRhs >= INF_long) {
+    c.weakenDivideRoundRational(lpSolution, aux::ceildiv<bigint>(maxRhs, INF_long - 1));
+    assert(c.getDegree() < INF_long);
+    assert(c.getRhs() < INF_long);
+    assert(c.isSaturated());
+  } else {
+    c.saturate();
+  }
+  assert(c.getDegree() < INF_long);
+  assert(c.getRhs() < INF_long);
+  assert(c.isSaturated());
 }
 
 #endif  // WITHSOPLEX
