@@ -210,9 +210,9 @@ using Watched96 = Watched<int128, int128>;
 struct Arbitrary final : public Constr {
   unsigned int watchIdx;
   long long ntrailpops;
-  bigint degr;
-  bigint slack;               // sum of non-falsifieds minus w
-  std::vector<bigint> coefs;  // NOTE: seemed not possible to put bigints in below dynamic array
+  BigVal degr;
+  BigVal slack;                // sum of non-falsifieds minus w
+  std::vector<BigCoef> coefs;  // NOTE: seemed not possible to put bigints in below dynamic array
   Lit lits[];
 
   int getMemSize(unsigned int length) const { return (sizeof(Arbitrary) + sizeof(Lit) * length) / sizeof(uint32_t); }

@@ -96,8 +96,8 @@ class Solver {
  public:
   Solver();
   ~Solver();
-  void init();                          // call after having read options
-  void initLP(ConstrExp32& objective);  // TODO: fix when decoupling Solver and LpSolver
+  void init();                           // call after having read options
+  void initLP(ConstrExpArb& objective);  // TODO: fix when decoupling Solver and LpSolver
 
   int getNbVars() const { return n; }
   void setNbVars(long long nvars);
@@ -108,7 +108,7 @@ class Solver {
   const std::vector<int>& getPos() const { return Pos; }
   int decisionLevel() const { return trail_lim.size(); }
 
-  std::pair<ID, ID> addConstraint(const ConstrExp32& c, Origin orig);     // formula line id, processed id
+  std::pair<ID, ID> addConstraint(const ConstrExpArb& c, Origin orig);    // formula line id, processed id
   std::pair<ID, ID> addConstraint(const ConstrSimple32& c, Origin orig);  // formula line id, processed id
   void dropExternal(ID id, bool erasable, bool forceDelete);
   int getNbConstraints() const { return constraints.size(); }
@@ -126,7 +126,7 @@ class Solver {
    * 	if core is the empty constraint, at least one assumption is falsified at root
    * @param solution: if SAT, full variable assignment satisfying all constraints, otherwise untouched
    */
-  SolveState solve(const IntSet& assumptions, ConstrExp32& core, std::vector<bool>& solution);
+  SolveState solve(const IntSet& assumptions, ConstrExpArb& core, std::vector<bool>& solution);
 
  private:
   void presolve();
@@ -160,7 +160,7 @@ class Solver {
 
   void recomputeLBD(Constr& C);
   bool analyze(ConstrExpArb& confl);
-  bool extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrExp32& outCore, Lit l_assump = 0);
+  bool extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrExpArb& outCore, Lit l_assump = 0);
 
   // ---------------------------------------------------------------------
   // Constraint management

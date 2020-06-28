@@ -102,7 +102,7 @@ std::ostream& operator<<(std::ostream& o, const CandidateCut& cc) {
   return o << cc.simpcons << " norm " << cc.norm << " ratSlack " << cc.ratSlack;
 }
 
-LpSolver::LpSolver(Solver& slvr, const ConstrExp32& o) : solver(slvr) {
+LpSolver::LpSolver(Solver& slvr, const ConstrExpArb& o) : solver(slvr) {
   assert(INFTY == lp.realParam(lp.INFTY));
 
   if (options.verbosity > 1) std::cout << "c Initializing LP" << std::endl;
@@ -129,10 +129,13 @@ LpSolver::LpSolver(Solver& slvr, const ConstrExp32& o) : solver(slvr) {
   for (CRef cr : solver.constraints)
     if (solver.ca[cr].getOrigin() == Origin::FORMULA) addConstraint(cr, false);
 
+  ConstrExpArb& objCopy = solver.ceStore.takeArb();
+  o.copyTo(objCopy);
+  shrinkToFit(objCopy);
   soplex::DVectorReal objective;
   objective.reDim(getNbVariables());  // NOTE: automatically set to zero
-  if (o.vars.size() > 0)
-    for (Var v : o.vars) objective[v] = o.coefs[v];
+  if (objCopy.vars.size() > 0)
+    for (Var v : objCopy.vars) objective[v] = static_cast<double>(objCopy.coefs[v]);
   else
     for (int v = 1; v < getNbVariables(); ++v) objective[v] = 1;  // add default objective function
   lp.changeObjReal(objective);
@@ -181,13 +184,13 @@ void LpSolver::createLinearCombinationFarkas(ConstrExpArb& out, soplex::DVectorR
 }
 
 CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults) {
-  double mult = getScaleFactor(mults, false);
-  if (mult == 0) return CandidateCut();
+  double scale = getScaleFactor(mults, false);
+  if (scale == 0) return CandidateCut();
   ConstrExpArb& lcc = solver.ceStore.takeArb();
 
-  std::vector<std::pair<bigint, int>> slacks;
+  std::vector<std::pair<BigCoef, int>> slacks;
   for (int r = 0; r < mults.dim(); ++r) {
-    bigint factor = static_cast<bigint>(mults[r] * mult);
+    bigint factor = static_cast<bigint>(mults[r] * scale);
     if (factor == 0) continue;
     ConstrExp64& ce = rowToConstraint(r);
     if (factor < 0) ce.invert();
@@ -196,7 +199,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     slacks.emplace_back(-factor, r);
   }
 
-  bigint b = lcc.getRhs();
+  BigVal b = lcc.getRhs();
   for (Var v : lcc.vars)
     if (lpSolution[v] > 0.5) b -= lcc.coefs[v];
   if (b == 0) {
@@ -204,8 +207,8 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     return CandidateCut();
   }
 
-  assert(mult > 0);
-  bigint divisor = static_cast<bigint>(mult);
+  assert(scale > 0);
+  bigint divisor = static_cast<bigint>(scale);
   while ((b % divisor) == 0) ++divisor;
   lcc.applyMIR(divisor, [&](Var v) -> Lit { return lpSolution[v] <= 0.5 ? v : -v; });
 
@@ -316,8 +319,8 @@ void LpSolver::addFilteredCuts() {
     ConstrExpArb& ce = solver.ceStore.takeArb();
     ce.init(cc.simpcons);
     ce.postProcess(solver.getLevel(), solver.getPos(), true, stats);
-    assert(ce.getDegree() < INF_long);
-    assert(ce.getRhs() < INF_long);
+    assert(ce.getDegree() < INFLPINT);
+    assert(ce.getRhs() < INFLPINT);
     assert(ce.isSaturated());
     assert(ce.getDegree() > 0);
     if (cc.cr == CRef_Undef) {  // Gomory cut
@@ -499,7 +502,7 @@ void LpSolver::convertConstraint(const ConstrSimple64& c, soplex::DSVectorReal& 
     if (t.c == 0) continue;
     assert(t.l > 0);
     assert(t.l < lp.numColsReal());
-    assert(t.c < INF_long);
+    assert(t.c < INFLPINT);
     row.add(t.l, t.c);
   }
   rhs = c.rhs;
@@ -570,17 +573,17 @@ void LpSolver::flushConstraints() {
 }
 
 void LpSolver::shrinkToFit(ConstrExpArb& c) {
-  bigint maxRhs = std::max(c.getDegree(), rs::abs(c.getRhs()));
-  if (maxRhs >= INF_long) {
-    c.weakenDivideRoundRational(lpSolution, aux::ceildiv<bigint>(maxRhs, INF_long - 1));
-    assert(c.getDegree() < INF_long);
-    assert(c.getRhs() < INF_long);
+  BigVal maxRhs = std::max(c.getDegree(), rs::abs(c.getRhs()));
+  if (maxRhs >= INFLPINT) {
+    c.weakenDivideRoundRational(lpSolution, aux::ceildiv<BigVal>(maxRhs, INFLPINT - 1));
+    assert(c.getDegree() < INFLPINT);
+    assert(c.getRhs() < INFLPINT);
     assert(c.isSaturated());
   } else {
     c.saturate();
   }
-  assert(c.getDegree() < INF_long);
-  assert(c.getRhs() < INF_long);
+  assert(c.getDegree() < INFLPINT);
+  assert(c.getRhs() < INFLPINT);
   assert(c.isSaturated());
 }
 

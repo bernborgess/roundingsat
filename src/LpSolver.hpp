@@ -36,6 +36,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "globals.hpp"
 #include "typedefs.hpp"
 
+enum LpStatus { INFEASIBLE, OPTIMAL, PIVOTLIMIT, UNDETERMINED };
+
+const long long INFLPINT = 1e15 + 1;  // based on max long range captured by double
+
 struct RowData {
   ID id;
   bool removable;
@@ -43,7 +47,10 @@ struct RowData {
   RowData(ID i, bool r) : id(i), removable(r){};
 };
 
-enum LpStatus { INFEASIBLE, OPTIMAL, PIVOTLIMIT, UNDETERMINED };
+struct AdditionData {
+  ConstrSimple64 cs;
+  bool removable;
+};
 
 #if WITHSOPLEX
 
@@ -54,11 +61,6 @@ enum LpStatus { INFEASIBLE, OPTIMAL, PIVOTLIMIT, UNDETERMINED };
 #pragma GCC diagnostic ignored "-Wclass-memaccess"
 #include "soplex.h"
 #pragma GCC diagnostic pop
-
-struct AdditionData {
-  ConstrSimple64 cs;
-  bool removable;
-};
 
 class LpSolver;
 struct CandidateCut {
@@ -104,7 +106,7 @@ class LpSolver {
   std::vector<CandidateCut> candidateCuts;
 
  public:
-  LpSolver(Solver& solver, const ConstrExp32& objective);
+  LpSolver(Solver& solver, const ConstrExpArb& objective);
   void setNbVariables(int n);
 
   LpStatus checkFeasibility(ConstrExpArb& confl,
@@ -136,7 +138,7 @@ class LpSolver {
   void pruneCuts();
 
   inline static double nonIntegrality(double a) { return rs::abs(std::round(a) - a); }
-  inline static bool validVal(double a) { return std::round(a) == a && std::abs(a) < INF_long; }
+  inline static bool validVal(double a) { return std::round(a) == a && std::abs(a) < INFLPINT; }
   // NOTE: double type can only store ranges of integers up to ~9e15
 };
 
@@ -144,7 +146,7 @@ class LpSolver {
 // TODO: check correspondence to above
 class LpSolver {
  public:
-  LpSolver([[maybe_unused]] Solver& solver, [[maybe_unused]] const ConstrExp32& objective){};
+  LpSolver([[maybe_unused]] Solver& solver, [[maybe_unused]] const ConstrExpArb& objective){};
   void setNbVariables([[maybe_unused]] int n){};
 
   LpStatus checkFeasibility([[maybe_unused]] ConstrExpArb& confl, [[maybe_unused]] bool inProcessing = false) {

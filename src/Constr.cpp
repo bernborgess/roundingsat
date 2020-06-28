@@ -517,8 +517,8 @@ WatchStatus Arbitrary::checkForPropagation(CRef cr, int& idx, [[maybe_unused]] L
   assert(idx >= INF);
   assert(lits[idx - INF] == p);
   const unsigned int length = size();
-  const bigint& lrgstCf = coefs[0];
-  const bigint& c = coefs[idx - INF];
+  const BigCoef& lrgstCf = coefs[0];
+  const BigCoef& c = coefs[idx - INF];
 
   slack -= c;
   assert(hasCorrectSlack(solver));

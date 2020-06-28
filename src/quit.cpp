@@ -56,7 +56,7 @@ void quit::exit_SAT(const std::vector<bool>& sol, const std::shared_ptr<Logger>&
   exit(10);
 }
 
-void quit::exit_UNSAT(const std::vector<bool>& sol, Val bestObjVal, const std::shared_ptr<Logger>& logger) {
+void quit::exit_UNSAT(const std::vector<bool>& sol, const BigVal& bestObjVal, const std::shared_ptr<Logger>& logger) {
   if (logger) logger->flush();
   if (options.verbosity > 0) stats.print();
   if (sol.size() > 0) {

@@ -79,12 +79,9 @@ const ID ID_Trivial = 1;  // represents constraint 0 >= 0
 
 using Var = int;
 using Lit = int;
-using Coef = int;       // TODO: obsolete
-using Val = long long;  // TODO: obsolete
 inline Var toVar(Lit l) { return rs::abs(l); }
 
-const int INF = 1e9 + 1;              // based on max value of int that still allows addition of two ints
-const long long INF_long = 1e15 + 1;  // based on max long range captured by double
+const int INF = 1e9 + 1;  // 1e9 is considered the maximum number of variables in the system
 
 using IntVecIt = std::vector<int>::iterator;
 

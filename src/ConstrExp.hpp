@@ -84,7 +84,7 @@ struct ConstrExp {
     out.rhs = static_cast<L>(rhs);
     out.orig = orig;
     out.vars = vars;
-    out.resize(coefs.size());
+    assert(out.coefs.size() == coefs.size());
     for (Var v : vars) {
       out.coefs[v] = static_cast<S>(coefs[v]);
       assert(used[v] == true);
@@ -112,6 +112,7 @@ struct ConstrExp {
   void resize(size_t s);
   void resetBuffer(ID proofID = ID_Trivial);
   void initializeLogging(std::shared_ptr<Logger>& l);
+  void stopLogging();
 
   template <typename T>
   std::string proofMult(const T& mult) {
@@ -245,7 +246,7 @@ using ConstrExp96 = ConstrExp<int128, int128>;
 using ConstrExpArb = ConstrExp<bigint, bigint>;
 
 template <typename CE>
-class Storage {  // TODO: private constructor for ConstrExp, only accessible to Storage
+class Storage {  // TODO: private constructor for ConstrExp, only accessible to Storage?
   size_t n = 0;
   std::vector<std::unique_ptr<CE>> ces;
   std::vector<CE*> availables;
@@ -258,7 +259,7 @@ class Storage {  // TODO: private constructor for ConstrExp, only accessible to 
     for (auto& ce : ces) ce->resize(n);
   }
 
-  void initializeLogging(std::shared_ptr<Logger> lgr) {
+  void initializeLogging(std::shared_ptr<Logger>& lgr) {
     plogger = lgr;
     for (auto& ce : ces) ce->initializeLogging(lgr);
   }

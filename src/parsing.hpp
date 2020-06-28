@@ -45,10 +45,9 @@ int read_number(const std::string& s) {  // TODO: should also read larger number
   return answer;
 }
 
-void opb_read(std::istream& in, Solver& solver, ConstrExp32& objective) {
+void opb_read(std::istream& in, Solver& solver, ConstrExpArb& objective) {
   assert(objective.isReset());
-  ConstrExp32 input;  // TODO: make input use multiple precision to avoid overflow errors
-  input.resize(solver.getNbVars() + 1);
+  ConstrExpArb& input = solver.ceStore.takeArb();
   [[maybe_unused]] bool first_constraint = true;
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == '*') continue;
@@ -81,7 +80,7 @@ void opb_read(std::istream& in, Solver& solver, ConstrExp32& objective) {
     for (int i = 0; i < (long long)tokens.size(); i += 2) {
       std::string scoef = tokens[i];
       std::string var = tokens[i + 1];
-      Coef coef = read_number(scoef);
+      BigCoef coef = read_number(scoef);
       bool negated = false;
       std::string origvar = var;
       if (!var.empty() && var[0] == '~') {
@@ -99,24 +98,20 @@ void opb_read(std::istream& in, Solver& solver, ConstrExp32& objective) {
       input.copyTo(objective);
     else {
       input.addRhs(read_number(line0.substr(line0.find("=") + 1)));
-      if (input.getDegree() >= (Val)INF)
-        quit::exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
       if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
       if (line0.find(" = ") != std::string::npos) {  // Handle equality case with second constraint
         input.invert();
-        if (input.getDegree() >= (Val)INF)
-          quit::exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
         if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
       }
     }
   }
+  solver.ceStore.leave(input);
   solver.setNbOrigVars(solver.getNbVars());
 }
 
-void wcnf_read(std::istream& in, long long top, Solver& solver, ConstrExp32& objective) {
+void wcnf_read(std::istream& in, long long top, Solver& solver, ConstrExpArb& objective) {
   assert(objective.isReset());
-  ConstrExp32 input;
-  input.resize(solver.getNbVars() + 1);
+  ConstrExpArb& input = solver.ceStore.takeArb();
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == 'c')
       continue;
@@ -133,22 +128,18 @@ void wcnf_read(std::istream& in, long long top, Solver& solver, ConstrExp32& obj
         if (weight >= INF) quit::exit_ERROR({"Clause weight exceeds 10^9: ", std::to_string(weight)});
         if (weight < 0) quit::exit_ERROR({"Negative clause weight: ", std::to_string(weight)});
         solver.setNbVars(solver.getNbVars() + 1);  // increases n to n+1
-        input.resize(solver.getNbVars() + 1);
-        objective.resize(solver.getNbVars() + 1);
         objective.addLhs(weight, solver.getNbVars());
         input.addLhs(1, solver.getNbVars());
       }  // else hard clause
-      if (input.getDegree() >= (Val)INF)
-        quit::exit_ERROR({"Normalization of an input constraint causes degree to exceed 10^9."});
       if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
     }
   }
+  solver.ceStore.leave(input);
   solver.setNbOrigVars(solver.getNbVars() - objective.vars.size());
 }
 
 void cnf_read(std::istream& in, Solver& solver) {
-  ConstrExp32 input;
-  input.resize(solver.getNbVars() + 1);
+  ConstrExpArb& input = solver.ceStore.takeArb();
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == 'c')
       continue;
@@ -161,10 +152,11 @@ void cnf_read(std::istream& in, Solver& solver) {
       if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
     }
   }
+  solver.ceStore.leave(input);
   solver.setNbOrigVars(solver.getNbVars());
 }
 
-void file_read(std::istream& in, Solver& solver, ConstrExp32& objective) {
+void file_read(std::istream& in, Solver& solver, ConstrExpArb& objective) {
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == 'c') continue;
     if (line[0] == 'p') {

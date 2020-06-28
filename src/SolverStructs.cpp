@@ -50,7 +50,7 @@ void ConstraintAllocator::capacity(uint32_t min_cap) {
   memory = (uint32_t*)xrealloc(memory, sizeof(uint32_t) * cap);
 }
 
-CRef ConstraintAllocator::alloc(unsigned int nTerms, bigint maxCoef, ConstrType type) {
+CRef ConstraintAllocator::alloc(unsigned int nTerms, const BigVal& maxCoef, ConstrType type) {
   Constr* constr = (Constr*)(memory + at);
   switch (type) {
     case ConstrType::CLAUSE:

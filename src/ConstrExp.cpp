@@ -103,6 +103,12 @@ void ConstrExp<SMALL, LARGE>::initializeLogging(std::shared_ptr<Logger>& l) {
 }
 
 template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::stopLogging() {
+  proofBuffer.clear();
+  plogger.reset();
+}
+
+template <typename SMALL, typename LARGE>
 bool ConstrExp<SMALL, LARGE>::isReset() const {
   return vars.size() == 0 && rhs == 0 && degree == 0;
 }
@@ -140,9 +146,10 @@ SMALL ConstrExp<SMALL, LARGE>::getCoef(Lit l) const {
 }
 
 template <typename SMALL, typename LARGE>
-Lit ConstrExp<SMALL, LARGE>::getLit(Lit l) const {  // NOTE: answer of 0 means coef 0 or not in vars
+Lit ConstrExp<SMALL, LARGE>::getLit(Lit l) const {  // NOTE: answer of 0 means coef 0
   Var v = toVar(l);
-  return (v >= (Var)coefs.size() || coefs[v] == 0) ? 0 : (coefs[v] < 0 ? -v : v);
+  assert(v < (Var)coefs.size());
+  return (coefs[v] == 0) ? 0 : (coefs[v] < 0 ? -v : v);
 }
 
 template <typename SMALL, typename LARGE>

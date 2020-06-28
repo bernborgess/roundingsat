@@ -77,7 +77,7 @@ void Solver::init() {
   ceStore.initializeLogging(logger);
 }
 
-void Solver::initLP(ConstrExp32& objective) {
+void Solver::initLP(ConstrExpArb& objective) {
   if (options.lpPivotRatio == 0) return;
   bool pureCNF = objective.vars.size() == 0;
   for (CRef cr : constraints) {
@@ -300,7 +300,7 @@ bool Solver::analyze(ConstrExpArb& confl) {
         if (!options.bumpOnlyFalse || isFalse(Level, l)) actSet.add(v);
         if (options.bumpCanceling && confl.getLit(v) == -l) actSet.add(-v);
       }
-      const BigCoef& reason_coef_l = reason.getCoef(l);
+      BigCoef reason_coef_l = reason.getCoef(l);
       BigCoef gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
       confl.addUp(reason, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
       confl.saturateAndFixOverflow(getLevel(), options.weakenFull);
@@ -317,9 +317,9 @@ bool Solver::analyze(ConstrExpArb& confl) {
   return true;
 }
 
-bool Solver::extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrExp32& outCore, Lit l_assump) {
+bool Solver::extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrExpArb& outCore, Lit l_assump) {
   assert(!confl.isReset());
-  outCore.reset();
+  assert(outCore.isReset());
 
   if (l_assump != 0) {  // l_assump is an assumption propagated to the opposite value
     assert(assumptions.has(l_assump));
@@ -421,7 +421,7 @@ CRef Solver::attachConstraint(ConstrExpArb& constraint, bool locked) {
   else if (options.cardProp && constraint.isCardinality())
     cr = ca.alloc(length, 1, ConstrType::CARDINALITY);
   else {
-    bigint maxCoef = rs::abs(constraint.coefs[constraint.vars[0]]);
+    BigCoef maxCoef = rs::abs(constraint.coefs[constraint.vars[0]]);
     if (maxCoef > limit96) {
       cr = ca.alloc(length, 1, ConstrType::ARBITRARY);
     } else {
@@ -554,7 +554,7 @@ std::pair<ID, ID> Solver::addInputConstraint(ConstrExpArb& ce) {
   return {input, id};
 }
 
-std::pair<ID, ID> Solver::addConstraint(const ConstrExp32& c, Origin orig) {
+std::pair<ID, ID> Solver::addConstraint(const ConstrExpArb& c, Origin orig) {
   // NOTE: copy to temporary constraint guarantees original constraint is not changed and does not need logger
   ConstrExpArb& ce = ceStore.takeArb();
   c.copyTo(ce);
@@ -732,7 +732,8 @@ void Solver::presolve() {
  * @param solution: if SAT, full variable assignment satisfying all constraints, otherwise untouched
  */
 // TODO: use a coroutine / yield instead of a SolveState return value
-SolveState Solver::solve(const IntSet& assumptions, ConstrExp32& core, std::vector<bool>& solution) {
+SolveState Solver::solve(const IntSet& assumptions, ConstrExpArb& core, std::vector<bool>& solution) {
+  assert(core.isReset());
   backjumpTo(0);  // ensures assumptions are reset
   if (firstRun) presolve();
   std::vector<int> assumptions_lim = {0};
@@ -801,7 +802,7 @@ SolveState Solver::solve(const IntSet& assumptions, ConstrExp32& core, std::vect
           Lit l = trail[i];
           if (assumptions.has(-l)) {  // found conflicting assumption
             if (isUnit(Level, l))
-              backjumpTo(0), core.reset();  // negated assumption is unit
+              backjumpTo(0);  // negated assumption is unit
             else {
               ca[Reason[toVar(l)]].toConstraint(conflConstraint);
               if (!extractCore(conflConstraint, assumptions, core, -l)) return SolveState::INTERRUPTED;
