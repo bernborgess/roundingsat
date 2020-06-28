@@ -127,6 +127,7 @@ struct ConstrExp {
   LARGE getRhs() const;
   LARGE getDegree() const;
   SMALL getCoef(Lit l) const;
+  SMALL getLargestCoef() const;
   Lit getLit(Lit l) const;
 
   void addRhs(const LARGE& r);

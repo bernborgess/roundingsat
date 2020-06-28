@@ -129,13 +129,11 @@ LpSolver::LpSolver(Solver& slvr, const ConstrExpArb& o) : solver(slvr) {
   for (CRef cr : solver.constraints)
     if (solver.ca[cr].getOrigin() == Origin::FORMULA) addConstraint(cr, false);
 
-  ConstrExpArb& objCopy = solver.ceStore.takeArb();
-  o.copyTo(objCopy);
-  shrinkToFit(objCopy);
+  // NOTE: scaling objective is not needed, as if it does not fit in double (i.e. >1e300), it will still be sound.
   soplex::DVectorReal objective;
   objective.reDim(getNbVariables());  // NOTE: automatically set to zero
-  if (objCopy.vars.size() > 0)
-    for (Var v : objCopy.vars) objective[v] = static_cast<double>(objCopy.coefs[v]);
+  if (o.vars.size() > 0)
+    for (Var v : o.vars) objective[v] = static_cast<double>(o.coefs[v]);
   else
     for (int v = 1; v < getNbVariables(); ++v) objective[v] = 1;  // add default objective function
   lp.changeObjReal(objective);
@@ -186,6 +184,7 @@ void LpSolver::createLinearCombinationFarkas(ConstrExpArb& out, soplex::DVectorR
 CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults) {
   double scale = getScaleFactor(mults, false);
   if (scale == 0) return CandidateCut();
+  assert(scale > 0);
   ConstrExpArb& lcc = solver.ceStore.takeArb();
 
   std::vector<std::pair<BigCoef, int>> slacks;
@@ -208,7 +207,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   }
 
   assert(scale > 0);
-  bigint divisor = static_cast<bigint>(scale);
+  bigint divisor = static_cast<bigint>(std::ceil(scale));
   while ((b % divisor) == 0) ++divisor;
   lcc.applyMIR(divisor, [&](Var v) -> Lit { return lpSolution[v] <= 0.5 ? v : -v; });
 

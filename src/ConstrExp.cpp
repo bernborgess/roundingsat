@@ -146,6 +146,13 @@ SMALL ConstrExp<SMALL, LARGE>::getCoef(Lit l) const {
 }
 
 template <typename SMALL, typename LARGE>
+SMALL ConstrExp<SMALL, LARGE>::getLargestCoef() const {
+  SMALL result = 0;
+  for (Var v : vars) result = std::max(result, rs::abs(coefs[v]));
+  return result;
+}
+
+template <typename SMALL, typename LARGE>
 Lit ConstrExp<SMALL, LARGE>::getLit(Lit l) const {  // NOTE: answer of 0 means coef 0
   Var v = toVar(l);
   assert(v < (Var)coefs.size());
