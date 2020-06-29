@@ -17,14 +17,13 @@ set(profile_flags "OFF"
 set(soplex "OFF"
     CACHE STRING "Use SoPlex to check for rational infeasibility.")
 
-set(soplex_pkg "${PROJECT_SOURCE_DIR}/soplex-5.0.0.tgz"
-    CACHE STRING "SoPlex package, download at https://soplex.zib.de/download.php?fname=soplex-5.0.0.tgz")
+set(soplex_pkg "${PROJECT_SOURCE_DIR}/soplex-5.0.1.tgz"
+    CACHE STRING "SoPlex package, download at https://soplex.zib.de/download.php?fname=soplex-5.0.1.tgz")
 
 set(testruns_timeout 1
     CACHE STRING "Timeout of individual test runs.")
 
 IF(soplex)
-    find_package(Boost REQUIRED) # As of 2020-06-11, SoPlex does not easily compile without Boost, so we treat Boost as a requirement for SoPlex
     # provides libsoplex and ${SOPLEX_INCLUDE_DIRS}
     include(${PROJECT_SOURCE_DIR}/cmake/soplex_build_and_load.cmake)
 endif()
