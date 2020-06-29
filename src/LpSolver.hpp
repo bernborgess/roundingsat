@@ -52,6 +52,11 @@ struct AdditionData {
   bool removable;
 };
 
+struct BoundData {
+  ID id = ID_Trivial;
+  ConstrSimple64 cs;
+};
+
 #if WITHSOPLEX
 
 #pragma GCC diagnostic push
@@ -100,8 +105,9 @@ class LpSolver {
   soplex::DSVectorReal lpRow;
 
   std::vector<RowData> row2data;
-  std::unordered_set<int> toRemove;  // rows
+  std::vector<int> toRemove;  // rows
   std::unordered_map<ID, AdditionData> toAdd;
+  BoundData boundsToAdd[2];  // [0] is upper bound, [1] lower bound
 
   std::vector<CandidateCut> candidateCuts;
 

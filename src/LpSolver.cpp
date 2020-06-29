@@ -118,11 +118,10 @@ LpSolver::LpSolver(Solver& slvr, const ConstrExpArb& o) : solver(slvr) {
   setNbVariables(slvr.getNbVars());
 
   // add two empty rows for objective bound constraints
-  assert(ID_Trivial == 1);
-  for (ID id = 0; id <= ID_Trivial; ++id) {
+  while (row2data.size() < 2) {
     soplex::DSVectorReal row(0);
     lp.addRowReal(soplex::LPRowReal(row, soplex::LPRowReal::Type::GREATER_EQUAL, 0));
-    row2data.emplace_back(id, false);
+    row2data.emplace_back(ID_Trivial, false);
   }
 
   // add all formula constraints
@@ -339,7 +338,7 @@ void LpSolver::pruneCuts() {
   for (int r = 0; r < getNbRows(); ++r)
     if (row2data[r].removable && lpMultipliers[r] == 0) {
       ++stats.NLPDELETEDCUTS;
-      toRemove.insert(r);
+      toRemove.push_back(r);
     }
 }
 
@@ -484,8 +483,8 @@ void LpSolver::_inProcess() {
   if (options.verbosity > 0) std::cout << "c rational objective " << lp.objValueReal() << std::endl;
   candidateCuts.clear();
   if (solver.logger && (options.addGomoryCuts || options.addLearnedCuts)) solver.logger->logComment("cutting", stats);
+  if (options.addLearnedCuts) constructLearnedCandidates();  // first to avoid adding gomory cuts twice
   if (options.addGomoryCuts) constructGomoryCandidates();
-  if (options.addLearnedCuts) constructLearnedCandidates();
   addFilteredCuts();
   pruneCuts();
 }
@@ -513,11 +512,7 @@ void LpSolver::addConstraint(ConstrExpArb& c, bool removable, bool upperbound, b
   ID id = c.plogger ? c.logProofLineWithInfo("LP", stats) : ++solver.crefID;
   if (upperbound || lowerbound) {
     assert(upperbound != lowerbound);
-    double rhs;
-    soplex::DSVectorReal row(c.vars.size());
-    convertConstraint(c.toSimpleCons<long long, int128>(), row, rhs);
-    lp.changeRowReal(lowerbound, soplex::LPRowReal(row, soplex::LPRowReal::Type::GREATER_EQUAL, rhs));
-    row2data[lowerbound] = {id, false};  // so upper bound resides in row[0]
+    boundsToAdd[lowerbound] = {id, c.toSimpleCons<long long, int128>()};
   } else {
     toAdd[id] = {c.toSimpleCons<long long, int128>(), removable};
   }
@@ -532,12 +527,12 @@ void LpSolver::addConstraint(CRef cr, bool removable, bool upperbound, bool lowe
   solver.ceStore.leave(ce);
 }
 
-// TODO: exploit lp.changeRowReal for more efficiency, e.g. when replacing the upper and lower bound on the objective
 void LpSolver::flushConstraints() {
   if (toRemove.size() > 0) {  // first remove rows
     std::vector<int> rowsToRemove(getNbRows(), 0);
     for (int row : toRemove) {
-      ++stats.NLPDELETEDROWS;
+      stats.NLPDELETEDROWS += (rowsToRemove[row] == 0);
+      assert(row < (int)rowsToRemove.size());
       rowsToRemove[row] = -1;
     }
     lp.removeRowsReal(rowsToRemove.data());  // TODO: use other removeRowsReal method?
@@ -564,6 +559,15 @@ void LpSolver::flushConstraints() {
     }
     lp.addRowsReal(rowsToAdd);
     toAdd.clear();
+  }
+
+  for (int i = 0; i < 2; ++i) {
+    if (boundsToAdd[i].id == row2data[i].id) continue;
+    double rhs;
+    soplex::DSVectorReal row(boundsToAdd[i].cs.terms.size());
+    convertConstraint(boundsToAdd[i].cs, row, rhs);
+    lp.changeRowReal(i, soplex::LPRowReal(row, soplex::LPRowReal::Type::GREATER_EQUAL, rhs));
+    row2data[i] = {boundsToAdd[i].id, false};  // so upper bound resides in row[0]
   }
 
   lpSlackSolution.reDim(getNbRows());
