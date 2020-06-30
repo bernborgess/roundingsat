@@ -169,3 +169,6 @@ done
 
 echo "tested: $tested"
 echo "errors: $errors"
+
+# command to remove soplex asserts:
+# grep -rl "\sassert(.*" . | xargs sed -i 's/assert(/assert(true || /g'

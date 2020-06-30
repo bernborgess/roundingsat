@@ -19,14 +19,9 @@ if(NOT EXISTS ${soplex_targets} OR NOT EXISTS ${soplex_config})
         )
     endif()
 
-    set(soplex_build_type ${CMAKE_BUILD_TYPE})
-    if (${CMAKE_BUILD_TYPE} STREQUAL "Debug")
-        set(soplex_build_type "RelWithDebInfo")
-    endif()
-
     set(soplex_cmake_args
         ${soplex_cmake_args}
-        -DCMAKE_BUILD_TYPE=${soplex_build_type}
+        -DCMAKE_BUILD_TYPE=Release
         -DCMAKE_INSTALL_PREFIX=${soplex_dir}/install
         -DBOOST=ON
         -DGMP=OFF
@@ -36,6 +31,8 @@ if(NOT EXISTS ${soplex_targets} OR NOT EXISTS ${soplex_config})
         -DZLIB=OFF
     )
 
+    # TODO: linking with SoPlex seems to use the build type of RoundingSat, no matter the build type we configure above?
+
     configure_file(${PROJECT_SOURCE_DIR}/cmake/soplex_CMakeLists.txt.in ${soplex_dir}/download/CMakeLists.txt)
 
     execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
@@ -44,7 +41,7 @@ if(NOT EXISTS ${soplex_targets} OR NOT EXISTS ${soplex_config})
     if(result)
       message(FATAL_ERROR "CMake step for SoPlex failed: ${result}")
     endif()
-    execute_process(COMMAND ${CMAKE_COMMAND} --build .
+    execute_process(COMMAND ${CMAKE_COMMAND} --build . -j
       RESULT_VARIABLE result
       WORKING_DIRECTORY ${soplex_dir}/download)
     if(result)

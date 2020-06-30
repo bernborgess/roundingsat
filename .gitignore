@@ -12,4 +12,4 @@ test/*.opb
 /test/logs/*
 
 # soplex
-soplex-5.0.0.tgz
+/soplex-5.0.1.tgz
