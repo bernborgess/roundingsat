@@ -57,7 +57,7 @@ class Solver {
 
  public:
   std::shared_ptr<Logger> logger;
-  ConstrExpStore ceStore;
+  ConstrExpPools cePools;
 
  private:
   int n;
@@ -170,12 +170,12 @@ class Solver {
   void learnConstraint(const ConstrExp<S, L>& c, Origin orig) {
     assert(orig == Origin::LEARNED || orig == Origin::FARKAS || orig == Origin::LEARNEDFARKAS ||
            orig == Origin::GOMORY);
-    ConstrExpArb& learned = ceStore.takeArb();
+    ConstrExpArb& learned = cePools.takeArb();
     c.copyTo(learned);
     learned.orig = orig;
     learned.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsLearned, options.bitsLearned);
     learnedStack.push_back(learned.template toSimpleCons<BigCoef, BigVal>());
-    ceStore.leave(learned);
+    cePools.leave(learned);
   }
   CRef processLearnedStack();
   std::pair<ID, ID> addInputConstraint(ConstrExpArb& ce);

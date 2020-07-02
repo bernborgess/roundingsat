@@ -85,6 +85,7 @@ struct Constr {  // internal solver constraint optimized for fast propagation
   virtual void initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID id) = 0;
   virtual WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& slvr) = 0;
   virtual void undoFalsified(int i) = 0;
+  virtual void resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver) = 0;
 
   template <typename S, typename L>
   inline void toConstraint(ConstrExp<S, L>& out) const {
@@ -133,6 +134,7 @@ struct Clause final : public Constr {
   void initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID id);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified([[maybe_unused]] int i) { assert(false); }
+  void resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver);
 };
 
 struct Cardinality final : public Constr {
@@ -150,6 +152,7 @@ struct Cardinality final : public Constr {
   void initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID id);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified([[maybe_unused]] int i) { assert(false); }
+  void resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver);
 };
 
 template <typename CF, typename DG>
@@ -171,6 +174,7 @@ struct Counting final : public Constr {
   void initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID id);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
+  void resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver);
 
   bool hasCorrectSlack(const Solver& solver);
 };
@@ -198,6 +202,7 @@ struct Watched final : public Constr {
   void initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID id);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
+  void resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver);
 
   bool hasCorrectSlack(const Solver& solver);
   bool hasCorrectWatches(const Solver& solver);
@@ -224,6 +229,7 @@ struct Arbitrary final : public Constr {
   void initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID id);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
+  void resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver);
 
   bool hasCorrectSlack(const Solver& solver);
 };

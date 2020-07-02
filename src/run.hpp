@@ -57,14 +57,14 @@ ID handleNewSolution(const ConstrExpArb& origObj, ID& lastUpperBound) {
   for (Var v : origObj.vars) upper_bound += origObj.coefs[v] * (int)solution[v];
   assert(upper_bound < prev_val);
 
-  ConstrExpArb& aux = solver.ceStore.takeArb();
+  ConstrExpArb& aux = solver.cePools.takeArb();
   origObj.copyTo(aux);
   aux.invert();
   aux.addRhs(-upper_bound + 1);
   solver.dropExternal(lastUpperBound, true, true);
   std::pair<ID, ID> res = solver.addConstraint(aux, Origin::UPPERBOUND);
   lastUpperBound = res.second;
-  solver.ceStore.leave(aux);
+  solver.cePools.leave(aux);
   if (lastUpperBound == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
   return res.first;
 }
@@ -157,12 +157,12 @@ void checkLazyVariables(ConstrExpArb& reformObj, std::vector<std::shared_ptr<Laz
 }
 
 ID addLowerBound(const ConstrExpArb& origObj, const BigVal& lower_bound, ID& lastLowerBound) {
-  ConstrExpArb& aux = solver.ceStore.takeArb();
+  ConstrExpArb& aux = solver.cePools.takeArb();
   origObj.copyTo(aux);
   aux.addRhs(lower_bound);
   solver.dropExternal(lastLowerBound, true, true);
   std::pair<ID, ID> res = solver.addConstraint(aux, Origin::LOWERBOUND);
-  solver.ceStore.leave(aux);
+  solver.cePools.leave(aux);
   lastLowerBound = res.second;
   if (lastLowerBound == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
   return res.first;
@@ -245,10 +245,7 @@ void optimize(ConstrExpArb& origObj) {
   lower_bound = -origObj.getDegree();
   upper_bound = origObj.absCoeffSum() - origObj.getRhs() + 1;
 
-  BigVal opt_coef_sum = 0;
-  for (Var v : origObj.vars) opt_coef_sum += rs::abs(origObj.coefs[v]);
-
-  ConstrExpArb& reformObj = solver.ceStore.takeArb();
+  ConstrExpArb& reformObj = solver.cePools.takeArb();
   reformObj.stopLogging();
   origObj.copyTo(reformObj);
   ID lastUpperBound = ID_Undef;
@@ -256,7 +253,7 @@ void optimize(ConstrExpArb& origObj) {
   ID lastLowerBound = ID_Undef;
   ID lastLowerBoundUnprocessed = ID_Undef;
 
-  ConstrExpArb& core = solver.ceStore.takeArb();
+  ConstrExpArb& core = solver.cePools.takeArb();
   IntSet assumps;
   std::vector<std::shared_ptr<LazyVar>> lazyVars;
   size_t upper_time = 0, lower_time = 0;
@@ -313,8 +310,8 @@ void optimize(ConstrExpArb& origObj) {
         assert(lastUpperBound != ID_Unsat);
         assert(lastLowerBound != ID_Undef);
         assert(lastLowerBound != ID_Unsat);
-        ConstrExpArb& coreAggregate = solver.ceStore.takeArb();
-        ConstrExpArb& aux = solver.ceStore.takeArb();
+        ConstrExpArb& coreAggregate = solver.cePools.takeArb();
+        ConstrExpArb& aux = solver.cePools.takeArb();
         origObj.copyTo(aux);
         aux.invert();
         aux.addRhs(1 - upper_bound);
@@ -325,24 +322,24 @@ void optimize(ConstrExpArb& origObj) {
         aux.addRhs(lower_bound);
         aux.resetBuffer(lastLowerBoundUnprocessed);
         coreAggregate.addUp(aux);
-        solver.ceStore.leave(aux);
+        solver.cePools.leave(aux);
         assert(coreAggregate.getSlack(solver.getLevel()) < 0);
         assert(solver.decisionLevel() == 0);
         coreAggregate.logInconsistency(solver.getLevel(), solver.getPos(), stats);
-        solver.ceStore.leave(coreAggregate);
+        solver.cePools.leave(coreAggregate);
       }
       quit::exit_UNSAT(solution, upper_bound, solver.logger);
     }
   }
   // TODO: unreachable code
-  solver.ceStore.leave(reformObj);
-  solver.ceStore.leave(core);
+  solver.cePools.leave(reformObj);
+  solver.cePools.leave(core);
 }
 
 void decide() {
-  ConstrExpArb& core = solver.ceStore.takeArb();
+  ConstrExpArb& core = solver.cePools.takeArb();
   while (true) {
-    SolveState reply = solver.solve({}, core, solution);
+    SolveState reply = solver.solve(IntSet(), core, solution);
     assert(reply != SolveState::INCONSISTENT);
     if (reply == SolveState::INTERRUPTED) quit::exit_INDETERMINATE({}, solver.logger);
     if (reply == SolveState::SAT)
@@ -350,7 +347,7 @@ void decide() {
     else if (reply == SolveState::UNSAT)
       quit::exit_UNSAT({}, 0, solver.logger);
   }
-  solver.ceStore.leave(core);
+  solver.cePools.leave(core);
 }
 
 void run(ConstrExpArb& objective) {

@@ -37,7 +37,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // ---------------------------------------------------------------------
 // Initialization
 
-Solver::Solver() : conflConstraint(ceStore.takeArb()), order_heap(activity) {
+Solver::Solver() : conflConstraint(cePools.takeArb()), order_heap(activity) {
   ca.memory = NULL;
   ca.at = 0;
   ca.cap = 0;
@@ -45,7 +45,7 @@ Solver::Solver() : conflConstraint(ceStore.takeArb()), order_heap(activity) {
   ca.capacity(1024 * 1024);  // 4MB
 }
 
-Solver::~Solver() { ceStore.leave(conflConstraint); }
+Solver::~Solver() { cePools.leave(conflConstraint); }
 
 void Solver::setNbVars(long long nvars) {
   assert(nvars > 0);
@@ -57,7 +57,7 @@ void Solver::setNbVars(long long nvars) {
   Reason.resize(nvars + 1, CRef_Undef);
   activity.resize(nvars + 1, 1 / actLimitV);
   phase.resize(nvars + 1);
-  ceStore.resize(nvars + 1);
+  cePools.resize(nvars + 1);
   assert(conflConstraint.coefs.size() == (size_t)nvars + 1);
   order_heap.resize(nvars + 1);
   for (Var v = n + 1; v <= nvars; ++v) phase[v] = -v, order_heap.insert(v);
@@ -74,7 +74,7 @@ void Solver::setNbOrigVars(int o_n) {
 
 void Solver::init() {
   if (!options.proofLogName.empty()) logger = std::make_shared<Logger>(options.proofLogName);
-  ceStore.initializeLogging(logger);
+  cePools.initializeLogging(logger);
 }
 
 void Solver::initLP(ConstrExpArb& objective) {
@@ -132,10 +132,10 @@ void Solver::uncheckedEnqueue(Lit p, CRef from) {
     Reason[v] = CRef_Undef;  // no need to keep track of reasons for unit literals
     if (logger) {
       Constr& C = ca[from];
-      ConstrExpArb& logConstraint = ceStore.takeArb();
+      ConstrExpArb& logConstraint = cePools.takeArb();
       C.toConstraint(logConstraint);
       logConstraint.logUnit(Level, Pos, v, stats);
-      ceStore.leave(logConstraint);
+      cePools.leave(logConstraint);
       assert(logger->unitIDs.size() == trail.size() + 1);
     }
   }
@@ -284,28 +284,7 @@ bool Solver::analyze(ConstrExpArb& confl) {
       stats.NLPENCLEARNEDFARKAS += reasonC.getOrigin() == Origin::LEARNEDFARKAS;
       stats.NLPENCFARKAS += reasonC.getOrigin() == Origin::FARKAS;
 
-      ConstrExpArb& reason = ceStore.takeArb();
-      reasonC.toConstraint(reason);
-      stats.NADDEDLITERALS += reason.vars.size();
-      reason.removeUnitsAndZeroes(Level, Pos);  // NOTE: also saturates
-      if (options.weakenNonImplying)
-        reason.weakenNonImplying(Level, reason.getCoef(l), reason.getSlack(Level),
-                                 stats);  // NOTE: also saturates
-      assert(reason.getCoef(l) > reason.getSlack(Level));
-      reason.weakenDivideRound(getLevel(), l, options.slackdiv, options.weakenFull);
-      assert(reason.getSlack(Level) <= 0);
-      for (Var v : reason.vars) {
-        Lit l = reason.getLit(v);
-        if (!options.bumpOnlyFalse || isFalse(Level, l)) actSet.add(v);
-        if (options.bumpCanceling && confl.getLit(v) == -l) actSet.add(-v);
-      }
-      BigCoef reason_coef_l = reason.getCoef(l);
-      BigCoef gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
-      confl.addUp(reason, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
-      confl.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
-      ceStore.leave(reason);
-      assert(confl.getCoef(-l) == 0);
-      assert(confl.getSlack(Level) < 0);
+      reasonC.resolveWith(confl, l, confl_coef_l, &actSet, *this);
     }
     undoOne();
   }
@@ -362,23 +341,7 @@ bool Solver::extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrE
     Lit l = trail.back();
     BigCoef confl_coef_l = confl.getCoef(-l);
     if (confl_coef_l > 0) {
-      ConstrExpArb& reason = ceStore.takeArb();
-      ca[Reason[toVar(l)]].toConstraint(reason);
-      stats.NADDEDLITERALS += reason.vars.size();
-      reason.removeUnitsAndZeroes(Level, Pos);
-      if (options.weakenNonImplying)
-        reason.weakenNonImplying(Level, reason.getCoef(l), reason.getSlack(Level),
-                                 stats);  // NOTE: also saturates
-      assert(reason.getCoef(l) > reason.getSlack(Level));
-      reason.weakenDivideRound(getLevel(), l, options.slackdiv, options.weakenFull);
-      assert(reason.getSlack(Level) <= 0);
-      BigCoef reason_coef_l = reason.getCoef(l);
-      BigCoef gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
-      confl.addUp(reason, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
-      confl.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
-      ceStore.leave(reason);
-      assert(confl.getCoef(-l) == 0);
-      assert(confl.getSlack(Level) < 0);
+      ca[Reason[toVar(l)]].resolveWith(confl, l, confl_coef_l, nullptr, *this);
       assumpslk = confl.getSlack(assumptions);
     }
     assert(decisionLevel() == (int)decisions.size());
@@ -472,7 +435,7 @@ CRef Solver::attachConstraint(ConstrExpArb& constraint, bool locked) {
 CRef Solver::processLearnedStack() {
   // loop back to front as the last constraint in the queue is a result of conflict analysis
   // and we want to first check this constraint to backjump.
-  ConstrExpArb& learned = ceStore.takeArb();
+  ConstrExpArb& learned = cePools.takeArb();
   while (learnedStack.size() > 0) {
     learned.reset();
     learned.init(learnedStack.back());
@@ -484,7 +447,7 @@ CRef Solver::processLearnedStack() {
       backjumpTo(0);
       assert(learned.getSlack(Level) < 0);
       if (logger) learned.logInconsistency(Level, Pos, stats);
-      ceStore.leave(learned);
+      cePools.leave(learned);
       return CRef_Unsat;
     }
     backjumpTo(assertionLevel);
@@ -504,7 +467,7 @@ CRef Solver::processLearnedStack() {
     else
       C.setLBD(C.size());  // the LBD of non-asserting constraints is undefined, so we take a safe upper bound
   }
-  ceStore.leave(learned);
+  cePools.leave(learned);
   return CRef_Undef;
 }
 
@@ -531,15 +494,15 @@ std::pair<ID, ID> Solver::addInputConstraint(ConstrExpArb& ce) {
   }  // TODO: don't check for this here, but just add the constraints to the learned stack?
 
   CRef cr = attachConstraint(ce, true);
-  auto& confl = ceStore.takeArb();
+  auto& confl = cePools.takeArb();
   if (!runPropagation(confl, true)) {
     if (options.verbosity > 0) puts("c Input conflict");
     if (logger) confl.logInconsistency(Level, Pos, stats);
-    ceStore.leave(confl);
+    cePools.leave(confl);
     assert(decisionLevel() == 0);
     return {input, ID_Unsat};
   }
-  ceStore.leave(confl);
+  cePools.leave(confl);
   ID id = ca[cr].id;
   Origin orig = ca[cr].getOrigin();
   if (orig != Origin::FORMULA) {
@@ -553,20 +516,20 @@ std::pair<ID, ID> Solver::addInputConstraint(ConstrExpArb& ce) {
 
 std::pair<ID, ID> Solver::addConstraint(const ConstrExpArb& c, Origin orig) {
   // NOTE: copy to temporary constraint guarantees original constraint is not changed and does not need logger
-  ConstrExpArb& ce = ceStore.takeArb();
+  ConstrExpArb& ce = cePools.takeArb();
   c.copyTo(ce);
   ce.orig = orig;
   std::pair<ID, ID> result = addInputConstraint(ce);
-  ceStore.leave(ce);
+  cePools.leave(ce);
   return result;
 }
 
 std::pair<ID, ID> Solver::addConstraint(const ConstrSimple32& c, Origin orig) {
-  ConstrExpArb& ce = ceStore.takeArb();
+  ConstrExpArb& ce = cePools.takeArb();
   ce.init(c);
   ce.orig = orig;
   std::pair<ID, ID> result = addInputConstraint(ce);
-  ceStore.leave(ce);
+  cePools.leave(ce);
   return result;
 }
 

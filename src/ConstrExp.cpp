@@ -37,6 +37,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "globals.hpp"
 #include "typedefs.hpp"
 
+ConstrExpPool<ConstrExp32> ce32s;
+ConstrExpPool<ConstrExp64> ce64s;
+ConstrExpPool<ConstrExp96> ce96s;
+ConstrExpPool<ConstrExpArb> ceArbs;
+
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::remove(Var v) {
   assert(used[v]);
@@ -801,3 +806,44 @@ template class ConstrExp<int, long long>;
 template class ConstrExp<long long, int128>;
 template class ConstrExp<int128, int128>;
 template class ConstrExp<bigint, bigint>;
+
+void ConstrExpPools::resize(size_t newn) {
+  ce32s.resize(newn);
+  ce64s.resize(newn);
+  ce96s.resize(newn);
+  ceArbs.resize(newn);
+}
+
+void ConstrExpPools::initializeLogging(std::shared_ptr<Logger> lgr) {
+  ce32s.initializeLogging(lgr);
+  ce64s.initializeLogging(lgr);
+  ce96s.initializeLogging(lgr);
+  ceArbs.initializeLogging(lgr);
+}
+
+template <>
+ConstrExp32& ConstrExpPools::take<int, long long>() {
+  return ce32s.take();
+}
+template <>
+ConstrExp64& ConstrExpPools::take<long long, int128>() {
+  return ce64s.take();
+}
+template <>
+ConstrExp96& ConstrExpPools::take<int128, int128>() {
+  return ce96s.take();
+}
+template <>
+ConstrExpArb& ConstrExpPools::take<bigint, bigint>() {
+  return ceArbs.take();
+}
+
+ConstrExp32& ConstrExpPools::take32() { return take<int, long long>(); }
+ConstrExp64& ConstrExpPools::take64() { return take<long long, int128>(); }
+ConstrExp96& ConstrExpPools::take96() { return take<int128, int128>(); }
+ConstrExpArb& ConstrExpPools::takeArb() { return take<bigint, bigint>(); }
+
+void ConstrExpPools::leave(ConstrExp32& ce) { return ce32s.leave(ce); }
+void ConstrExpPools::leave(ConstrExp64& ce) { return ce64s.leave(ce); }
+void ConstrExpPools::leave(ConstrExp96& ce) { return ce96s.leave(ce); }
+void ConstrExpPools::leave(ConstrExpArb& ce) { return ceArbs.leave(ce); }

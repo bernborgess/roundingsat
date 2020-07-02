@@ -32,6 +32,51 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Solver.hpp"
 #include "globals.hpp"
 
+template <typename CF, typename DG>
+void genericResolve(ConstrExp<CF, DG>& reason, ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet,
+                    const IntVecIt& Level, const std::vector<int>& Pos) {
+  stats.NADDEDLITERALS += reason.vars.size();
+  reason.removeUnitsAndZeroes(Level, Pos);  // NOTE: also saturates
+  if (options.weakenNonImplying)
+    reason.weakenNonImplying(Level, reason.getCoef(l), reason.getSlack(Level),
+                             stats);  // NOTE: also saturates
+  assert(reason.getCoef(l) > reason.getSlack(Level));
+  reason.weakenDivideRound(Level, l, options.slackdiv, options.weakenFull);
+  assert(reason.getSlack(Level) <= 0);
+  if (actSet != nullptr) {
+    for (Var v : reason.vars) {
+      Lit ll = reason.getLit(v);
+      if (!options.bumpOnlyFalse || isFalse(Level, ll)) actSet->add(v);
+      if (options.bumpCanceling && confl.getLit(v) == -ll) actSet->add(-v);
+    }
+  }
+  BigCoef reason_coef_l = reason.getCoef(l);
+  BigCoef gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
+  confl.addUp(reason, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
+  confl.saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced);
+  assert(confl.getCoef(-l) == 0);
+  assert(confl.getSlack(Level) < 0);
+}
+
+void genericSimpleResolve(ConstrExp32& reason, ConstrExpArb& confl, [[maybe_unused]] Lit l, const BigCoef& confl_coef_l,
+                          IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos) {
+  stats.NADDEDLITERALS += reason.vars.size();
+  reason.removeUnitsAndZeroes(Level, Pos);  // NOTE: also saturates
+  assert(reason.getCoef(l) > reason.getSlack(Level));
+  assert(reason.getSlack(Level) <= 0);
+  if (actSet != nullptr) {
+    for (Var v : reason.vars) {
+      Lit ll = reason.getLit(v);
+      if (!options.bumpOnlyFalse || isFalse(Level, ll)) actSet->add(v);
+      if (options.bumpCanceling && confl.getLit(v) == -ll) actSet->add(-v);
+    }
+  }
+  confl.addUp(reason, confl_coef_l);
+  confl.saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced);
+  assert(confl.getCoef(-l) == 0);
+  assert(confl.getSlack(Level) < 0);
+}
+
 void Clause::initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID _id) {
   assert(_id > ID_Trivial);
   assert(constraint.vars.size() < INF);
@@ -137,6 +182,13 @@ WatchStatus Clause::checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver
   }
   ++stats.NPROPCHECKS;
   return WatchStatus::KEEPWATCH;
+}
+
+void Clause::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver) {
+  ConstrExp32& reason = solver.cePools.take32();
+  toConstraint(reason);
+  genericSimpleResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
+  solver.cePools.leave(reason);
 }
 
 void Cardinality::initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID _id) {
@@ -250,6 +302,13 @@ WatchStatus Cardinality::checkForPropagation(CRef cr, int& idx, [[maybe_unused]]
   return WatchStatus::KEEPWATCH;
 }
 
+void Cardinality::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver) {
+  ConstrExp32& reason = solver.cePools.take32();
+  toConstraint(reason);
+  genericSimpleResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
+  solver.cePools.leave(reason);
+}
+
 template <typename CF, typename DG>
 void Counting<CF, DG>::initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID _id) {
   assert(_id > ID_Trivial);
@@ -333,6 +392,15 @@ void Counting<CF, DG>::undoFalsified(int i) {
   assert(i >= INF);
   slack += data[i - INF].c;
   ++stats.NWATCHLOOKUPSBJ;
+}
+
+template <typename CF, typename DG>
+void Counting<CF, DG>::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet,
+                                   Solver& solver) {
+  ConstrExp<CF, DG>& reason = solver.cePools.take<CF, DG>();
+  toConstraint(reason);
+  genericResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
+  solver.cePools.leave(reason);
 }
 
 template <typename CF, typename DG>
@@ -471,6 +539,15 @@ void Watched<CF, DG>::undoFalsified(int i) {
   ++stats.NWATCHLOOKUPSBJ;
 }
 
+template <typename CF, typename DG>
+void Watched<CF, DG>::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet,
+                                  Solver& solver) {
+  ConstrExp<CF, DG>& reason = solver.cePools.take<CF, DG>();
+  toConstraint(reason);
+  genericResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
+  solver.cePools.leave(reason);
+}
+
 void Arbitrary::initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID _id) {
   assert(_id > ID_Trivial);
   ++stats.NCOUNTING;
@@ -550,6 +627,13 @@ void Arbitrary::undoFalsified(int i) {
   assert(i >= INF);
   slack += coefs[i - INF];
   ++stats.NWATCHLOOKUPSBJ;
+}
+
+void Arbitrary::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver) {
+  ConstrExpArb& reason = solver.cePools.takeArb();
+  toConstraint(reason);
+  genericResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
+  solver.cePools.leave(reason);
 }
 
 // TODO: keep below test methods?

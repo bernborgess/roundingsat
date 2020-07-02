@@ -44,16 +44,16 @@ CandidateCut::CandidateCut(ConstrExpArb& in, const std::vector<double>& sol, LpS
 
 CandidateCut::CandidateCut(const Constr& in, CRef cref, const std::vector<double>& sol, LpSolver& lpslvr) : cr(cref) {
   assert(in.degree() > 0);
-  ConstrExpArb& tmp = lpslvr.solver.ceStore.takeArb();
+  ConstrExpArb& tmp = lpslvr.solver.cePools.takeArb();
   in.toConstraint(tmp);
   lpslvr.shrinkToFit(tmp);
   if (tmp.getDegree() <= 0) {
-    lpslvr.solver.ceStore.leave(tmp);
+    lpslvr.solver.cePools.leave(tmp);
     return;
   }
   simpcons = tmp.toSimpleCons<long long, int128>();
   // NOTE: simpcons is already in var-normal form
-  lpslvr.solver.ceStore.leave(tmp);
+  lpslvr.solver.cePools.leave(tmp);
   initialize(sol);
   assert(cr != CRef_Undef);
 }
@@ -172,7 +172,7 @@ void LpSolver::createLinearCombinationFarkas(ConstrExpArb& out, soplex::DVectorR
     assert(lp.lhsReal(r) != INFTY);
     ConstrExp64& ce = rowToConstraint(r);
     out.addUp(ce, factor);
-    solver.ceStore.leave(ce);
+    solver.cePools.leave(ce);
   }
   out.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
   assert(out.hasNoZeroes());
@@ -184,7 +184,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   double scale = getScaleFactor(mults, false);
   if (scale == 0) return CandidateCut();
   assert(scale > 0);
-  ConstrExpArb& lcc = solver.ceStore.takeArb();
+  ConstrExpArb& lcc = solver.cePools.takeArb();
 
   std::vector<std::pair<BigCoef, int>> slacks;
   for (int r = 0; r < mults.dim(); ++r) {
@@ -193,7 +193,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     ConstrExp64& ce = rowToConstraint(r);
     if (factor < 0) ce.invert();
     lcc.addUp(ce, rs::abs(factor));
-    solver.ceStore.leave(ce);
+    solver.cePools.leave(ce);
     slacks.emplace_back(-factor, r);
   }
 
@@ -201,7 +201,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   for (Var v : lcc.vars)
     if (lpSolution[v] > 0.5) b -= lcc.coefs[v];
   if (b == 0) {
-    solver.ceStore.leave(lcc);
+    solver.cePools.leave(lcc);
     return CandidateCut();
   }
 
@@ -219,7 +219,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     ConstrExp64& ce = rowToConstraint(slacks[i].second);
     if (factor < 0) ce.invert();
     lcc.addUp(ce, rs::abs(factor));
-    solver.ceStore.leave(ce);
+    solver.cePools.leave(ce);
   }
   if (lcc.plogger) lcc.logAsInput();
   // TODO: fix logging for Gomory cuts
@@ -232,7 +232,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     lcc.weakenSmalls(lcc.absCoeffSum() / static_cast<bigint>((double)lcc.vars.size() / options.intolerance));
   }
   CandidateCut result(lcc, lpSolution, *this);
-  solver.ceStore.leave(lcc);
+  solver.cePools.leave(lcc);
   return result;
 }
 
@@ -314,7 +314,7 @@ void LpSolver::addFilteredCuts() {
 
   for (int i : keptCuts) {
     CandidateCut& cc = candidateCuts[i];
-    ConstrExpArb& ce = solver.ceStore.takeArb();
+    ConstrExpArb& ce = solver.cePools.takeArb();
     ce.init(cc.simpcons);
     ce.postProcess(solver.getLevel(), solver.getPos(), true, stats);
     assert(ce.getDegree() < INFLPINT);
@@ -327,7 +327,7 @@ void LpSolver::addFilteredCuts() {
       ++stats.NLPLEARNEDCUTS;
     }
     addConstraint(ce, true);
-    solver.ceStore.leave(ce);
+    solver.cePools.leave(ce);
   }
 }
 
@@ -354,7 +354,7 @@ double LpSolver::getScaleFactor(soplex::DVectorReal& mults, bool removeNegatives
 }
 
 ConstrExp64& LpSolver::rowToConstraint(int row) {
-  ConstrExp64& ce = solver.ceStore.take64();
+  ConstrExp64& ce = solver.cePools.take64();
   double rhs = lp.lhsReal(row);
   assert(rs::abs(rhs) != INFTY);
   assert(validVal(rhs));
@@ -468,10 +468,10 @@ LpStatus LpSolver::_checkFeasibility(ConstrExpArb& confl, bool inProcessing) {
 
 void LpSolver::_inProcess() {
   assert(solver.decisionLevel() == 0);
-  ConstrExpArb& confl = solver.ceStore.takeArb();
+  ConstrExpArb& confl = solver.cePools.takeArb();
   LpStatus lpstat = checkFeasibility(confl, true);
   assert(lpstat != INFEASIBLE || confl.getSlack(solver.getLevel()) < 0);
-  solver.ceStore.leave(confl);  // in case of unsatisfiability, it will be triggered via the learned Farkas
+  solver.cePools.leave(confl);  // in case of unsatisfiability, it will be triggered via the learned Farkas
   if (lpstat != OPTIMAL) return;
   if (!lp.hasSol()) return;
   lp.getPrimal(lpSol);
@@ -521,10 +521,10 @@ void LpSolver::addConstraint(ConstrExpArb& c, bool removable, bool upperbound, b
 void LpSolver::addConstraint(CRef cr, bool removable, bool upperbound, bool lowerbound) {
   assert(cr != CRef_Undef);
   assert(cr != CRef_Unsat);
-  ConstrExpArb& ce = solver.ceStore.takeArb();
+  ConstrExpArb& ce = solver.cePools.takeArb();
   solver.ca[cr].toConstraint(ce);
   addConstraint(ce, removable, upperbound, lowerbound);
-  solver.ceStore.leave(ce);
+  solver.cePools.leave(ce);
 }
 
 void LpSolver::flushConstraints() {

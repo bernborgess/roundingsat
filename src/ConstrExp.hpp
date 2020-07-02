@@ -247,7 +247,7 @@ using ConstrExp96 = ConstrExp<int128, int128>;
 using ConstrExpArb = ConstrExp<bigint, bigint>;
 
 template <typename CE>
-class Storage {  // TODO: private constructor for ConstrExp, only accessible to Storage?
+class ConstrExpPool {  // TODO: private constructor for ConstrExp, only accessible to ConstrExpPool?
   size_t n = 0;
   std::vector<std::unique_ptr<CE>> ces;
   std::vector<CE*> availables;
@@ -288,33 +288,26 @@ class Storage {  // TODO: private constructor for ConstrExp, only accessible to 
   }
 };
 
-class ConstrExpStore {
-  Storage<ConstrExp32> ce32s;
-  Storage<ConstrExp64> ce64s;
-  Storage<ConstrExp96> ce96s;
-  Storage<ConstrExpArb> ceArbs;
+class ConstrExpPools {
+  ConstrExpPool<ConstrExp32> ce32s;
+  ConstrExpPool<ConstrExp64> ce64s;
+  ConstrExpPool<ConstrExp96> ce96s;
+  ConstrExpPool<ConstrExpArb> ceArbs;
 
  public:
-  void resize(size_t newn) {
-    ce32s.resize(newn);
-    ce64s.resize(newn);
-    ce96s.resize(newn);
-    ceArbs.resize(newn);
-  }
+  void resize(size_t newn);
+  void initializeLogging(std::shared_ptr<Logger> lgr);
 
-  void initializeLogging(std::shared_ptr<Logger> lgr) {
-    ce32s.initializeLogging(lgr);
-    ce64s.initializeLogging(lgr);
-    ce96s.initializeLogging(lgr);
-    ceArbs.initializeLogging(lgr);
-  }
+  template <typename SMALL, typename LARGE>
+  ConstrExp<SMALL, LARGE>& take();  // NOTE: only call specializations
 
-  ConstrExp32& take32() { return ce32s.take(); }
-  void leave(ConstrExp32& ce) { return ce32s.leave(ce); }
-  ConstrExp64& take64() { return ce64s.take(); }
-  void leave(ConstrExp64& ce) { return ce64s.leave(ce); }
-  ConstrExp96& take96() { return ce96s.take(); }
-  void leave(ConstrExp96& ce) { return ce96s.leave(ce); }
-  ConstrExpArb& takeArb() { return ceArbs.take(); }
-  void leave(ConstrExpArb& ce) { return ceArbs.leave(ce); }
+  ConstrExp32& take32();
+  ConstrExp64& take64();
+  ConstrExp96& take96();
+  ConstrExpArb& takeArb();
+
+  void leave(ConstrExp32& ce);
+  void leave(ConstrExp64& ce);
+  void leave(ConstrExp96& ce);
+  void leave(ConstrExpArb& ce);
 };

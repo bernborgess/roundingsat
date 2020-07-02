@@ -47,7 +47,7 @@ int read_number(const std::string& s) {  // TODO: should also read larger number
 
 void opb_read(std::istream& in, Solver& solver, ConstrExpArb& objective) {
   assert(objective.isReset());
-  ConstrExpArb& input = solver.ceStore.takeArb();
+  ConstrExpArb& input = solver.cePools.takeArb();
   [[maybe_unused]] bool first_constraint = true;
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == '*') continue;
@@ -105,13 +105,13 @@ void opb_read(std::istream& in, Solver& solver, ConstrExpArb& objective) {
       }
     }
   }
-  solver.ceStore.leave(input);
+  solver.cePools.leave(input);
   solver.setNbOrigVars(solver.getNbVars());
 }
 
 void wcnf_read(std::istream& in, long long top, Solver& solver, ConstrExpArb& objective) {
   assert(objective.isReset());
-  ConstrExpArb& input = solver.ceStore.takeArb();
+  ConstrExpArb& input = solver.cePools.takeArb();
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == 'c')
       continue;
@@ -134,12 +134,12 @@ void wcnf_read(std::istream& in, long long top, Solver& solver, ConstrExpArb& ob
       if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
     }
   }
-  solver.ceStore.leave(input);
+  solver.cePools.leave(input);
   solver.setNbOrigVars(solver.getNbVars() - objective.vars.size());
 }
 
 void cnf_read(std::istream& in, Solver& solver) {
-  ConstrExpArb& input = solver.ceStore.takeArb();
+  ConstrExpArb& input = solver.cePools.takeArb();
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == 'c')
       continue;
@@ -152,7 +152,7 @@ void cnf_read(std::istream& in, Solver& solver) {
       if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
     }
   }
-  solver.ceStore.leave(input);
+  solver.cePools.leave(input);
   solver.setNbOrigVars(solver.getNbVars());
 }
 
