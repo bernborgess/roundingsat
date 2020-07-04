@@ -170,7 +170,7 @@ class Solver {
   void learnConstraint(const ConstrExp<S, L>& c, Origin orig) {
     assert(orig == Origin::LEARNED || orig == Origin::FARKAS || orig == Origin::LEARNEDFARKAS ||
            orig == Origin::GOMORY);
-    ConstrExpArb& learned = cePools.takeArb();
+    ConstrExp<S, L>& learned = cePools.take<S, L>();
     c.copyTo(learned);
     learned.orig = orig;
     learned.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsLearned, options.bitsLearned);

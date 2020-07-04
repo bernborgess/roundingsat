@@ -320,7 +320,7 @@ void LpSolver::addFilteredCuts() {
     assert(ce.getDegree() < INFLPINT);
     assert(ce.getRhs() < INFLPINT);
     assert(ce.isSaturated());
-    assert(ce.getDegree() > 0);
+    assert(!ce.isTautology());
     if (cc.cr == CRef_Undef) {  // Gomory cut
       solver.learnConstraint(ce, Origin::GOMORY);
     } else {  // learned cut

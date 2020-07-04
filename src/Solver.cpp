@@ -347,7 +347,7 @@ bool Solver::extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrE
     assert(decisionLevel() == (int)decisions.size());
     undoOne();
   }
-  assert(confl.getDegree() > 0);
+  assert(!confl.isTautology());
   assert(confl.isSaturated());
   confl.copyTo(outCore);
   confl.reset();
@@ -369,36 +369,15 @@ CRef Solver::attachConstraint(ConstrExpArb& constraint, bool locked) {
   assert(constraint.isSaturated());
   assert(constraint.hasNoZeroes());
   assert(constraint.hasNoUnits(getLevel()));
-  assert(constraint.getDegree() > 0);
+  assert(!constraint.isTautology());
   assert(constraint.vars.size() > 0);
   assert(!constraint.hasNegativeSlack(getLevel()));
   assert(constraint.orig != Origin::UNKNOWN);
 
-  unsigned int length = constraint.vars.size();
-  CRef cr = CRef_Undef;
-  if (options.clauseProp && constraint.getDegree() == 1)
-    cr = ca.alloc(length, 1, ConstrType::CLAUSE);
-  else if (options.cardProp && constraint.isCardinality())
-    cr = ca.alloc(length, 1, ConstrType::CARDINALITY);
-  else {
-    BigCoef maxCoef = rs::abs(constraint.coefs[constraint.vars[0]]);
-    if (maxCoef > limit96) {
-      cr = ca.alloc(length, 1, ConstrType::ARBITRARY);
-    } else {
-      BigVal watchSum = -constraint.degree;
-      unsigned int minWatches = 1;  // sorted per decreasing coefs, so we can skip the first, largest coef
-      for (; minWatches < length && watchSum < 0; ++minWatches)
-        watchSum += rs::abs(constraint.coefs[constraint.vars[minWatches]]);
-      if (options.countingProp == 1 || options.countingProp > (1 - minWatches / (double)length))
-        cr = ca.alloc(length, maxCoef, ConstrType::COUNTING);
-      else
-        cr = ca.alloc(length, maxCoef, ConstrType::WATCHED);
-    }
-  }
-  constraints.push_back(cr);
-
+  CRef cr = ca.alloc(constraint.vars.size(), constraint.propType());
   Constr& C = ca[cr];
   C.initialize(constraint, locked, cr, *this, logger ? constraint.logProofLineWithInfo("Attach", stats) : ++crefID);
+  constraints.push_back(cr);
 
   bool learned = (C.getOrigin() == Origin::LEARNED || C.getOrigin() == Origin::LEARNEDFARKAS ||
                   C.getOrigin() == Origin::FARKAS || C.getOrigin() == Origin::GOMORY);
@@ -435,9 +414,8 @@ CRef Solver::attachConstraint(ConstrExpArb& constraint, bool locked) {
 CRef Solver::processLearnedStack() {
   // loop back to front as the last constraint in the queue is a result of conflict analysis
   // and we want to first check this constraint to backjump.
-  ConstrExpArb& learned = cePools.takeArb();
   while (learnedStack.size() > 0) {
-    learned.reset();
+    ConstrExpArb& learned = cePools.takeArb();
     learned.init(learnedStack.back());
     learnedStack.pop_back();
     learned.removeUnitsAndZeroes(Level, Pos, true);
@@ -456,6 +434,7 @@ CRef Solver::processLearnedStack() {
     learned.postProcess(Level, Pos, false, stats);
     assert(learned.isSaturated());
     if (learned.isTautology()) {
+      cePools.leave(learned);
       continue;
     }
     CRef cr = attachConstraint(learned, false);
@@ -465,8 +444,8 @@ CRef Solver::processLearnedStack() {
       recomputeLBD(C);
     else
       C.setLBD(C.size());  // the LBD of non-asserting constraints is undefined, so we take a safe upper bound
+    cePools.leave(learned);
   }
-  cePools.leave(learned);
   return CRef_Undef;
 }
 
@@ -727,7 +706,7 @@ SolveState Solver::solve(const IntSet& assumptions, ConstrExpArb& core, std::vec
         return SolveState::UNSAT;
       } else if (decisionLevel() >= (int)assumptions_lim.size()) {
         if (!analyze(conflConstraint)) return SolveState::INTERRUPTED;
-        assert(conflConstraint.getDegree() > 0);
+        assert(!conflConstraint.isTautology());
         assert(conflConstraint.isSaturated());
         if (learnedStack.size() > 0 && learnedStack.back().orig == Origin::FARKAS)
           learnConstraint(conflConstraint, Origin::LEARNEDFARKAS);  // TODO: ugly hack

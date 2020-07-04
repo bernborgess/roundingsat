@@ -34,7 +34,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "ConstrSimple.hpp"
 #include "typedefs.hpp"
 
-enum ConstrType { CLAUSE, CARDINALITY, WATCHED, COUNTING, ARBITRARY };
 enum WatchStatus { DROPWATCH, KEEPWATCH, CONFLICTING };
 
 struct CRef {
@@ -46,9 +45,6 @@ struct CRef {
 };
 const CRef CRef_Undef = {std::numeric_limits<uint32_t>::max()};
 const CRef CRef_Unsat = {std::numeric_limits<uint32_t>::max() - 1};  // TODO: needed?
-const bigint limit32 = bigint(1e9);
-const bigint limit64 = bigint(1e18);
-const bigint limit96 = bigint(1e27);
 
 class Solver;
 // TODO: check all static_cast downcasts of bigints

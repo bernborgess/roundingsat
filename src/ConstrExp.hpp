@@ -38,8 +38,12 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 struct IntSet;
 
 enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
+enum ConstrType { CLAUSE, CARDINALITY, WATCHED32, WATCHED64, WATCHED96, COUNTING32, COUNTING64, COUNTING96, ARBITRARY };
 
 struct ConstrExpSuper {
+  std::vector<Var> vars;
+  Origin orig = Origin::UNKNOWN;
+
   virtual std::unique_ptr<ConstrSimpleSuper> toSimple() = 0;
 
   virtual bool hasNegativeSlack(const IntVecIt& level) const = 0;
@@ -76,16 +80,16 @@ struct ConstrExpSuper {
 
   virtual void toStreamAsOPB(std::ofstream& o) const = 0;
   virtual void toStreamWithAssignment(std::ostream& o, const IntVecIt& level, const std::vector<int>& pos) const = 0;
+
+  virtual ConstrType propType() const = 0;
 };
 
 template <typename SMALL, typename LARGE>  // LARGE should be able to fit sums of SMALL
 struct ConstrExp final : public ConstrExpSuper {
   LARGE degree = 0;
   LARGE rhs = 0;
-  std::vector<Var> vars;
   std::vector<SMALL> coefs;
   std::vector<bool> used;
-  Origin orig = Origin::UNKNOWN;
   std::stringstream proofBuffer;
   std::shared_ptr<Logger> plogger;
 
@@ -158,6 +162,8 @@ struct ConstrExp final : public ConstrExpSuper {
     result->orig = orig;
     return result;
   };
+
+  ConstrType propType() const;
 
   void resize(size_t s);
   void resetBuffer(ID proofID = ID_Trivial);

@@ -37,10 +37,41 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "globals.hpp"
 #include "typedefs.hpp"
 
-ConstrExpPool<ConstrExp32> ce32s;
-ConstrExpPool<ConstrExp64> ce64s;
-ConstrExpPool<ConstrExp96> ce96s;
-ConstrExpPool<ConstrExpArb> ceArbs;
+const bigint limit32 = bigint(1e9);
+const bigint limit64 = bigint(1e18);
+const bigint limit96 = bigint(1e27);
+
+template <typename SMALL, typename LARGE>
+ConstrType ConstrExp<SMALL, LARGE>::propType() const {
+  assert(isSortedInDecreasingCoefOrder());
+  assert(isSaturated());
+  assert(hasNoZeroes());
+  assert(!isTautology());
+  assert(vars.size() > 0);
+  if (options.clauseProp && getDegree() == 1) {
+    return ConstrType::CLAUSE;
+  } else if (options.cardProp && isCardinality()) {
+    return ConstrType::CARDINALITY;
+  } else {
+    LARGE maxCoef = rs::abs(coefs[vars[0]]);
+    if (maxCoef > limit96) {
+      return ConstrType::ARBITRARY;
+    } else {
+      LARGE watchSum = -degree;
+      unsigned int minWatches = 1;  // sorted per decreasing coefs, so we can skip the first, largest coef
+      for (; minWatches < vars.size() && watchSum < 0; ++minWatches) watchSum += rs::abs(coefs[vars[minWatches]]);
+      bool useCounting = options.countingProp == 1 || options.countingProp > (1 - minWatches / (double)vars.size());
+      if (maxCoef <= limit32) {
+        return useCounting ? ConstrType::COUNTING32 : ConstrType::WATCHED32;
+      } else if (maxCoef <= limit64) {
+        return useCounting ? ConstrType::COUNTING64 : ConstrType::WATCHED64;
+      } else {
+        assert(maxCoef <= limit96);
+        return useCounting ? ConstrType::COUNTING96 : ConstrType::WATCHED96;
+      }
+    }
+  }
+}
 
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::remove(Var v) {

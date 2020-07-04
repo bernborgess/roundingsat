@@ -50,39 +50,35 @@ void ConstraintAllocator::capacity(uint32_t min_cap) {
   memory = (uint32_t*)xrealloc(memory, sizeof(uint32_t) * cap);
 }
 
-CRef ConstraintAllocator::alloc(unsigned int nTerms, const BigVal& maxCoef, ConstrType type) {
+CRef ConstraintAllocator::alloc(unsigned int nTerms, ConstrType type) {
   Constr* constr = (Constr*)(memory + at);
-  switch (type) {
+  switch (type) { // TODO: possible to avoid this switch?
     case ConstrType::CLAUSE:
       new (constr) Clause;
       break;
     case ConstrType::CARDINALITY:
       new (constr) Cardinality;
       break;
+    case ConstrType::COUNTING32:
+      new (constr) Counting32;
+      break;
+    case ConstrType::COUNTING64:
+      new (constr) Counting64;
+      break;
+    case ConstrType::COUNTING96:
+      new (constr) Counting96;
+      break;
+    case ConstrType::WATCHED32:
+      new (constr) Watched32;
+      break;
+    case ConstrType::WATCHED64:
+      new (constr) Watched64;
+      break;
+    case ConstrType::WATCHED96:
+      new (constr) Watched96;
+      break;
     case ConstrType::ARBITRARY:
       new (constr) Arbitrary;
-      break;
-    case ConstrType::COUNTING:
-      if (maxCoef <= limit32) {
-        new (constr) Counting32;
-      } else if (maxCoef <= limit64) {
-        new (constr) Counting64;
-      } else if (maxCoef <= limit96) {
-        new (constr) Counting96;
-      } else {
-        assert(false);
-      }
-      break;
-    case ConstrType::WATCHED:
-      if (maxCoef <= limit32) {
-        new (constr) Watched32;
-      } else if (maxCoef <= limit64) {
-        new (constr) Watched64;
-      } else if (maxCoef <= limit96) {
-        new (constr) Watched96;
-      } else {
-        assert(false);
-      }
       break;
     default:
       assert(false);
