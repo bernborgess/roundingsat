@@ -48,12 +48,12 @@ CandidateCut::CandidateCut(const Constr& in, CRef cref, const std::vector<double
   in.toConstraint(tmp);
   lpslvr.shrinkToFit(tmp);
   if (tmp.isTautology()) {
-    lpslvr.solver.cePools.leave(tmp);
+    tmp.release();
     return;
   }
   simpcons = tmp.toSimpleCons<long long, int128>();
   // NOTE: simpcons is already in var-normal form
-  lpslvr.solver.cePools.leave(tmp);
+  tmp.release();
   initialize(sol);
   assert(cr != CRef_Undef);
 }
@@ -172,7 +172,7 @@ void LpSolver::createLinearCombinationFarkas(ConstrExpArb& out, soplex::DVectorR
     assert(lp.lhsReal(r) != INFTY);
     ConstrExp64& ce = rowToConstraint(r);
     out.addUp(ce, factor);
-    solver.cePools.leave(ce);
+    ce.release();
   }
   out.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
   assert(out.hasNoZeroes());
@@ -193,7 +193,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     ConstrExp64& ce = rowToConstraint(r);
     if (factor < 0) ce.invert();
     lcc.addUp(ce, rs::abs(factor));
-    solver.cePools.leave(ce);
+    ce.release();
     slacks.emplace_back(-factor, r);
   }
 
@@ -201,7 +201,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   for (Var v : lcc.vars)
     if (lpSolution[v] > 0.5) b -= lcc.coefs[v];
   if (b == 0) {
-    solver.cePools.leave(lcc);
+    lcc.release();
     return CandidateCut();
   }
 
@@ -219,7 +219,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     ConstrExp64& ce = rowToConstraint(slacks[i].second);
     if (factor < 0) ce.invert();
     lcc.addUp(ce, rs::abs(factor));
-    solver.cePools.leave(ce);
+    ce.release();
   }
   if (lcc.plogger) lcc.logAsInput();
   // TODO: fix logging for Gomory cuts
@@ -232,7 +232,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     lcc.weakenSmalls(lcc.absCoeffSum() / static_cast<bigint>((double)lcc.vars.size() / options.intolerance));
   }
   CandidateCut result(lcc, lpSolution, *this);
-  solver.cePools.leave(lcc);
+  lcc.release();
   return result;
 }
 
@@ -327,7 +327,7 @@ void LpSolver::addFilteredCuts() {
       ++stats.NLPLEARNEDCUTS;
     }
     addConstraint(ce, true);
-    solver.cePools.leave(ce);
+    ce.release();
   }
 }
 
@@ -471,7 +471,7 @@ void LpSolver::_inProcess() {
   ConstrExpArb& confl = solver.cePools.takeArb();
   LpStatus lpstat = checkFeasibility(confl, true);
   assert(lpstat != INFEASIBLE || confl.hasNegativeSlack(solver.getLevel()));
-  solver.cePools.leave(confl);  // in case of unsatisfiability, it will be triggered via the learned Farkas
+  confl.release();  // in case of unsatisfiability, it will be triggered via the learned Farkas
   if (lpstat != OPTIMAL) return;
   if (!lp.hasSol()) return;
   lp.getPrimal(lpSol);
@@ -524,7 +524,7 @@ void LpSolver::addConstraint(CRef cr, bool removable, bool upperbound, bool lowe
   ConstrExpArb& ce = solver.cePools.takeArb();
   solver.ca[cr].toConstraint(ce);
   addConstraint(ce, removable, upperbound, lowerbound);
-  solver.cePools.leave(ce);
+  ce.release();
 }
 
 void LpSolver::flushConstraints() {

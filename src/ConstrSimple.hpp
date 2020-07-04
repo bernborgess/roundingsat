@@ -52,6 +52,7 @@ struct ConstrExpSuper;
 struct ConstrExpPools;
 
 struct ConstrSimpleSuper {
+  Origin orig = Origin::UNKNOWN;
   virtual ConstrExpSuper& toExpanded(ConstrExpPools& cePools) = 0;
 };
 
@@ -59,12 +60,13 @@ template <typename CF, typename DG>
 struct ConstrSimple final : public ConstrSimpleSuper {
   std::vector<Term<CF>> terms;
   DG rhs;
-  Origin orig;
   std::string proofLine;
 
   ConstrSimple(const std::vector<Term<CF>>& t = {}, const DG& r = 0, const Origin& o = Origin::UNKNOWN,
                const std::string& p = (std::to_string(ID_Trivial) + " "))
-      : terms(t), rhs(r), orig(o), proofLine(p) {}
+      : terms(t), rhs(r), proofLine(p) {
+    orig = o;
+  }
 
   ConstrExpSuper& toExpanded(ConstrExpPools& cePools);
 

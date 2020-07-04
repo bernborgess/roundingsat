@@ -91,7 +91,7 @@ class Solver {
   bool firstRun = true;
 
   std::shared_ptr<LpSolver> lpSolver;
-  std::vector<ConstrSimpleArb> learnedStack;
+  std::vector<std::unique_ptr<ConstrSimpleSuper>> learnedStack;
 
  public:
   Solver();
@@ -165,7 +165,7 @@ class Solver {
   // ---------------------------------------------------------------------
   // Constraint management
 
-  CRef attachConstraint(ConstrExpArb& constraint, bool locked);
+  CRef attachConstraint(ConstrExpSuper& constraint, bool locked);
   template <typename S, typename L>
   void learnConstraint(const ConstrExp<S, L>& c, Origin orig) {
     assert(orig == Origin::LEARNED || orig == Origin::FARKAS || orig == Origin::LEARNEDFARKAS ||
@@ -174,8 +174,8 @@ class Solver {
     c.copyTo(learned);
     learned.orig = orig;
     learned.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsLearned, options.bitsLearned);
-    learnedStack.push_back(learned.template toSimpleCons<BigCoef, BigVal>());
-    cePools.leave(learned);
+    learnedStack.push_back(learned.toSimple());
+    learned.release();
   }
   CRef processLearnedStack();
   std::pair<ID, ID> addInputConstraint(ConstrExpArb& ce);

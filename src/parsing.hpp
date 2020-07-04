@@ -105,7 +105,7 @@ void opb_read(std::istream& in, Solver& solver, ConstrExpArb& objective) {
       }
     }
   }
-  solver.cePools.leave(input);
+  input.release();
   solver.setNbOrigVars(solver.getNbVars());
 }
 
@@ -134,7 +134,7 @@ void wcnf_read(std::istream& in, long long top, Solver& solver, ConstrExpArb& ob
       if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
     }
   }
-  solver.cePools.leave(input);
+  input.release();
   solver.setNbOrigVars(solver.getNbVars() - objective.vars.size());
 }
 
@@ -152,7 +152,7 @@ void cnf_read(std::istream& in, Solver& solver) {
       if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
     }
   }
-  solver.cePools.leave(input);
+  input.release();
   solver.setNbOrigVars(solver.getNbVars());
 }
 

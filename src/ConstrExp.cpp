@@ -44,6 +44,16 @@ const bigint limit64 = bigint(1e18);
 const bigint limit96 = bigint(1e27);
 
 template <typename SMALL, typename LARGE>
+ConstrExp<SMALL, LARGE>::ConstrExp(ConstrExpPool<ConstrExp<SMALL, LARGE>>& cep) : pool(cep) {
+  reset();
+}
+
+template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::release() {
+  pool.release(*this);
+}
+
+template <typename SMALL, typename LARGE>
 CRef ConstrExp<SMALL, LARGE>::toConstr(ConstraintAllocator& ca, bool locked, ID id) const {
   assert(isSortedInDecreasingCoefOrder());
   assert(isSaturated());
@@ -898,8 +908,3 @@ ConstrExp32& ConstrExpPools::take32() { return take<int, long long>(); }
 ConstrExp64& ConstrExpPools::take64() { return take<long long, int128>(); }
 ConstrExp96& ConstrExpPools::take96() { return take<int128, int128>(); }
 ConstrExpArb& ConstrExpPools::takeArb() { return take<bigint, bigint>(); }
-
-void ConstrExpPools::leave(ConstrExp32& ce) { return ce32s.leave(ce); }
-void ConstrExpPools::leave(ConstrExp64& ce) { return ce64s.leave(ce); }
-void ConstrExpPools::leave(ConstrExp96& ce) { return ce96s.leave(ce); }
-void ConstrExpPools::leave(ConstrExpArb& ce) { return ceArbs.leave(ce); }

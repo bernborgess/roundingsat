@@ -64,7 +64,7 @@ ID handleNewSolution(const ConstrExpArb& origObj, ID& lastUpperBound) {
   solver.dropExternal(lastUpperBound, true, true);
   std::pair<ID, ID> res = solver.addConstraint(aux, Origin::UPPERBOUND);
   lastUpperBound = res.second;
-  solver.cePools.leave(aux);
+  aux.release();
   if (lastUpperBound == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
   return res.first;
 }
@@ -162,7 +162,7 @@ ID addLowerBound(const ConstrExpArb& origObj, const BigVal& lower_bound, ID& las
   aux.addRhs(lower_bound);
   solver.dropExternal(lastLowerBound, true, true);
   std::pair<ID, ID> res = solver.addConstraint(aux, Origin::LOWERBOUND);
-  solver.cePools.leave(aux);
+  aux.release();
   lastLowerBound = res.second;
   if (lastLowerBound == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
   return res.first;
@@ -322,18 +322,18 @@ void optimize(ConstrExpArb& origObj) {
         aux.addRhs(lower_bound);
         aux.resetBuffer(lastLowerBoundUnprocessed);
         coreAggregate.addUp(aux);
-        solver.cePools.leave(aux);
+        aux.release();
         assert(coreAggregate.hasNegativeSlack(solver.getLevel()));
         assert(solver.decisionLevel() == 0);
         coreAggregate.logInconsistency(solver.getLevel(), solver.getPos(), stats);
-        solver.cePools.leave(coreAggregate);
+        coreAggregate.release();
       }
       quit::exit_UNSAT(solution, upper_bound, solver.logger);
     }
   }
   // TODO: unreachable code
-  solver.cePools.leave(reformObj);
-  solver.cePools.leave(core);
+  reformObj.release();
+  core.release();
 }
 
 void decide() {
@@ -347,7 +347,7 @@ void decide() {
     else if (reply == SolveState::UNSAT)
       quit::exit_UNSAT({}, 0, solver.logger);
   }
-  solver.cePools.leave(core);
+  core.release();
 }
 
 void run(ConstrExpArb& objective) {

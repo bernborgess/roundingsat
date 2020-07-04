@@ -41,7 +41,7 @@ Solver::Solver() : conflConstraint(cePools.takeArb()), order_heap(activity) {
   ca.capacity(1024 * 1024);  // 4MB
 }
 
-Solver::~Solver() { cePools.leave(conflConstraint); }
+Solver::~Solver() { conflConstraint.release(); }
 
 void Solver::setNbVars(long long nvars) {
   assert(nvars > 0);
@@ -131,7 +131,7 @@ void Solver::uncheckedEnqueue(Lit p, CRef from) {
       ConstrExpArb& logConstraint = cePools.takeArb();
       C.toConstraint(logConstraint);
       logConstraint.logUnit(Level, Pos, v, stats);
-      cePools.leave(logConstraint);
+      logConstraint.release();
       assert(logger->unitIDs.size() == trail.size() + 1);
     }
   }
@@ -360,7 +360,7 @@ bool Solver::extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrE
 // ---------------------------------------------------------------------
 // Constraint management
 
-CRef Solver::attachConstraint(ConstrExpArb& constraint, bool locked) {
+CRef Solver::attachConstraint(ConstrExpSuper& constraint, bool locked) {
   assert(constraint.isSortedInDecreasingCoefOrder());
   assert(constraint.isSaturated());
   assert(constraint.hasNoZeroes());
@@ -411,8 +411,7 @@ CRef Solver::processLearnedStack() {
   // loop back to front as the last constraint in the queue is a result of conflict analysis
   // and we want to first check this constraint to backjump.
   while (learnedStack.size() > 0) {
-    ConstrExpArb& learned = cePools.takeArb();
-    learned.init(learnedStack.back());
+    ConstrExpSuper& learned = learnedStack.back()->toExpanded(cePools);
     learnedStack.pop_back();
     learned.removeUnitsAndZeroes(Level, Pos, true);
     learned.sortInDecreasingCoefOrder();
@@ -421,7 +420,7 @@ CRef Solver::processLearnedStack() {
       backjumpTo(0);
       assert(learned.hasNegativeSlack(Level));
       if (logger) learned.logInconsistency(Level, Pos, stats);
-      cePools.leave(learned);
+      learned.release();
       return CRef_Unsat;
     }
     backjumpTo(assertionLevel);
@@ -430,7 +429,7 @@ CRef Solver::processLearnedStack() {
     learned.postProcess(Level, Pos, false, stats);
     assert(learned.isSaturated());
     if (learned.isTautology()) {
-      cePools.leave(learned);
+      learned.release();
       continue;
     }
     CRef cr = attachConstraint(learned, false);
@@ -440,7 +439,7 @@ CRef Solver::processLearnedStack() {
       recomputeLBD(C);
     else
       C.setLBD(C.size());  // the LBD of non-asserting constraints is undefined, so we take a safe upper bound
-    cePools.leave(learned);
+    learned.release();
   }
   return CRef_Undef;
 }
@@ -472,11 +471,11 @@ std::pair<ID, ID> Solver::addInputConstraint(ConstrExpArb& ce) {
   if (!runPropagation(confl, true)) {
     if (options.verbosity > 0) puts("c Input conflict");
     if (logger) confl.logInconsistency(Level, Pos, stats);
-    cePools.leave(confl);
+    confl.release();
     assert(decisionLevel() == 0);
     return {input, ID_Unsat};
   }
-  cePools.leave(confl);
+  confl.release();
   ID id = ca[cr].id;
   Origin orig = ca[cr].getOrigin();
   if (orig != Origin::FORMULA) {
@@ -494,7 +493,7 @@ std::pair<ID, ID> Solver::addConstraint(const ConstrExpArb& c, Origin orig) {
   c.copyTo(ce);
   ce.orig = orig;
   std::pair<ID, ID> result = addInputConstraint(ce);
-  cePools.leave(ce);
+  ce.release();
   return result;
 }
 
@@ -503,7 +502,7 @@ std::pair<ID, ID> Solver::addConstraint(const ConstrSimple32& c, Origin orig) {
   ce.init(c);
   ce.orig = orig;
   std::pair<ID, ID> result = addInputConstraint(ce);
-  cePools.leave(ce);
+  ce.release();
   return result;
 }
 
@@ -704,7 +703,7 @@ SolveState Solver::solve(const IntSet& assumptions, ConstrExpArb& core, std::vec
         if (!analyze(conflConstraint)) return SolveState::INTERRUPTED;
         assert(!conflConstraint.isTautology());
         assert(conflConstraint.isSaturated());
-        if (learnedStack.size() > 0 && learnedStack.back().orig == Origin::FARKAS)
+        if (learnedStack.size() > 0 && learnedStack.back()->orig == Origin::FARKAS)
           learnConstraint(conflConstraint, Origin::LEARNEDFARKAS);  // TODO: ugly hack
         else
           learnConstraint(conflConstraint, Origin::LEARNED);

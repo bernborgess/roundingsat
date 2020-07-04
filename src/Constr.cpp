@@ -173,7 +173,7 @@ void Clause::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l
   ConstrExp32& reason = solver.cePools.take32();
   toConstraint(reason);
   genericSimpleResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
-  solver.cePools.leave(reason);
+  reason.release();
 }
 
 void Cardinality::initializeWatches(CRef cr, Solver& solver) {
@@ -273,7 +273,7 @@ void Cardinality::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_c
   ConstrExp32& reason = solver.cePools.take32();
   toConstraint(reason);
   genericSimpleResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
-  solver.cePools.leave(reason);
+  reason.release();
 }
 
 template <typename CF, typename DG>
@@ -353,7 +353,7 @@ void Counting<CF, DG>::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& co
   ConstrExp<CF, DG>& reason = solver.cePools.take<CF, DG>();
   toConstraint(reason);
   genericResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
-  solver.cePools.leave(reason);
+  reason.release();
 }
 
 template <typename CF, typename DG>
@@ -481,7 +481,7 @@ void Watched<CF, DG>::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& con
   ConstrExp<CF, DG>& reason = solver.cePools.take<CF, DG>();
   toConstraint(reason);
   genericResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
-  solver.cePools.leave(reason);
+  reason.release();
 }
 
 void Arbitrary::initializeWatches(CRef cr, Solver& solver) {
@@ -554,7 +554,7 @@ void Arbitrary::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coe
   ConstrExpArb& reason = solver.cePools.takeArb();
   toConstraint(reason);
   genericResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
-  solver.cePools.leave(reason);
+  reason.release();
 }
 
 // TODO: keep below test methods?

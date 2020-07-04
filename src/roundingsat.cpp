@@ -85,5 +85,5 @@ int main(int argc, char** argv) {
 
   run::run(objective);
 
-  run::solver.cePools.leave(objective);
+  objective.release();
 }

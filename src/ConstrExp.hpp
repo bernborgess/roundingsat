@@ -55,6 +55,8 @@ struct ConstrExpSuper {
   std::vector<Var> vars;
   Origin orig = Origin::UNKNOWN;
 
+  virtual void release() = 0;
+
   virtual CRef toConstr(ConstraintAllocator& ca, bool locked, ID id) const = 0;
   virtual std::unique_ptr<ConstrSimpleSuper> toSimple() = 0;
 
@@ -94,8 +96,15 @@ struct ConstrExpSuper {
   virtual void toStreamWithAssignment(std::ostream& o, const IntVecIt& level, const std::vector<int>& pos) const = 0;
 };
 
+template <typename CE>
+class ConstrExpPool;
+
 template <typename SMALL, typename LARGE>  // LARGE should be able to fit sums of SMALL
 struct ConstrExp final : public ConstrExpSuper {
+ private:
+  ConstrExpPool<ConstrExp<SMALL, LARGE>>& pool;
+
+ public:
   LARGE degree = 0;
   LARGE rhs = 0;
   std::vector<SMALL> coefs;
@@ -112,7 +121,8 @@ struct ConstrExp final : public ConstrExpSuper {
   bool falsified(const IntVecIt& level, Var v) const;
 
  public:
-  ConstrExp() { reset(); }
+  ConstrExp(ConstrExpPool<ConstrExp<SMALL, LARGE>>& cep);
+  void release();
 
   template <typename CF, typename DG>
   void init(const ConstrSimple<CF, DG>& sc) {
@@ -163,7 +173,7 @@ struct ConstrExp final : public ConstrExpSuper {
   }
 
   std::unique_ptr<ConstrSimpleSuper> toSimple() {
-    std::unique_ptr<ConstrSimple<SMALL, LARGE>> result;
+    std::unique_ptr<ConstrSimple<SMALL, LARGE>> result = std::make_unique<ConstrSimple<SMALL, LARGE>>();
     result->rhs = rhs;
     result->terms.reserve(vars.size());
     for (Var v : vars)
@@ -336,7 +346,7 @@ class ConstrExpPool {  // TODO: private constructor for ConstrExp, only accessib
   CE& take() {
     assert(ces.size() < 20);  // Sanity check that no large amounts of ConstrExps are created
     if (availables.size() == 0) {
-      ces.emplace_back(std::make_unique<CE>());
+      ces.emplace_back(std::make_unique<CE>(*this));
       ces.back()->resize(n);
       ces.back()->initializeLogging(plogger);
       availables.push_back(ces.back().get());
@@ -348,7 +358,7 @@ class ConstrExpPool {  // TODO: private constructor for ConstrExp, only accessib
     return *result;
   }
 
-  void leave(CE& ce) {
+  void release(CE& ce) {
     assert(std::any_of(ces.begin(), ces.end(), [&](std::unique_ptr<CE>& i) { return i.get() == &ce; }));
     assert(std::none_of(availables.begin(), availables.end(), [&](CE* i) { return i == &ce; }));
     ce.reset();
@@ -373,9 +383,4 @@ class ConstrExpPools {
   ConstrExp64& take64();
   ConstrExp96& take96();
   ConstrExpArb& takeArb();
-
-  void leave(ConstrExp32& ce);
-  void leave(ConstrExp64& ce);
-  void leave(ConstrExp96& ce);
-  void leave(ConstrExpArb& ce);
 };
