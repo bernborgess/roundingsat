@@ -47,7 +47,7 @@ CandidateCut::CandidateCut(const Constr& in, CRef cref, const std::vector<double
   ConstrExpArb& tmp = lpslvr.solver.cePools.takeArb();
   in.toConstraint(tmp);
   lpslvr.shrinkToFit(tmp);
-  if (tmp.getDegree() <= 0) {
+  if (tmp.isTautology()) {
     lpslvr.solver.cePools.leave(tmp);
     return;
   }
@@ -225,7 +225,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   // TODO: fix logging for Gomory cuts
 
   lcc.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
-  if (lcc.getDegree() <= 0)
+  if (lcc.isTautology())
     lcc.reset();
   else {
     assert(lcc.hasNoZeroes());
@@ -461,7 +461,7 @@ LpStatus LpSolver::_checkFeasibility(ConstrExpArb& confl, bool inProcessing) {
 
   createLinearCombinationFarkas(confl, lpMultipliers);
   solver.learnConstraint(confl, Origin::FARKAS);
-  if (confl.getSlack(solver.getLevel()) < 0) return INFEASIBLE;
+  if (confl.hasNegativeSlack(solver.getLevel())) return INFEASIBLE;
   confl.reset();
   return UNDETERMINED;
 }
@@ -470,7 +470,7 @@ void LpSolver::_inProcess() {
   assert(solver.decisionLevel() == 0);
   ConstrExpArb& confl = solver.cePools.takeArb();
   LpStatus lpstat = checkFeasibility(confl, true);
-  assert(lpstat != INFEASIBLE || confl.getSlack(solver.getLevel()) < 0);
+  assert(lpstat != INFEASIBLE || confl.hasNegativeSlack(solver.getLevel()));
   solver.cePools.leave(confl);  // in case of unsatisfiability, it will be triggered via the learned Farkas
   if (lpstat != OPTIMAL) return;
   if (!lp.hasSol()) return;

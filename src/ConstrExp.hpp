@@ -39,8 +39,47 @@ struct IntSet;
 
 enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
 
+struct ConstrExpSuper {
+  virtual std::unique_ptr<ConstrSimpleSuper> toSimple() = 0;
+
+  virtual bool hasNegativeSlack(const IntVecIt& level) const = 0;
+  virtual bool isTautology() const = 0;
+
+  virtual void removeUnitsAndZeroes(const IntVecIt& level, const std::vector<int>& pos, bool doSaturation = true) = 0;
+  virtual bool hasNoUnits(const IntVecIt& level) const = 0;
+  virtual void removeZeroes() = 0;
+  virtual bool hasNoZeroes() const = 0;
+
+  virtual void saturate(const std::vector<Var>& vs) = 0;
+  virtual void saturate() = 0;
+  virtual bool isSaturated() const = 0;
+  virtual void saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening, int bitOverflow, int bitReduce) = 0;
+
+  virtual void weakenDivideRound(const IntVecIt& level, Lit l, bool maxdiv, bool fullWeakening) = 0;
+
+  virtual bool divideByGCD() = 0;
+  virtual void postProcess(const IntVecIt& level, const std::vector<int>& pos, bool sortFirst, Stats& sts) = 0;
+  virtual AssertionStatus isAssertingBefore(const IntVecIt& level, int lvl) = 0;
+  virtual int getAssertionLevel(const IntVecIt& level, const std::vector<int>& pos) const = 0;
+  virtual void heuristicWeakening(const IntVecIt& level, const std::vector<int>& pos, Stats& sts) = 0;
+
+  virtual bool simplifyToCardinality(bool equivalencePreserving) = 0;
+  virtual bool isCardinality() const = 0;
+  virtual void sortInDecreasingCoefOrder() = 0;
+  virtual bool isSortedInDecreasingCoefOrder() const = 0;
+
+  virtual ID logAsInput() = 0;
+  virtual ID logProofLine() = 0;
+  virtual ID logProofLineWithInfo([[maybe_unused]] std::string&& info, [[maybe_unused]] const Stats& sts) = 0;
+  virtual void logUnit(const IntVecIt& level, const std::vector<int>& pos, Var v_unit, const Stats& sts) = 0;
+  virtual void logInconsistency(const IntVecIt& level, const std::vector<int>& pos, const Stats& sts) = 0;
+
+  virtual void toStreamAsOPB(std::ofstream& o) const = 0;
+  virtual void toStreamWithAssignment(std::ostream& o, const IntVecIt& level, const std::vector<int>& pos) const = 0;
+};
+
 template <typename SMALL, typename LARGE>  // LARGE should be able to fit sums of SMALL
-struct ConstrExp {
+struct ConstrExp final : public ConstrExpSuper {
   LARGE degree = 0;
   LARGE rhs = 0;
   std::vector<Var> vars;
@@ -109,6 +148,17 @@ struct ConstrExp {
     return result;
   }
 
+  std::unique_ptr<ConstrSimpleSuper> toSimple() {
+    std::unique_ptr<ConstrSimple<SMALL, LARGE>> result;
+    result->rhs = rhs;
+    result->terms.reserve(vars.size());
+    for (Var v : vars)
+      if (coefs[v] != 0) result->terms.emplace_back(coefs[v], v);
+    if (plogger) result->proofLine = proofBuffer.str();
+    result->orig = orig;
+    return result;
+  };
+
   void resize(size_t s);
   void resetBuffer(ID proofID = ID_Trivial);
   void initializeLogging(std::shared_ptr<Logger>& l);
@@ -136,6 +186,8 @@ struct ConstrExp {
 
   LARGE getSlack(const IntVecIt& level) const;
   LARGE getSlack(const IntSet& assumptions) const;
+  bool hasNegativeSlack(const IntVecIt& level) const;
+  bool isTautology() const;
 
   // @post: preserves order of vars
   void removeUnitsAndZeroes(const IntVecIt& level, const std::vector<int>& pos, bool doSaturation = true);
@@ -199,7 +251,7 @@ struct ConstrExp {
   // @post: preserves order after removeZeroes()
   bool weakenNonImplying(const IntVecIt& level, const SMALL& propCoef, const LARGE& slack, Stats& sts);
   // @post: preserves order after removeZeroes()
-  void heuristicWeakening(const IntVecIt& level, const std::vector<int>& pos, const LARGE& slack, Stats& sts);
+  void heuristicWeakening(const IntVecIt& level, const std::vector<int>& pos, Stats& sts);
 
   // @post: preserves order
   template <typename T>

@@ -294,7 +294,7 @@ void optimize(ConstrExpArb& origObj) {
              lower_bound == upper_bound);
     } else if (reply == SolveState::INCONSISTENT) {
       ++stats.NCORES;
-      if (core.getSlack(solver.getLevel()) < 0) {
+      if (core.hasNegativeSlack(solver.getLevel())) {
         if (solver.logger) core.logInconsistency(solver.getLevel(), solver.getPos(), stats);
         assert(solver.decisionLevel() == 0);
         quit::exit_UNSAT(solution, upper_bound, solver.logger);
@@ -323,7 +323,7 @@ void optimize(ConstrExpArb& origObj) {
         aux.resetBuffer(lastLowerBoundUnprocessed);
         coreAggregate.addUp(aux);
         solver.cePools.leave(aux);
-        assert(coreAggregate.getSlack(solver.getLevel()) < 0);
+        assert(coreAggregate.hasNegativeSlack(solver.getLevel()));
         assert(solver.decisionLevel() == 0);
         coreAggregate.logInconsistency(solver.getLevel(), solver.getPos(), stats);
         solver.cePools.leave(coreAggregate);

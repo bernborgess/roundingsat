@@ -55,7 +55,7 @@ void genericResolve(ConstrExp<CF, DG>& reason, ConstrExpArb& confl, Lit l, const
   confl.addUp(reason, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
   confl.saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced);
   assert(confl.getCoef(-l) == 0);
-  assert(confl.getSlack(Level) < 0);
+  assert(confl.hasNegativeSlack(Level));
 }
 
 void genericSimpleResolve(ConstrExp32& reason, ConstrExpArb& confl, [[maybe_unused]] Lit l, const BigCoef& confl_coef_l,
@@ -74,7 +74,7 @@ void genericSimpleResolve(ConstrExp32& reason, ConstrExpArb& confl, [[maybe_unus
   confl.addUp(reason, confl_coef_l);
   confl.saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced);
   assert(confl.getCoef(-l) == 0);
-  assert(confl.getSlack(Level) < 0);
+  assert(confl.hasNegativeSlack(Level));
 }
 
 void Clause::initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID _id) {

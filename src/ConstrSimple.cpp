@@ -28,57 +28,39 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ***********************************************************************/
 
-#pragma once
-
-#include <iostream>
-#include <sstream>
-#include <vector>
-#include "typedefs.hpp"
-
-template <typename CF>
-struct Term {
-  Term() : c(0), l(0) {}
-  Term(const CF& x, Lit y) : c(x), l(y) {}
-  CF c;
-  Lit l;
-};
-
-template <typename CF>
-std::ostream& operator<<(std::ostream& o, const Term<CF>& t) {
-  return o << t.c << "x" << t.l;
-}
-
-struct ConstrExpSuper;
-struct ConstrExpPools;
-
-struct ConstrSimpleSuper {
-  virtual ConstrExpSuper& toExpanded(ConstrExpPools& cePools) = 0;
-};
+#include "ConstrSimple.hpp"
+#include "ConstrExp.hpp"
 
 template <typename CF, typename DG>
-struct ConstrSimple final : public ConstrSimpleSuper {
-  std::vector<Term<CF>> terms;
-  DG rhs;
-  Origin orig;
-  std::string proofLine;
-
-  ConstrSimple(const std::vector<Term<CF>>& t = {}, const DG& r = 0, const Origin& o = Origin::UNKNOWN,
-               const std::string& p = (std::to_string(ID_Trivial) + " "))
-      : terms(t), rhs(r), orig(o), proofLine(p) {}
-
-  ConstrExpSuper& toExpanded(ConstrExpPools& cePools);
-
-  void toNormalFormLit();
-  void toNormalFormVar();
-};
-
-template <typename CF, typename DG>
-inline std::ostream& operator<<(std::ostream& o, const ConstrSimple<CF, DG>& sc) {
-  for (const Term<CF>& t : sc.terms) o << "+ " << t << " ";
-  return o << ">= " << sc.rhs;
+ConstrExpSuper& ConstrSimple<CF, DG>::toExpanded(ConstrExpPools& cePools) {
+  ConstrExp<CF, DG>& result = cePools.take<CF, DG>();
+  result.init(*this);
+  return result;
 }
 
-using ConstrSimple32 = ConstrSimple<int, long long>;
-using ConstrSimple64 = ConstrSimple<long long, int128>;
-using ConstrSimple96 = ConstrSimple<int128, int128>;
-using ConstrSimpleArb = ConstrSimple<bigint, bigint>;
+template <typename CF, typename DG>
+void ConstrSimple<CF, DG>::toNormalFormLit() {
+  for (Term<CF>& t : terms) {
+    if (t.c < 0) {
+      rhs -= t.c;
+      t.c = -t.c;
+      t.l = -t.l;
+    }
+  }
+}
+
+template <typename CF, typename DG>
+void ConstrSimple<CF, DG>::toNormalFormVar() {
+  for (Term<CF>& t : terms) {
+    if (t.l < 0) {
+      rhs -= t.c;
+      t.c = -t.c;
+      t.l = -t.l;
+    }
+  }
+}
+
+template class ConstrSimple<int, long long>;
+template class ConstrSimple<long long, int128>;
+template class ConstrSimple<int128, int128>;
+template class ConstrSimple<bigint, bigint>;

@@ -246,7 +246,7 @@ void Solver::recomputeLBD(Constr& C) {
 
 bool Solver::analyze(ConstrExpArb& confl) {
   if (logger) logger->logComment("Analyze", stats);
-  assert(confl.getSlack(Level) < 0);
+  assert(confl.hasNegativeSlack(Level));
   stats.NADDEDLITERALS += confl.vars.size();
   confl.removeUnitsAndZeroes(Level, Pos);
   confl.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
@@ -260,13 +260,13 @@ bool Solver::analyze(ConstrExpArb& confl) {
     BigCoef confl_coef_l = confl.getCoef(-l);
     if (confl_coef_l > 0) {
       ++stats.NRESOLVESTEPS;
-      assert(confl.getSlack(Level) < 0);
+      assert(confl.hasNegativeSlack(Level));
       AssertionStatus status = confl.isAssertingBefore(Level, decisionLevel());
       if (status == AssertionStatus::ASSERTING)
         break;
       else if (status == AssertionStatus::FALSIFIED) {
         backjumpTo(decisionLevel() - 1);
-        assert(confl.getSlack(Level) < 0);
+        assert(confl.hasNegativeSlack(Level));
         continue;
       }
       assert(Reason[toVar(l)] != CRef_Undef);
@@ -288,7 +288,7 @@ bool Solver::analyze(ConstrExpArb& confl) {
     }
     undoOne();
   }
-  assert(confl.getSlack(Level) < 0);
+  assert(confl.hasNegativeSlack(Level));
   for (Lit l : actSet.keys)
     if (l != 0) vBumpActivity(toVar(l));
   actSet.reset();
@@ -331,7 +331,7 @@ bool Solver::extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrE
   stats.NADDEDLITERALS += confl.vars.size();
   confl.removeUnitsAndZeroes(Level, Pos);
   confl.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
-  assert(confl.getSlack(Level) < 0);
+  assert(confl.hasNegativeSlack(Level));
 
   // analyze conflict
   BigVal assumpslk = confl.getSlack(assumptions);
@@ -371,7 +371,7 @@ CRef Solver::attachConstraint(ConstrExpArb& constraint, bool locked) {
   assert(constraint.hasNoUnits(getLevel()));
   assert(constraint.getDegree() > 0);
   assert(constraint.vars.size() > 0);
-  assert(constraint.getSlack(getLevel()) >= 0);
+  assert(!constraint.hasNegativeSlack(getLevel()));
   assert(constraint.orig != Origin::UNKNOWN);
 
   unsigned int length = constraint.vars.size();
@@ -445,18 +445,17 @@ CRef Solver::processLearnedStack() {
     int assertionLevel = learned.getAssertionLevel(Level, Pos);
     if (assertionLevel < 0) {
       backjumpTo(0);
-      assert(learned.getSlack(Level) < 0);
+      assert(learned.hasNegativeSlack(Level));
       if (logger) learned.logInconsistency(Level, Pos, stats);
       cePools.leave(learned);
       return CRef_Unsat;
     }
     backjumpTo(assertionLevel);
-    BigVal slk = learned.getSlack(Level);
-    assert(slk >= 0);
-    learned.heuristicWeakening(Level, Pos, slk, stats);  // TODO: don't always weaken heuristically?
+    assert(!learned.hasNegativeSlack(Level));
+    learned.heuristicWeakening(Level, Pos, stats);  // TODO: don't always weaken heuristically?
     learned.postProcess(Level, Pos, false, stats);
     assert(learned.isSaturated());
-    if (learned.getDegree() <= 0) {
+    if (learned.isTautology()) {
       continue;
     }
     CRef cr = attachConstraint(learned, false);
@@ -481,12 +480,12 @@ std::pair<ID, ID> Solver::addInputConstraint(ConstrExpArb& ce) {
   ID input = ID_Undef;
   if (logger) input = ce.logAsInput();
   ce.postProcess(Level, Pos, true, stats);
-  if (ce.getDegree() <= 0) {
+  if (ce.isTautology()) {
     ;
     return {input, ID_Undef};  // already satisfied.
   }
 
-  if (ce.getSlack(Level) < 0) {
+  if (ce.hasNegativeSlack(Level)) {
     if (options.verbosity > 0) puts("c Inconsistent input constraint");
     if (logger) ce.logInconsistency(Level, Pos, stats);
     assert(decisionLevel() == 0);

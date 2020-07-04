@@ -66,6 +66,7 @@ set(source_files
     src/SolverStructs.cpp
     src/Constr.cpp
     src/ConstrExp.cpp
+    src/ConstrSimple.cpp
 )
 
 set(header_files

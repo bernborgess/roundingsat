@@ -189,6 +189,16 @@ LARGE ConstrExp<SMALL, LARGE>::getSlack(const IntSet& assumptions) const {
 }
 
 template <typename SMALL, typename LARGE>
+bool ConstrExp<SMALL, LARGE>::hasNegativeSlack(const IntVecIt& level) const {
+  return getSlack(level) < 0;
+}
+
+template <typename SMALL, typename LARGE>
+bool ConstrExp<SMALL, LARGE>::isTautology() const {
+  return getDegree() <= 0;
+}
+
+template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::addLhs(const SMALL& cf, Lit l) {  // add c*(l>=0) if c>0 and -c*(-l>=0) if c<0
   if (cf == 0) return;
   assert(l != 0);
@@ -584,10 +594,8 @@ bool ConstrExp<SMALL, LARGE>::weakenNonImplying(const IntVecIt& level, const SMA
 
 // @post: preserves order after removeZeroes()
 template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::heuristicWeakening(const IntVecIt& level, const std::vector<int>& pos, const LARGE& slack,
-                                                 Stats& sts) {
-  LARGE slk = slack;
-  assert(slk == getSlack(level));
+void ConstrExp<SMALL, LARGE>::heuristicWeakening(const IntVecIt& level, const std::vector<int>& pos, Stats& sts) {
+  LARGE slk = getSlack(level);
   if (slk < 0) return;  // no propagation, no idea what to weaken
   assert(isSortedInDecreasingCoefOrder());
   Var v_prop = -1;
@@ -769,7 +777,7 @@ template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::logInconsistency(const IntVecIt& level, const std::vector<int>& pos, const Stats& sts) {
   assert(plogger);
   removeUnitsAndZeroes(level, pos);
-  assert(getSlack(level) < 0);
+  assert(hasNegativeSlack(level));
   ID id = logProofLineWithInfo("Inconsistency", sts);
   plogger->proof_out << "c " << id << " 0" << std::endl;
 }
