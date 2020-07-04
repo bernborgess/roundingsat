@@ -51,11 +51,14 @@ struct Watch {
 // Memory. Maximum supported size of learnt constraint database is 16GB
 
 struct ConstraintAllocator {
-  uint32_t* memory;  // TODO: why not uint64_t?
+  uint32_t* memory = nullptr;  // TODO: why not uint64_t?
   uint32_t at = 0, cap = 0;
   uint32_t wasted = 0;  // for GC
   void capacity(uint32_t min_cap);
-  CRef alloc(unsigned int nTerms, ConstrType type);
+  void increaseAt(int size) {
+    at += size;
+    capacity(at);
+  }
   Constr& operator[](CRef cr) { return (Constr&)*(memory + cr.ofs); }
   const Constr& operator[](CRef cr) const { return (Constr&)*(memory + cr.ofs); }
 };

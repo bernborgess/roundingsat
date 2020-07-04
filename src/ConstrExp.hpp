@@ -35,7 +35,18 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "ConstrSimple.hpp"
 #include "Logger.hpp"
 
+struct CRef {
+  uint32_t ofs;
+  bool operator==(CRef const& o) const { return ofs == o.ofs; }
+  bool operator!=(CRef const& o) const { return ofs != o.ofs; }
+  bool operator<(CRef const& o) const { return ofs < o.ofs; }
+  std::ostream& operator<<(std::ostream& os) { return os << ofs; }
+};
+const CRef CRef_Undef = {std::numeric_limits<uint32_t>::max()};
+const CRef CRef_Unsat = {std::numeric_limits<uint32_t>::max() - 1};  // TODO: needed?
+
 struct IntSet;
+struct ConstraintAllocator;
 
 enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
 enum ConstrType { CLAUSE, CARDINALITY, WATCHED32, WATCHED64, WATCHED96, COUNTING32, COUNTING64, COUNTING96, ARBITRARY };
@@ -44,6 +55,7 @@ struct ConstrExpSuper {
   std::vector<Var> vars;
   Origin orig = Origin::UNKNOWN;
 
+  virtual CRef toConstr(ConstraintAllocator& ca, bool locked, ID id) const = 0;
   virtual std::unique_ptr<ConstrSimpleSuper> toSimple() = 0;
 
   virtual bool hasNegativeSlack(const IntVecIt& level) const = 0;
@@ -80,8 +92,6 @@ struct ConstrExpSuper {
 
   virtual void toStreamAsOPB(std::ofstream& o) const = 0;
   virtual void toStreamWithAssignment(std::ostream& o, const IntVecIt& level, const std::vector<int>& pos) const = 0;
-
-  virtual ConstrType propType() const = 0;
 };
 
 template <typename SMALL, typename LARGE>  // LARGE should be able to fit sums of SMALL
@@ -163,7 +173,7 @@ struct ConstrExp final : public ConstrExpSuper {
     return result;
   };
 
-  ConstrType propType() const;
+  CRef toConstr(ConstraintAllocator& ca, bool locked, ID id) const;
 
   void resize(size_t s);
   void resetBuffer(ID proofID = ID_Trivial);

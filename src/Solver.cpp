@@ -38,10 +38,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // Initialization
 
 Solver::Solver() : conflConstraint(cePools.takeArb()), order_heap(activity) {
-  ca.memory = NULL;
-  ca.at = 0;
-  ca.cap = 0;
-  ca.wasted = 0;
   ca.capacity(1024 * 1024);  // 4MB
 }
 
@@ -374,9 +370,9 @@ CRef Solver::attachConstraint(ConstrExpArb& constraint, bool locked) {
   assert(!constraint.hasNegativeSlack(getLevel()));
   assert(constraint.orig != Origin::UNKNOWN);
 
-  CRef cr = ca.alloc(constraint.vars.size(), constraint.propType());
+  CRef cr = constraint.toConstr(ca, locked, logger ? constraint.logProofLineWithInfo("Attach", stats) : ++crefID);
   Constr& C = ca[cr];
-  C.initialize(constraint, locked, cr, *this, logger ? constraint.logProofLineWithInfo("Attach", stats) : ++crefID);
+  C.initializeWatches(cr, *this);
   constraints.push_back(cr);
 
   bool learned = (C.getOrigin() == Origin::LEARNED || C.getOrigin() == Origin::LEARNEDFARKAS ||

@@ -30,7 +30,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "Constr.hpp"
 #include "Solver.hpp"
-#include "globals.hpp"
 
 template <typename CF, typename DG>
 void genericResolve(ConstrExp<CF, DG>& reason, ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet,
@@ -77,25 +76,11 @@ void genericSimpleResolve(ConstrExp32& reason, ConstrExpArb& confl, [[maybe_unus
   assert(confl.hasNegativeSlack(Level));
 }
 
-void Clause::initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID _id) {
-  assert(_id > ID_Trivial);
-  assert(constraint.vars.size() < INF);
-  assert(constraint.getDegree() == 1);
-  unsigned int length = constraint.vars.size();
-
-  id = _id;
-  act = 0;
-  header = {0, (unsigned int)constraint.orig, 0x07FFFFFF, 0, locked, length};
-
+void Clause::initializeWatches(CRef cr, Solver& solver) {
   auto& Level = solver.Level;
   auto& adj = solver.adj;
 
-  for (unsigned int i = 0; i < length; ++i) {
-    Var v = constraint.vars[i];
-    assert(constraint.getLit(v) != 0);
-    data[i] = constraint.getLit(v);
-  }
-
+  unsigned int length = size();
   assert(length >= 1);
   if (length == 1) {
     assert(solver.decisionLevel() == 0);
@@ -191,30 +176,12 @@ void Clause::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l
   solver.cePools.leave(reason);
 }
 
-void Cardinality::initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID _id) {
-  assert(_id > ID_Trivial);
-  assert(constraint.vars.size() < INF);
-  assert(rs::abs(constraint.coefs[constraint.vars[0]]) == 1);
-  unsigned int length = constraint.vars.size();
-  assert(constraint.getDegree() <= length);
-
-  id = _id;
-  act = 0;
-  degr = static_cast<unsigned int>(constraint.getDegree());
-  header = {0, (unsigned int)constraint.orig, 0x07FFFFFF, 0, locked, length};
-  ntrailpops = -1;
-  watchIdx = 0;
-
+void Cardinality::initializeWatches(CRef cr, Solver& solver) {
   auto& Level = solver.Level;
   [[maybe_unused]] auto& Pos = solver.Pos;
   auto& adj = solver.adj;
 
-  for (unsigned int i = 0; i < length; ++i) {
-    Var v = constraint.vars[i];
-    assert(constraint.getLit(v) != 0);
-    data[i] = constraint.getLit(v);
-  }
-
+  unsigned int length = size();
   if (degr >= length) {
     assert(solver.decisionLevel() == 0);
     for (unsigned int i = 0; i < length; ++i) {
@@ -310,30 +277,16 @@ void Cardinality::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_c
 }
 
 template <typename CF, typename DG>
-void Counting<CF, DG>::initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID _id) {
-  assert(_id > ID_Trivial);
-  // TODO: check whether constraint fits in <CF,DG>
-  ++stats.NCOUNTING;
-  unsigned int length = constraint.vars.size();
-
-  id = _id;
-  act = 0;
-  degr = static_cast<DG>(constraint.getDegree());
-  header = {0, (unsigned int)constraint.orig, 0x07FFFFFF, 0, locked, length};
-  ntrailpops = -1;
-  watchIdx = 0;
-  slack = -degr;
-
+void Counting<CF, DG>::initializeWatches(CRef cr, Solver& solver) {
   auto& Level = solver.Level;
   auto& Pos = solver.Pos;
   auto& adj = solver.adj;
   auto& qhead = solver.qhead;
 
+  slack = -degr;
+  unsigned int length = size();
   for (unsigned int i = 0; i < length; ++i) {
-    Var v = constraint.vars[i];
-    assert(constraint.getLit(v) != 0);
-    Lit l = constraint.getLit(v);
-    data[i] = {static_cast<CF>(rs::abs(constraint.coefs[v])), l};
+    Lit l = data[i].l;
     adj[l].emplace_back(cr, i + INF);
     if (!isFalse(Level, l) || Pos[toVar(l)] >= qhead) slack += data[i].c;
   }
@@ -404,31 +357,14 @@ void Counting<CF, DG>::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& co
 }
 
 template <typename CF, typename DG>
-void Watched<CF, DG>::initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID _id) {
-  assert(_id > ID_Trivial);
-  // TODO: check whether constraint fits in <CF,DG>
-  ++stats.NWATCHED;
-  unsigned int length = constraint.vars.size();
-
-  id = _id;
-  act = 0;
-  degr = static_cast<DG>(constraint.getDegree());
-  header = {0, (unsigned int)constraint.orig, 0x07FFFFFF, 0, locked, length};
-  ntrailpops = -1;
-  watchIdx = 0;
-  watchslack = -degr;
-
+void Watched<CF, DG>::initializeWatches(CRef cr, Solver& solver) {
   auto& Level = solver.Level;
   auto& Pos = solver.Pos;
   auto& adj = solver.adj;
   auto& qhead = solver.qhead;
 
-  for (unsigned int i = 0; i < length; ++i) {
-    Var v = constraint.vars[i];
-    assert(constraint.getLit(v) != 0);
-    data[i] = {static_cast<CF>(rs::abs(constraint.coefs[v])), constraint.getLit(v)};
-  }
-
+  watchslack = -degr;
+  unsigned int length = size();
   const CF lrgstCf = rs::abs(data[0].c);
   for (unsigned int i = 0; i < length && watchslack < lrgstCf; ++i) {
     Lit l = data[i].l;
@@ -548,31 +484,16 @@ void Watched<CF, DG>::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& con
   solver.cePools.leave(reason);
 }
 
-void Arbitrary::initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID _id) {
-  assert(_id > ID_Trivial);
-  ++stats.NCOUNTING;
-  unsigned int length = constraint.vars.size();
-
-  id = _id;
-  act = 0;
-  degr = constraint.getDegree();
-  header = {0, (unsigned int)constraint.orig, 0x07FFFFFF, 0, locked, length};
-  ntrailpops = -1;
-  watchIdx = 0;
-  slack = -degr;
-
+void Arbitrary::initializeWatches(CRef cr, Solver& solver) {
   auto& Level = solver.Level;
   auto& Pos = solver.Pos;
   auto& adj = solver.adj;
   auto& qhead = solver.qhead;
 
-  coefs.resize(length);
+  slack = -degr;
+  unsigned int length = size();
   for (unsigned int i = 0; i < length; ++i) {
-    Var v = constraint.vars[i];
-    assert(constraint.getLit(v) != 0);
-    Lit l = constraint.getLit(v);
-    coefs[i] = rs::abs(constraint.coefs[v]);
-    lits[i] = l;
+    Lit l = lits[i];
     adj[l].emplace_back(cr, i + INF);
     if (!isFalse(Level, l) || Pos[toVar(l)] >= qhead) slack += coefs[i];
   }

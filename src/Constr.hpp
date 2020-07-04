@@ -32,19 +32,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "ConstrExp.hpp"
 #include "ConstrSimple.hpp"
+#include "globals.hpp"
 #include "typedefs.hpp"
 
 enum WatchStatus { DROPWATCH, KEEPWATCH, CONFLICTING };
-
-struct CRef {
-  uint32_t ofs;
-  bool operator==(CRef const& o) const { return ofs == o.ofs; }
-  bool operator!=(CRef const& o) const { return ofs != o.ofs; }
-  bool operator<(CRef const& o) const { return ofs < o.ofs; }
-  std::ostream& operator<<(std::ostream& os) { return os << ofs; }
-};
-const CRef CRef_Undef = {std::numeric_limits<uint32_t>::max()};
-const CRef CRef_Unsat = {std::numeric_limits<uint32_t>::max() - 1};  // TODO: needed?
 
 class Solver;
 // TODO: check all static_cast downcasts of bigints
@@ -78,7 +69,7 @@ struct Constr {  // internal solver constraint optimized for fast propagation
   BigCoef largestCoef() const { return coef(0); };
   virtual Lit lit(unsigned int i) const = 0;
 
-  virtual void initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID id) = 0;
+  virtual void initializeWatches(CRef cr, Solver& solver) = 0;
   virtual WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& slvr) = 0;
   virtual void undoFalsified(int i) = 0;
   virtual void resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver) = 0;
@@ -127,7 +118,24 @@ struct Clause final : public Constr {
   BigCoef coef([[maybe_unused]] unsigned int i) const { return 1; }
   Lit lit(unsigned int i) const { return data[i]; }
 
-  void initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID id);
+  template <typename SMALL, typename LARGE>
+  void initialize(const ConstrExp<SMALL, LARGE>& constraint, bool locked, ID _id) {
+    assert(_id > ID_Trivial);
+    assert(constraint.vars.size() < INF);
+    assert(constraint.getDegree() == 1);
+    unsigned int length = constraint.vars.size();
+
+    id = _id;
+    act = 0;
+    header = {0, (unsigned int)constraint.orig, 0x07FFFFFF, 0, locked, length};
+
+    for (unsigned int i = 0; i < length; ++i) {
+      Var v = constraint.vars[i];
+      assert(constraint.getLit(v) != 0);
+      data[i] = constraint.getLit(v);
+    }
+  }
+  void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified([[maybe_unused]] int i) { assert(false); }
   void resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver);
@@ -145,7 +153,28 @@ struct Cardinality final : public Constr {
   BigCoef coef([[maybe_unused]] unsigned int i) const { return 1; }
   Lit lit(unsigned int i) const { return data[i]; }
 
-  void initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID id);
+  template <typename SMALL, typename LARGE>
+  void initialize(const ConstrExp<SMALL, LARGE>& constraint, bool locked, ID _id) {
+    assert(_id > ID_Trivial);
+    assert(constraint.vars.size() < INF);
+    assert(rs::abs(constraint.coefs[constraint.vars[0]]) == 1);
+    unsigned int length = constraint.vars.size();
+    assert(constraint.getDegree() <= length);
+
+    id = _id;
+    act = 0;
+    degr = static_cast<unsigned int>(constraint.getDegree());
+    header = {0, (unsigned int)constraint.orig, 0x07FFFFFF, 0, locked, length};
+    ntrailpops = -1;
+    watchIdx = 0;
+
+    for (unsigned int i = 0; i < length; ++i) {
+      Var v = constraint.vars[i];
+      assert(constraint.getLit(v) != 0);
+      data[i] = constraint.getLit(v);
+    }
+  }
+  void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified([[maybe_unused]] int i) { assert(false); }
   void resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver);
@@ -167,7 +196,27 @@ struct Counting final : public Constr {
   BigCoef coef(unsigned int i) const { return data[i].c; }
   Lit lit(unsigned int i) const { return data[i].l; }
 
-  void initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID id);
+  template <typename SMALL, typename LARGE>
+  void initialize(const ConstrExp<SMALL, LARGE>& constraint, bool locked, ID _id) {
+    assert(_id > ID_Trivial);
+    // TODO: check whether constraint fits in <CF,DG>
+    ++stats.NCOUNTING;
+    unsigned int length = constraint.vars.size();
+
+    id = _id;
+    act = 0;
+    degr = static_cast<DG>(constraint.getDegree());
+    header = {0, (unsigned int)constraint.orig, 0x07FFFFFF, 0, locked, length};
+    ntrailpops = -1;
+    watchIdx = 0;
+
+    for (unsigned int i = 0; i < length; ++i) {
+      Var v = constraint.vars[i];
+      assert(constraint.getLit(v) != 0);
+      data[i] = {static_cast<CF>(rs::abs(constraint.coefs[v])), constraint.getLit(v)};
+    }
+  }
+  void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
   void resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver);
@@ -195,7 +244,27 @@ struct Watched final : public Constr {
   BigCoef coef(unsigned int i) const { return rs::abs(data[i].c); }
   Lit lit(unsigned int i) const { return data[i].l; }
 
-  void initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID id);
+  template <typename SMALL, typename LARGE>
+  void initialize(const ConstrExp<SMALL, LARGE>& constraint, bool locked, ID _id) {
+    assert(_id > ID_Trivial);
+    // TODO: check whether constraint fits in <CF,DG>
+    ++stats.NWATCHED;
+    unsigned int length = constraint.vars.size();
+
+    id = _id;
+    act = 0;
+    degr = static_cast<DG>(constraint.getDegree());
+    header = {0, (unsigned int)constraint.orig, 0x07FFFFFF, 0, locked, length};
+    ntrailpops = -1;
+    watchIdx = 0;
+
+    for (unsigned int i = 0; i < length; ++i) {
+      Var v = constraint.vars[i];
+      assert(constraint.getLit(v) != 0);
+      data[i] = {static_cast<CF>(rs::abs(constraint.coefs[v])), constraint.getLit(v)};
+    }
+  }
+  void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
   void resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver);
@@ -222,7 +291,28 @@ struct Arbitrary final : public Constr {
   BigCoef coef(unsigned int i) const { return coefs[i]; }
   Lit lit(unsigned int i) const { return lits[i]; }
 
-  void initialize(const ConstrExpArb& constraint, bool locked, CRef cr, Solver& solver, ID id);
+  template <typename SMALL, typename LARGE>
+  void initialize(const ConstrExp<SMALL, LARGE>& constraint, bool locked, ID _id) {
+    assert(_id > ID_Trivial);
+    ++stats.NCOUNTING;
+    unsigned int length = constraint.vars.size();
+
+    id = _id;
+    act = 0;
+    degr = constraint.getDegree();
+    header = {0, (unsigned int)constraint.orig, 0x07FFFFFF, 0, locked, length};
+    ntrailpops = -1;
+    watchIdx = 0;
+
+    coefs.resize(length);
+    for (unsigned int i = 0; i < length; ++i) {
+      Var v = constraint.vars[i];
+      assert(constraint.getLit(v) != 0);
+      coefs[i] = rs::abs(constraint.coefs[v]);
+      lits[i] = constraint.getLit(v);
+    }
+  }
+  void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
   void resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver);
