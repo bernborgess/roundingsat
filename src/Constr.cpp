@@ -39,6 +39,7 @@ void genericResolve(ConstrExp<CF, DG>& reason, ConstrExpArb& confl, Lit l, const
   if (options.weakenNonImplying)
     reason.weakenNonImplying(Level, reason.getCoef(l), reason.getSlack(Level),
                              stats);  // NOTE: also saturates
+  reason.saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced);
   assert(reason.getCoef(l) > reason.getSlack(Level));
   reason.weakenDivideRound(Level, l, options.slackdiv, options.weakenFull);
   assert(reason.getSlack(Level) <= 0);

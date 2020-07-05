@@ -43,7 +43,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 const int limit32 = 1e9;
 const long long limit64 = 1e18;
 const int128 limit96 = 1e27;
-const int128 limit128 = 1e36;
 
 template <typename SMALL, typename LARGE>
 ConstrExp<SMALL, LARGE>::ConstrExp(ConstrExpPool<ConstrExp<SMALL, LARGE>>& cep) : pool(cep) {
@@ -140,13 +139,12 @@ std::unique_ptr<ConstrSimpleSuper> ConstrExp<SMALL, LARGE>::toSimple() const {
 
 template <typename SMALL, typename LARGE>
 Representation ConstrExp<SMALL, LARGE>::minRepresentation() const {
-  LARGE maxRhs = std::max(degree, rs::abs(rhs));
-  SMALL maxLhs = getLargestCoef();
-  if (maxLhs <= limit32 && maxRhs <= limit64) {
+  LARGE maxVal = std::max<LARGE>(getLargestCoef(), std::max(degree, rs::abs(rhs)) / INF);
+  if (maxVal <= limit32) {
     return Representation::B32;
-  } else if (maxLhs <= limit64 && maxRhs <= limit96) {
+  } else if (maxVal <= limit64) {
     return Representation::B64;
-  } else if (maxLhs <= limit96 && maxRhs <= limit128) {
+  } else if (maxVal <= limit96) {
     return Representation::B96;
   } else {
     return Representation::ARB;
