@@ -408,7 +408,7 @@ CRef Solver::attachConstraint(ConstrExpSuper& constraint, bool locked) {
 
 void Solver::learnConstraint(const ConstrExpSuper& c, Origin orig) {
   assert(orig == Origin::LEARNED || orig == Origin::FARKAS || orig == Origin::LEARNEDFARKAS || orig == Origin::GOMORY);
-  ConstrExpSuper& learned = c.clone(cePools);
+  ConstrExpSuper& learned = c.reduce(cePools);
   learned.orig = orig;
   learned.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsLearned, options.bitsLearned);
   learnedStack.push_back(learned.toSimple());
@@ -497,7 +497,7 @@ std::pair<ID, ID> Solver::addInputConstraint(ConstrExpSuper& ce) {
 
 std::pair<ID, ID> Solver::addConstraint(const ConstrExpArb& c, Origin orig) {
   // NOTE: copy to temporary constraint guarantees original constraint is not changed and does not need logger
-  ConstrExpSuper& ce = c.clone(cePools);
+  ConstrExpSuper& ce = c.reduce(cePools);
   ce.orig = orig;
   std::pair<ID, ID> result = addInputConstraint(ce);
   ce.release();

@@ -40,9 +40,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "globals.hpp"
 #include "typedefs.hpp"
 
-const bigint limit32 = bigint(1e9);
-const bigint limit64 = bigint(1e18);
-const bigint limit96 = bigint(1e27);
+const int limit32 = 1e9;
+const long long limit64 = 1e18;
+const int128 limit96 = 1e27;
+const int128 limit128 = 1e36;
 
 template <typename SMALL, typename LARGE>
 ConstrExp<SMALL, LARGE>::ConstrExp(ConstrExpPool<ConstrExp<SMALL, LARGE>>& cep) : pool(cep) {
@@ -55,10 +56,26 @@ void ConstrExp<SMALL, LARGE>::release() {
 }
 
 template <typename SMALL, typename LARGE>
-ConstrExpSuper& ConstrExp<SMALL, LARGE>::clone(ConstrExpPools& ce) const {
-  ConstrExp<SMALL, LARGE>& result = ce.take<SMALL, LARGE>();
-  copyTo(result);
-  return result;
+ConstrExpSuper& ConstrExp<SMALL, LARGE>::reduce(ConstrExpPools& ce) const {
+  LARGE maxRhs = std::max(degree, rs::abs(rhs));
+  SMALL maxLhs = getLargestCoef();
+  if (maxLhs <= limit32 && maxRhs <= limit64) {
+    ConstrExp32& result = ce.take32();
+    copyTo(result);
+    return result;
+  } else if (maxLhs <= limit64 && maxRhs <= limit96) {
+    ConstrExp64& result = ce.take64();
+    copyTo(result);
+    return result;
+  } else if (maxLhs <= limit96 && maxRhs <= limit128) {
+    ConstrExp96& result = ce.take96();
+    copyTo(result);
+    return result;
+  } else {
+    ConstrExpArb& result = ce.takeArb();
+    copyTo(result);
+    return result;
+  }
 }
 
 template <typename SMALL, typename LARGE>
@@ -66,8 +83,9 @@ CRef ConstrExp<SMALL, LARGE>::toConstr(ConstraintAllocator& ca, bool locked, ID 
   assert(isSortedInDecreasingCoefOrder());
   assert(isSaturated());
   assert(hasNoZeroes());
-  assert(!isTautology());
   assert(vars.size() > 0);
+  assert(!isTautology());
+  assert(!isInconsistency());
 
   CRef result = CRef{ca.at};
   if (options.clauseProp && getDegree() == 1) {
@@ -274,6 +292,11 @@ bool ConstrExp<SMALL, LARGE>::hasNegativeSlack(const IntVecIt& level) const {
 template <typename SMALL, typename LARGE>
 bool ConstrExp<SMALL, LARGE>::isTautology() const {
   return getDegree() <= 0;
+}
+
+template <typename SMALL, typename LARGE>
+bool ConstrExp<SMALL, LARGE>::isInconsistency() const {
+  return getDegree() > absCoeffSum();
 }
 
 template <typename SMALL, typename LARGE>

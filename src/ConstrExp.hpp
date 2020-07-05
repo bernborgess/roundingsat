@@ -59,12 +59,13 @@ struct ConstrExpSuper {
 
   virtual void release() = 0;
 
-  virtual ConstrExpSuper& clone(ConstrExpPools& ce) const = 0;
+  virtual ConstrExpSuper& reduce(ConstrExpPools& ce) const = 0;
   virtual CRef toConstr(ConstraintAllocator& ca, bool locked, ID id) const = 0;
   virtual std::unique_ptr<ConstrSimpleSuper> toSimple() const = 0;
 
   virtual bool hasNegativeSlack(const IntVecIt& level) const = 0;
   virtual bool isTautology() const = 0;
+  virtual bool isInconsistency() const = 0;
 
   virtual void removeUnitsAndZeroes(const IntVecIt& level, const std::vector<int>& pos, bool doSaturation = true) = 0;
   virtual bool hasNoUnits(const IntVecIt& level) const = 0;
@@ -150,7 +151,7 @@ struct ConstrExp final : public ConstrExpSuper {
     }
   }
 
-  ConstrExpSuper& clone(ConstrExpPools& ce) const;
+  ConstrExpSuper& reduce(ConstrExpPools& ce) const;
   CRef toConstr(ConstraintAllocator& ca, bool locked, ID id) const;
   std::unique_ptr<ConstrSimpleSuper> toSimple() const;
 
@@ -183,6 +184,7 @@ struct ConstrExp final : public ConstrExpSuper {
   LARGE getSlack(const IntSet& assumptions) const;
   bool hasNegativeSlack(const IntVecIt& level) const;
   bool isTautology() const;
+  bool isInconsistency() const;
 
   // @post: preserves order of vars
   void removeUnitsAndZeroes(const IntVecIt& level, const std::vector<int>& pos, bool doSaturation = true);
