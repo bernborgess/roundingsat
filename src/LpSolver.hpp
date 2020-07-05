@@ -73,7 +73,7 @@ struct CandidateCut {
   double ratSlack = 0;
 
   CandidateCut(){};
-  CandidateCut(ConstrExpArb& in, const std::vector<double>& sol);
+  CandidateCut(ConstrExpSuper& in, const std::vector<double>& sol);
   CandidateCut(const Constr& in, CRef cr, const std::vector<double>& sol, ConstrExpPools& pools);
   double cosOfAngleTo(const CandidateCut& other) const;
 

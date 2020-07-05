@@ -34,7 +34,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <queue>
 #include "Solver.hpp"
 
-CandidateCut::CandidateCut(ConstrExpArb& in, const std::vector<double>& sol) {
+CandidateCut::CandidateCut(ConstrExpSuper& in, const std::vector<double>& sol) {
   assert(in.isSaturated());
   in.saturateAndFixOverflowRational(sol);
   in.toSimple()->copyTo(simpcons);
@@ -45,8 +45,7 @@ CandidateCut::CandidateCut(ConstrExpArb& in, const std::vector<double>& sol) {
 CandidateCut::CandidateCut(const Constr& in, CRef cref, const std::vector<double>& sol, ConstrExpPools& pools)
     : cr(cref) {
   assert(in.degree() > 0);
-  ConstrExpArb& tmp = pools.takeArb();
-  in.toConstraint(tmp);
+  ConstrExpSuper& tmp = in.toExpanded(pools);
   tmp.saturateAndFixOverflowRational(sol);
   if (tmp.isTautology()) {
     tmp.release();
@@ -521,8 +520,7 @@ void LpSolver::addConstraint(ConstrExpSuper& c, bool removable, bool upperbound,
 void LpSolver::addConstraint(CRef cr, bool removable, bool upperbound, bool lowerbound) {
   assert(cr != CRef_Undef);
   assert(cr != CRef_Unsat);
-  ConstrExpArb& ce = solver.cePools.takeArb();
-  solver.ca[cr].toConstraint(ce);
+  ConstrExpSuper& ce = solver.ca[cr].toExpanded(solver.cePools);
   addConstraint(ce, removable, upperbound, lowerbound);
   ce.release();
 }

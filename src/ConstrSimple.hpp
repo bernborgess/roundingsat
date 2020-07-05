@@ -52,7 +52,6 @@ struct ConstrExpSuper;
 struct ConstrExpPools;
 template <typename CF, typename DG>
 struct ConstrSimple;
-
 using ConstrSimple32 = ConstrSimple<int, long long>;
 using ConstrSimple64 = ConstrSimple<long long, int128>;
 using ConstrSimple96 = ConstrSimple<int128, int128>;

@@ -129,7 +129,9 @@ void Solver::uncheckedEnqueue(Lit p, CRef from) {
     if (logger) {
       Constr& C = ca[from];
       ConstrExpArb& logConstraint = cePools.takeArb();
-      C.toConstraint(logConstraint);
+      ConstrExpSuper& tmp = C.toExpanded(cePools);
+      tmp.copyTo(logConstraint);
+      tmp.release();
       logConstraint.logUnit(Level, Pos, v, stats);
       logConstraint.release();
       assert(logger->unitIDs.size() == trail.size() + 1);
@@ -206,7 +208,9 @@ bool Solver::runPropagation(ConstrExpArb& confl, bool onlyUnitPropagation) {
           cBumpActivity(C);
           recomputeLBD(C);
         }
-        C.toConstraint(confl);
+        ConstrExpSuper& tmp = C.toExpanded(cePools);
+        tmp.copyTo(confl);
+        tmp.release();
         return false;
       }
     }
@@ -742,7 +746,9 @@ SolveState Solver::solve(const IntSet& assumptions, ConstrExpArb& core, std::vec
             if (isUnit(Level, l))
               backjumpTo(0);  // negated assumption is unit
             else {
-              ca[Reason[toVar(l)]].toConstraint(conflConstraint);
+              ConstrExpSuper& tmp = ca[Reason[toVar(l)]].toExpanded(cePools);
+              tmp.copyTo(conflConstraint);
+              tmp.release();
               if (!extractCore(conflConstraint, assumptions, core, -l)) return SolveState::INTERRUPTED;
             }
             return SolveState::INCONSISTENT;

@@ -112,7 +112,7 @@ class Solver {
   std::pair<ID, ID> addConstraint(const ConstrSimple32& c, Origin orig);  // formula line id, processed id
   void dropExternal(ID id, bool erasable, bool forceDelete);
   int getNbConstraints() const { return constraints.size(); }
-  void getIthConstraint(int i, ConstrExp32& out) const { return ca[constraints[i]].toConstraint(out); }
+  ConstrExpSuper& getIthConstraint(int i) { return ca[constraints[i]].toExpanded(cePools); }
 
   /**
    * @return:

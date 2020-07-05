@@ -45,19 +45,30 @@ struct CRef {
 const CRef CRef_Undef = {std::numeric_limits<uint32_t>::max()};
 const CRef CRef_Unsat = {std::numeric_limits<uint32_t>::max() - 1};  // TODO: needed?
 
+enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
+enum ConstrType { CLAUSE, CARDINALITY, WATCHED32, WATCHED64, WATCHED96, COUNTING32, COUNTING64, COUNTING96, ARBITRARY };
+
 struct IntSet;
 struct ConstraintAllocator;
 struct ConstrSimpleSuper;
 struct ConstrExpPools;
-
-enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
-enum ConstrType { CLAUSE, CARDINALITY, WATCHED32, WATCHED64, WATCHED96, COUNTING32, COUNTING64, COUNTING96, ARBITRARY };
+template <typename SMALL, typename LARGE>
+struct ConstrExp;
+using ConstrExp32 = ConstrExp<int, long long>;
+using ConstrExp64 = ConstrExp<long long, int128>;
+using ConstrExp96 = ConstrExp<int128, int128>;
+using ConstrExpArb = ConstrExp<bigint, bigint>;
 
 struct ConstrExpSuper {
   std::vector<Var> vars;
   Origin orig = Origin::UNKNOWN;
 
   virtual void release() = 0;
+
+  virtual void copyTo(ConstrExp32& ce) const = 0;
+  virtual void copyTo(ConstrExp64& ce) const = 0;
+  virtual void copyTo(ConstrExp96& ce) const = 0;
+  virtual void copyTo(ConstrExpArb& ce) const = 0;
 
   virtual ConstrExpSuper& reduce(ConstrExpPools& ce) const = 0;
   virtual CRef toConstr(ConstraintAllocator& ca, bool locked, ID id) const = 0;
@@ -131,7 +142,7 @@ struct ConstrExp final : public ConstrExpSuper {
   void release();
 
   template <typename S, typename L>
-  void copyTo(ConstrExp<S, L>& out) const {
+  void copyTo_(ConstrExp<S, L>& out) const {
     // TODO: assert whether S/L can fit SMALL/LARGE? Not always possible.
     assert(out.isReset());
     out.degree = static_cast<L>(degree);
@@ -150,6 +161,10 @@ struct ConstrExp final : public ConstrExpSuper {
       out.proofBuffer << proofBuffer.str();
     }
   }
+  void copyTo(ConstrExp32& ce) const { copyTo_(ce); }
+  void copyTo(ConstrExp64& ce) const { copyTo_(ce); }
+  void copyTo(ConstrExp96& ce) const { copyTo_(ce); }
+  void copyTo(ConstrExpArb& ce) const { copyTo_(ce); }
 
   ConstrExpSuper& reduce(ConstrExpPools& ce) const;
   CRef toConstr(ConstraintAllocator& ca, bool locked, ID id) const;
@@ -177,7 +192,7 @@ struct ConstrExp final : public ConstrExpSuper {
   Lit getLit(Lit l) const;
 
   void addRhs(const LARGE& r);
-  void addLhs(const SMALL& cf, Lit l);
+  void addLhs(const SMALL& cf, Lit l);  // TODO: Term?
   void weaken(const SMALL& m, Var v);
 
   LARGE getSlack(const IntVecIt& level) const;
@@ -290,11 +305,6 @@ std::ostream& operator<<(std::ostream& o, const ConstrExp<S, L>& C) {
   o << ">= " << C.degree;
   return o;
 }
-
-using ConstrExp32 = ConstrExp<int, long long>;
-using ConstrExp64 = ConstrExp<long long, int128>;
-using ConstrExp96 = ConstrExp<int128, int128>;
-using ConstrExpArb = ConstrExp<bigint, bigint>;
 
 template <typename CE>
 class ConstrExpPool {  // TODO: private constructor for ConstrExp, only accessible to ConstrExpPool?

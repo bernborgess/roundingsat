@@ -49,8 +49,8 @@ void genericResolve(ConstrExp<CF, DG>& reason, ConstrExpArb& confl, Lit l, const
       if (options.bumpCanceling && confl.getLit(v) == -ll) actSet->add(-v);
     }
   }
-  BigCoef reason_coef_l = reason.getCoef(l);
-  BigCoef gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
+  CF reason_coef_l = reason.getCoef(l);
+  CF gcd_coef_l = rs::gcd<BigCoef>(reason_coef_l, confl_coef_l);
   confl.addUp(reason, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
   confl.saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced);
   assert(confl.getCoef(-l) == 0);
@@ -59,6 +59,7 @@ void genericResolve(ConstrExp<CF, DG>& reason, ConstrExpArb& confl, Lit l, const
 
 void genericSimpleResolve(ConstrExp32& reason, ConstrExpArb& confl, [[maybe_unused]] Lit l, const BigCoef& confl_coef_l,
                           IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos) {
+  // TODO: remove conversion to ConstrExp32
   stats.NADDEDLITERALS += reason.vars.size();
   reason.removeUnitsAndZeroes(Level, Pos);  // NOTE: also saturates
   assert(reason.getCoef(l) > reason.getSlack(Level));
@@ -170,10 +171,20 @@ WatchStatus Clause::checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver
 }
 
 void Clause::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver) {
-  ConstrExp32& reason = solver.cePools.take32();
-  toConstraint(reason);
+  ConstrExp32& reason = static_cast<ConstrExp32&>(toExpanded(solver.cePools));
   genericSimpleResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
   reason.release();
+}
+
+ConstrExpSuper& Clause::toExpanded(ConstrExpPools& cePools) const {
+  ConstrExp32& result = cePools.take32();
+  result.addRhs(1);
+  for (size_t i = 0; i < size(); ++i) {
+    result.addLhs(1, data[i]);
+  }
+  result.orig = getOrigin();
+  if (result.plogger) result.resetBuffer(id);
+  return result;
 }
 
 void Cardinality::initializeWatches(CRef cr, Solver& solver) {
@@ -270,10 +281,20 @@ WatchStatus Cardinality::checkForPropagation(CRef cr, int& idx, [[maybe_unused]]
 }
 
 void Cardinality::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver) {
-  ConstrExp32& reason = solver.cePools.take32();
-  toConstraint(reason);
+  ConstrExp32& reason = static_cast<ConstrExp32&>(toExpanded(solver.cePools));
   genericSimpleResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
   reason.release();
+}
+
+ConstrExpSuper& Cardinality::toExpanded(ConstrExpPools& cePools) const {
+  ConstrExp32& result = cePools.take32();
+  result.addRhs(degr);
+  for (size_t i = 0; i < size(); ++i) {
+    result.addLhs(1, data[i]);
+  }
+  result.orig = getOrigin();
+  if (result.plogger) result.resetBuffer(id);
+  return result;
 }
 
 template <typename CF, typename DG>
@@ -350,10 +371,21 @@ void Counting<CF, DG>::undoFalsified(int i) {
 template <typename CF, typename DG>
 void Counting<CF, DG>::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet,
                                    Solver& solver) {
-  ConstrExp<CF, DG>& reason = solver.cePools.take<CF, DG>();
-  toConstraint(reason);
+  ConstrExp<CF, DG>& reason = static_cast<ConstrExp<CF, DG>&>(toExpanded(solver.cePools));
   genericResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
   reason.release();
+}
+
+template <typename CF, typename DG>
+ConstrExpSuper& Counting<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
+  ConstrExp<CF, DG>& result = cePools.take<CF, DG>();
+  result.addRhs(degr);
+  for (size_t i = 0; i < size(); ++i) {
+    result.addLhs(data[i].c, data[i].l);
+  }
+  result.orig = getOrigin();
+  if (result.plogger) result.resetBuffer(id);
+  return result;
 }
 
 template <typename CF, typename DG>
@@ -478,10 +510,21 @@ void Watched<CF, DG>::undoFalsified(int i) {
 template <typename CF, typename DG>
 void Watched<CF, DG>::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet,
                                   Solver& solver) {
-  ConstrExp<CF, DG>& reason = solver.cePools.take<CF, DG>();
-  toConstraint(reason);
+  ConstrExp<CF, DG>& reason = static_cast<ConstrExp<CF, DG>&>(toExpanded(solver.cePools));
   genericResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
   reason.release();
+}
+
+template <typename CF, typename DG>
+ConstrExpSuper& Watched<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
+  ConstrExp<CF, DG>& result = cePools.take<CF, DG>();
+  result.addRhs(degr);
+  for (size_t i = 0; i < size(); ++i) {
+    result.addLhs(rs::abs(data[i].c), data[i].l);
+  }
+  result.orig = getOrigin();
+  if (result.plogger) result.resetBuffer(id);
+  return result;
 }
 
 void Arbitrary::initializeWatches(CRef cr, Solver& solver) {
@@ -551,10 +594,20 @@ void Arbitrary::undoFalsified(int i) {
 }
 
 void Arbitrary::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver) {
-  ConstrExpArb& reason = solver.cePools.takeArb();
-  toConstraint(reason);
+  ConstrExpArb& reason = static_cast<ConstrExpArb&>(toExpanded(solver.cePools));
   genericResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
   reason.release();
+}
+
+ConstrExpSuper& Arbitrary::toExpanded(ConstrExpPools& cePools) const {
+  ConstrExpArb& result = cePools.takeArb();
+  result.addRhs(degr);
+  for (size_t i = 0; i < size(); ++i) {
+    result.addLhs(coefs[i], lits[i]);
+  }
+  result.orig = getOrigin();
+  if (result.plogger) result.resetBuffer(id);
+  return result;
 }
 
 // TODO: keep below test methods?
