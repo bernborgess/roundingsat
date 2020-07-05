@@ -125,7 +125,6 @@ void wcnf_read(std::istream& in, long long top, Solver& solver, ConstrExpArb& ob
       Lit l;
       while (is >> l, l) input.addLhs(1, l);
       if (weight < top) {  // soft clause
-        if (weight >= 1e9) quit::exit_ERROR({"Clause weight exceeds 10^9: ", std::to_string(weight)});
         if (weight < 0) quit::exit_ERROR({"Negative clause weight: ", std::to_string(weight)});
         solver.setNbVars(solver.getNbVars() + 1);  // increases n to n+1
         objective.addLhs(weight, solver.getNbVars());
@@ -139,7 +138,7 @@ void wcnf_read(std::istream& in, long long top, Solver& solver, ConstrExpArb& ob
 }
 
 void cnf_read(std::istream& in, Solver& solver) {
-  ConstrExpArb& input = solver.cePools.takeArb();
+  ConstrExp32& input = solver.cePools.take32();
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == 'c')
       continue;

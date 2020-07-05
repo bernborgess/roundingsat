@@ -96,8 +96,8 @@ class Solver {
  public:
   Solver();
   ~Solver();
-  void init();                           // call after having read options
-  void initLP(ConstrExpArb& objective);  // TODO: fix when decoupling Solver and LpSolver
+  void init();  // call after having read options
+  void initLP(const ConstrExpArb& objective);
 
   int getNbVars() const { return n; }
   void setNbVars(long long nvars);
@@ -108,8 +108,8 @@ class Solver {
   const std::vector<int>& getPos() const { return Pos; }
   int decisionLevel() const { return trail_lim.size(); }
 
-  std::pair<ID, ID> addConstraint(const ConstrExpArb& c, Origin orig);    // formula line id, processed id
-  std::pair<ID, ID> addConstraint(const ConstrSimple32& c, Origin orig);  // formula line id, processed id
+  std::pair<ID, ID> addConstraint(const ConstrExpSuper& c, Origin orig);     // formula line id, processed id
+  std::pair<ID, ID> addConstraint(const ConstrSimpleSuper& c, Origin orig);  // formula line id, processed id
   void dropExternal(ID id, bool erasable, bool forceDelete);
   int getNbConstraints() const { return constraints.size(); }
   ConstrExpSuper& getIthConstraint(int i) { return ca[constraints[i]].toExpanded(cePools); }

@@ -46,7 +46,7 @@ const CRef CRef_Undef = {std::numeric_limits<uint32_t>::max()};
 const CRef CRef_Unsat = {std::numeric_limits<uint32_t>::max() - 1};  // TODO: needed?
 
 enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
-enum ConstrType { CLAUSE, CARDINALITY, WATCHED32, WATCHED64, WATCHED96, COUNTING32, COUNTING64, COUNTING96, ARBITRARY };
+enum Representation { B32, B64, B96, ARB };
 
 struct IntSet;
 struct ConstraintAllocator;
@@ -73,6 +73,7 @@ struct ConstrExpSuper {
   virtual ConstrExpSuper& reduce(ConstrExpPools& ce) const = 0;
   virtual CRef toConstr(ConstraintAllocator& ca, bool locked, ID id) const = 0;
   virtual std::unique_ptr<ConstrSimpleSuper> toSimple() const = 0;
+  virtual Representation minRepresentation() const = 0;
 
   virtual bool hasNegativeSlack(const IntVecIt& level) const = 0;
   virtual bool isTautology() const = 0;
@@ -100,6 +101,7 @@ struct ConstrExpSuper {
 
   virtual bool simplifyToCardinality(bool equivalencePreserving) = 0;
   virtual bool isCardinality() const = 0;
+  virtual bool isClause() const = 0;
   virtual void sortInDecreasingCoefOrder() = 0;
   virtual bool isSortedInDecreasingCoefOrder() const = 0;
 
@@ -169,6 +171,7 @@ struct ConstrExp final : public ConstrExpSuper {
   ConstrExpSuper& reduce(ConstrExpPools& ce) const;
   CRef toConstr(ConstraintAllocator& ca, bool locked, ID id) const;
   std::unique_ptr<ConstrSimpleSuper> toSimple() const;
+  Representation minRepresentation() const;
 
   void resize(size_t s);
   void resetBuffer(ID proofID = ID_Trivial);
@@ -279,6 +282,7 @@ struct ConstrExp final : public ConstrExpSuper {
   // @post: preserves order of vars
   bool simplifyToCardinality(bool equivalencePreserving);
   bool isCardinality() const;
+  bool isClause() const;
 
   void sortInDecreasingCoefOrder();
   bool isSortedInDecreasingCoefOrder() const;

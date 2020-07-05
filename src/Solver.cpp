@@ -73,7 +73,7 @@ void Solver::init() {
   cePools.initializeLogging(logger);
 }
 
-void Solver::initLP(ConstrExpArb& objective) {
+void Solver::initLP(const ConstrExpArb& objective) {
   if (options.lpPivotRatio == 0) return;
   bool pureCNF = objective.vars.size() == 0;
   for (CRef cr : constraints) {
@@ -128,10 +128,7 @@ void Solver::uncheckedEnqueue(Lit p, CRef from) {
     Reason[v] = CRef_Undef;  // no need to keep track of reasons for unit literals
     if (logger) {
       Constr& C = ca[from];
-      ConstrExpArb& logConstraint = cePools.takeArb();
-      ConstrExpSuper& tmp = C.toExpanded(cePools);
-      tmp.copyTo(logConstraint);
-      tmp.release();
+      ConstrExpSuper& logConstraint = C.toExpanded(cePools);
       logConstraint.logUnit(Level, Pos, v, stats);
       logConstraint.release();
       assert(logger->unitIDs.size() == trail.size() + 1);
@@ -499,7 +496,7 @@ std::pair<ID, ID> Solver::addInputConstraint(ConstrExpSuper& ce) {
   return {input, id};
 }
 
-std::pair<ID, ID> Solver::addConstraint(const ConstrExpArb& c, Origin orig) {
+std::pair<ID, ID> Solver::addConstraint(const ConstrExpSuper& c, Origin orig) {
   // NOTE: copy to temporary constraint guarantees original constraint is not changed and does not need logger
   ConstrExpSuper& ce = c.reduce(cePools);
   ce.orig = orig;
@@ -508,7 +505,7 @@ std::pair<ID, ID> Solver::addConstraint(const ConstrExpArb& c, Origin orig) {
   return result;
 }
 
-std::pair<ID, ID> Solver::addConstraint(const ConstrSimple32& c, Origin orig) {
+std::pair<ID, ID> Solver::addConstraint(const ConstrSimpleSuper& c, Origin orig) {
   ConstrExpSuper& ce = c.toExpanded(cePools);
   ce.orig = orig;
   std::pair<ID, ID> result = addInputConstraint(ce);

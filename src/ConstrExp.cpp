@@ -57,21 +57,21 @@ void ConstrExp<SMALL, LARGE>::release() {
 
 template <typename SMALL, typename LARGE>
 ConstrExpSuper& ConstrExp<SMALL, LARGE>::reduce(ConstrExpPools& ce) const {
-  LARGE maxRhs = std::max(degree, rs::abs(rhs));
-  SMALL maxLhs = getLargestCoef();
-  if (maxLhs <= limit32 && maxRhs <= limit64) {
+  Representation rep = minRepresentation();
+  if (rep == Representation::B32) {
     ConstrExp32& result = ce.take32();
     copyTo(result);
     return result;
-  } else if (maxLhs <= limit64 && maxRhs <= limit96) {
+  } else if (rep == Representation::B64) {
     ConstrExp64& result = ce.take64();
     copyTo(result);
     return result;
-  } else if (maxLhs <= limit96 && maxRhs <= limit128) {
+  } else if (rep == Representation::B96) {
     ConstrExp96& result = ce.take96();
     copyTo(result);
     return result;
   } else {
+    assert(rep == Representation::ARB);
     ConstrExpArb& result = ce.takeArb();
     copyTo(result);
     return result;
@@ -88,7 +88,7 @@ CRef ConstrExp<SMALL, LARGE>::toConstr(ConstraintAllocator& ca, bool locked, ID 
   assert(!isInconsistency());
 
   CRef result = CRef{ca.at};
-  if (options.clauseProp && getDegree() == 1) {
+  if (options.clauseProp && isClause()) {
     ca.alloc<Clause>(vars.size())->initialize(*this, locked, id);
   } else if (options.cardProp && isCardinality()) {
     ca.alloc<Cardinality>(vars.size())->initialize(*this, locked, id);
@@ -137,6 +137,21 @@ std::unique_ptr<ConstrSimpleSuper> ConstrExp<SMALL, LARGE>::toSimple() const {
   result->orig = orig;
   return result;
 };
+
+template <typename SMALL, typename LARGE>
+Representation ConstrExp<SMALL, LARGE>::minRepresentation() const {
+  LARGE maxRhs = std::max(degree, rs::abs(rhs));
+  SMALL maxLhs = getLargestCoef();
+  if (maxLhs <= limit32 && maxRhs <= limit64) {
+    return Representation::B32;
+  } else if (maxLhs <= limit64 && maxRhs <= limit96) {
+    return Representation::B64;
+  } else if (maxLhs <= limit96 && maxRhs <= limit128) {
+    return Representation::B96;
+  } else {
+    return Representation::ARB;
+  }
+}
 
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::remove(Var v) {
@@ -804,6 +819,11 @@ bool ConstrExp<SMALL, LARGE>::isCardinality() const {
   for (Var v : vars)
     if (rs::abs(coefs[v]) > 1) return false;
   return true;
+}
+
+template <typename SMALL, typename LARGE>
+bool ConstrExp<SMALL, LARGE>::isClause() const {
+  return degree == 1;
 }
 
 template <typename SMALL, typename LARGE>

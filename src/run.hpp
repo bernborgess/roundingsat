@@ -78,11 +78,11 @@ struct LazyVar {
   ConstrSimple32 atLeast;  // X >= k + y1 + ... + yi
   ConstrSimple32 atMost;   // X =< k + y1 + ... + yi-1 + (1+n-k-i)yi
 
-  LazyVar(const ConstrExpArb& core, Var startVar, const BigVal& m) : mult(m), n(core.vars.size()) {
-    assert(core.isCardinality());
-    core.toSimple()->copyTo(atLeast);
+  LazyVar(const ConstrExp32& cardCore, Var startVar, const BigVal& m) : mult(m), n(cardCore.vars.size()) {
+    assert(cardCore.isCardinality());
+    cardCore.toSimple()->copyTo(atLeast);
     atLeast.toNormalFormLit();
-    assert(atLeast.rhs == core.getDegree());
+    assert(atLeast.rhs == cardCore.getDegree());
     atMost.rhs = -atLeast.rhs;
     atMost.terms.reserve(atLeast.terms.size());
     for (auto& t : atLeast.terms) {
@@ -123,7 +123,8 @@ struct LazyVar {
   void addSymBreakingConstraint(Var prevvar) const {
     assert(prevvar < currentVar);
     // y-- + ~y >= 1 (equivalent to y-- >= y)
-    if (solver.addConstraint({{{1, prevvar}, {1, -currentVar}}, 1}, Origin::COREGUIDED).second == ID_Unsat)
+    if (solver.addConstraint(ConstrSimple32({{1, prevvar}, {1, -currentVar}}, 1), Origin::COREGUIDED).second ==
+        ID_Unsat)
       quit::exit_UNSAT(solution, upper_bound, solver.logger);
   }
 };
@@ -174,18 +175,20 @@ ID handleInconsistency(const ConstrExpArb& origObj, ConstrExpArb& reformObj, Con
   reformObj.removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), false);
   [[maybe_unused]] BigVal prev_lower = lower_bound;
   lower_bound = -reformObj.getDegree();
-  if (core.getDegree() == 0) {  // apparently only unit assumptions were derived
+  if (core.isTautology()) {  // apparently only unit assumptions were derived
     assert(lower_bound > prev_lower);
     checkLazyVariables(reformObj, lazyVars);
     return addLowerBound(origObj, lower_bound, lastLowerBound);
   }
   // figure out an appropriate core
   core.simplifyToCardinality(false);
+  if (!core.isClause()) ++stats.NCORECARDINALITIES;
+  ConstrExp32& cardCore = solver.cePools.take32();
+  core.copyTo(cardCore);
 
   // adjust the lower bound
-  if (core.getDegree() > 1) ++stats.NCORECARDINALITIES;
   BigVal mult = 0;
-  for (Var v : core.vars) {
+  for (Var v : cardCore.vars) {
     assert(reformObj.getLit(v) != 0);
     if (mult == 0) {
       mult = rs::abs(reformObj.coefs[v]);
@@ -194,45 +197,46 @@ ID handleInconsistency(const ConstrExpArb& origObj, ConstrExpArb& reformObj, Con
     }
   }
   assert(mult > 0);
-  lower_bound += core.getDegree() * mult;
+  lower_bound += cardCore.getDegree() * mult;
 
   if ((options.optMode == Options::LAZYCOREGUIDED || options.optMode == Options::LAZYHYBRID) &&
-      core.vars.size() - core.getDegree() > 1) {
+      cardCore.vars.size() - cardCore.getDegree() > 1) {
     // add auxiliary variable
     long long newN = solver.getNbVars() + 1;
     solver.setNbVars(newN);
     // reformulate the objective
-    core.invert();
-    reformObj.addUp(core, mult);
-    core.invert();
+    cardCore.invert();
+    reformObj.addUp(cardCore, mult);
+    cardCore.invert();
     reformObj.addLhs(mult, newN);  // add only one variable for now
     assert(lower_bound == -reformObj.getDegree());
     // add first lazy constraint
-    std::shared_ptr<LazyVar> lv = std::make_shared<LazyVar>(core, newN, mult);
+    std::shared_ptr<LazyVar> lv = std::make_shared<LazyVar>(cardCore, newN, mult);
     lazyVars.push_back(lv);
     lv->addAtLeastConstraint();
     lv->addAtMostConstraint();
   } else {
     // add auxiliary variables
     long long oldN = solver.getNbVars();
-    long long newN = oldN - static_cast<int>(core.getDegree()) + core.vars.size();
+    long long newN = oldN - static_cast<int>(cardCore.getDegree()) + cardCore.vars.size();
     solver.setNbVars(newN);
     // reformulate the objective
-    for (Var v = oldN + 1; v <= newN; ++v) core.addLhs(-1, v);
-    core.invert();
-    reformObj.addUp(core, mult);
+    for (Var v = oldN + 1; v <= newN; ++v) cardCore.addLhs(-1, v);
+    cardCore.invert();
+    reformObj.addUp(cardCore, mult);
     assert(lower_bound == -reformObj.getDegree());
     // add channeling constraints
-    if (solver.addConstraint(core, Origin::COREGUIDED).second == ID_Unsat)
+    if (solver.addConstraint(cardCore, Origin::COREGUIDED).second == ID_Unsat)
       quit::exit_UNSAT(solution, upper_bound, solver.logger);
-    core.invert();
-    if (solver.addConstraint(core, Origin::COREGUIDED).second == ID_Unsat)
+    cardCore.invert();
+    if (solver.addConstraint(cardCore, Origin::COREGUIDED).second == ID_Unsat)
       quit::exit_UNSAT(solution, upper_bound, solver.logger);
     for (Var v = oldN + 1; v < newN; ++v) {  // add symmetry breaking constraints
-      if (solver.addConstraint({{{1, v}, {1, -v - 1}}, 1}, Origin::COREGUIDED).second == ID_Unsat)
+      if (solver.addConstraint(ConstrSimple32({{1, v}, {1, -v - 1}}, 1), Origin::COREGUIDED).second == ID_Unsat)
         quit::exit_UNSAT(solution, upper_bound, solver.logger);
     }
   }
+  cardCore.release();
   checkLazyVariables(reformObj, lazyVars);
   return addLowerBound(origObj, lower_bound, lastLowerBound);
 }
