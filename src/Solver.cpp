@@ -406,6 +406,15 @@ CRef Solver::attachConstraint(ConstrExpSuper& constraint, bool locked) {
   return cr;
 }
 
+void Solver::learnConstraint(const ConstrExpSuper& c, Origin orig) {
+  assert(orig == Origin::LEARNED || orig == Origin::FARKAS || orig == Origin::LEARNEDFARKAS || orig == Origin::GOMORY);
+  ConstrExpSuper& learned = c.clone(cePools);
+  learned.orig = orig;
+  learned.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsLearned, options.bitsLearned);
+  learnedStack.push_back(learned.toSimple());
+  learned.release();
+}
+
 // NOTE: backjumps to place where the constraint is not conflicting, as otherwise we might miss propagations
 CRef Solver::processLearnedStack() {
   // loop back to front as the last constraint in the queue is a result of conflict analysis
@@ -444,7 +453,7 @@ CRef Solver::processLearnedStack() {
   return CRef_Undef;
 }
 
-std::pair<ID, ID> Solver::addInputConstraint(ConstrExpArb& ce) {
+std::pair<ID, ID> Solver::addInputConstraint(ConstrExpSuper& ce) {
   assert(ce.orig == Origin::FORMULA || ce.orig == Origin::UPPERBOUND || ce.orig == Origin::LOWERBOUND ||
          ce.orig == Origin::COREGUIDED);
   assert(decisionLevel() == 0);
@@ -455,7 +464,6 @@ std::pair<ID, ID> Solver::addInputConstraint(ConstrExpArb& ce) {
   if (logger) input = ce.logAsInput();
   ce.postProcess(Level, Pos, true, stats);
   if (ce.isTautology()) {
-    ;
     return {input, ID_Undef};  // already satisfied.
   }
 
@@ -489,8 +497,7 @@ std::pair<ID, ID> Solver::addInputConstraint(ConstrExpArb& ce) {
 
 std::pair<ID, ID> Solver::addConstraint(const ConstrExpArb& c, Origin orig) {
   // NOTE: copy to temporary constraint guarantees original constraint is not changed and does not need logger
-  ConstrExpArb& ce = cePools.takeArb();
-  c.copyTo(ce);
+  ConstrExpSuper& ce = c.clone(cePools);
   ce.orig = orig;
   std::pair<ID, ID> result = addInputConstraint(ce);
   ce.release();
@@ -498,8 +505,7 @@ std::pair<ID, ID> Solver::addConstraint(const ConstrExpArb& c, Origin orig) {
 }
 
 std::pair<ID, ID> Solver::addConstraint(const ConstrSimple32& c, Origin orig) {
-  ConstrExpArb& ce = cePools.takeArb();
-  ce.init(c);
+  ConstrExpSuper& ce = c.toExpanded(cePools);
   ce.orig = orig;
   std::pair<ID, ID> result = addInputConstraint(ce);
   ce.release();

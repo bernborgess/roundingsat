@@ -50,10 +50,21 @@ std::ostream& operator<<(std::ostream& o, const Term<CF>& t) {
 
 struct ConstrExpSuper;
 struct ConstrExpPools;
+template <typename CF, typename DG>
+struct ConstrSimple;
+
+using ConstrSimple32 = ConstrSimple<int, long long>;
+using ConstrSimple64 = ConstrSimple<long long, int128>;
+using ConstrSimple96 = ConstrSimple<int128, int128>;
+using ConstrSimpleArb = ConstrSimple<bigint, bigint>;
 
 struct ConstrSimpleSuper {
   Origin orig = Origin::UNKNOWN;
-  virtual ConstrExpSuper& toExpanded(ConstrExpPools& cePools) = 0;
+  virtual ConstrExpSuper& toExpanded(ConstrExpPools& cePools) const = 0;
+  virtual void copyTo(ConstrSimple32& out) const = 0;
+  virtual void copyTo(ConstrSimple64& out) const = 0;
+  virtual void copyTo(ConstrSimple96& out) const = 0;
+  virtual void copyTo(ConstrSimpleArb& out) const = 0;
 };
 
 template <typename CF, typename DG>
@@ -68,10 +79,29 @@ struct ConstrSimple final : public ConstrSimpleSuper {
     orig = o;
   }
 
-  ConstrExpSuper& toExpanded(ConstrExpPools& cePools);
+  ConstrExpSuper& toExpanded(ConstrExpPools& cePools) const;
 
   void toNormalFormLit();
   void toNormalFormVar();
+
+ private:
+  template <typename C, typename D>
+  void copy_(ConstrSimple<C, D>& out) const {
+    out.orig = orig;
+    out.rhs = static_cast<D>(rhs);
+    out.terms.resize(terms.size());
+    for (unsigned int i = 0; i < terms.size(); ++i) {
+      out.terms[i].l = terms[i].l;
+      out.terms[i].c = static_cast<C>(terms[i].c);
+    }
+    out.proofLine = proofLine;
+  }
+
+ public:
+  void copyTo(ConstrSimple32& out) const { copy_(out); }
+  void copyTo(ConstrSimple64& out) const { copy_(out); }
+  void copyTo(ConstrSimple96& out) const { copy_(out); }
+  void copyTo(ConstrSimpleArb& out) const { copy_(out); }
 };
 
 template <typename CF, typename DG>
@@ -79,8 +109,3 @@ inline std::ostream& operator<<(std::ostream& o, const ConstrSimple<CF, DG>& sc)
   for (const Term<CF>& t : sc.terms) o << "+ " << t << " ";
   return o << ">= " << sc.rhs;
 }
-
-using ConstrSimple32 = ConstrSimple<int, long long>;
-using ConstrSimple64 = ConstrSimple<long long, int128>;
-using ConstrSimple96 = ConstrSimple<int128, int128>;
-using ConstrSimpleArb = ConstrSimple<bigint, bigint>;

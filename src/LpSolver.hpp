@@ -38,8 +38,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 enum LpStatus { INFEASIBLE, OPTIMAL, PIVOTLIMIT, UNDETERMINED };
 
-const long long INFLPINT = 1e15 + 1;  // based on max long range captured by double
-
 struct RowData {
   ID id;
   bool removable;
@@ -75,8 +73,8 @@ struct CandidateCut {
   double ratSlack = 0;
 
   CandidateCut(){};
-  CandidateCut(ConstrExpArb& in, const std::vector<double>& sol, LpSolver& lpslvr);
-  CandidateCut(const Constr& in, CRef cr, const std::vector<double>& sol, LpSolver& lpslvr);
+  CandidateCut(ConstrExpArb& in, const std::vector<double>& sol);
+  CandidateCut(const Constr& in, CRef cr, const std::vector<double>& sol, ConstrExpPools& pools);
   double cosOfAngleTo(const CandidateCut& other) const;
 
  private:
@@ -119,7 +117,7 @@ class LpSolver {
                             bool inProcessing = false);  // TODO: don't use objective function here?
   void inProcess();
 
-  void addConstraint(ConstrExpArb& c, bool removable, bool upperbound = false, bool lowerbound = false);
+  void addConstraint(ConstrExpSuper& c, bool removable, bool upperbound = false, bool lowerbound = false);
   void addConstraint(CRef cr, bool removable, bool upperbound = false, bool lowerbound = false);
 
  private:
@@ -127,7 +125,6 @@ class LpSolver {
   int getNbRows() const;
 
   void flushConstraints();
-  void shrinkToFit(ConstrExpArb& c);
 
   LpStatus _checkFeasibility(ConstrExpArb& confl, bool inProcessing);
   void _inProcess();
@@ -160,7 +157,7 @@ class LpSolver {
   }
   void inProcess() {}
 
-  void addConstraint([[maybe_unused]] ConstrExpArb& c, [[maybe_unused]] bool removable,
+  void addConstraint([[maybe_unused]] ConstrExpSuper& c, [[maybe_unused]] bool removable,
                      [[maybe_unused]] bool upperbound, [[maybe_unused]] bool lowerbound) {}
   void addConstraint([[maybe_unused]] CRef cr, [[maybe_unused]] bool removable, [[maybe_unused]] bool upperbound,
                      [[maybe_unused]] bool lowerbound) {}

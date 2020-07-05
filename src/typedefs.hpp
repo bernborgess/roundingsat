@@ -103,6 +103,7 @@ using Lit = int;
 inline Var toVar(Lit l) { return rs::abs(l); }
 
 const int INF = 1e9 + 1;  // 1e9 is the maximum number of variables in the system, anything beyond is infinity
+const long long INFLPINT = 1e15 + 1;  // based on max long range captured by double
 
 using IntVecIt = std::vector<int>::iterator;
 

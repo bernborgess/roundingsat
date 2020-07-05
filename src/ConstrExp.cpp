@@ -32,6 +32,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <algorithm>
 #include <functional>
 #include "Constr.hpp"
+#include "ConstrSimple.hpp"
 #include "IntSet.hpp"
 #include "SolverStructs.hpp"
 #include "Stats.hpp"
@@ -51,6 +52,13 @@ ConstrExp<SMALL, LARGE>::ConstrExp(ConstrExpPool<ConstrExp<SMALL, LARGE>>& cep) 
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::release() {
   pool.release(*this);
+}
+
+template <typename SMALL, typename LARGE>
+ConstrExpSuper& ConstrExp<SMALL, LARGE>::clone(ConstrExpPools& ce) const {
+  ConstrExp<SMALL, LARGE>& result = ce.take<SMALL, LARGE>();
+  copyTo(result);
+  return result;
 }
 
 template <typename SMALL, typename LARGE>
@@ -99,6 +107,18 @@ CRef ConstrExp<SMALL, LARGE>::toConstr(ConstraintAllocator& ca, bool locked, ID 
   }
   return result;
 }
+
+template <typename SMALL, typename LARGE>
+std::unique_ptr<ConstrSimpleSuper> ConstrExp<SMALL, LARGE>::toSimple() const {
+  std::unique_ptr<ConstrSimple<SMALL, LARGE>> result = std::make_unique<ConstrSimple<SMALL, LARGE>>();
+  result->rhs = rhs;
+  result->terms.reserve(vars.size());
+  for (Var v : vars)
+    if (coefs[v] != 0) result->terms.emplace_back(coefs[v], v);
+  if (plogger) result->proofLine = proofBuffer.str();
+  result->orig = orig;
+  return result;
+};
 
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::remove(Var v) {
@@ -430,6 +450,35 @@ void ConstrExp<SMALL, LARGE>::saturateAndFixOverflow(const IntVecIt& level, bool
   saturate();
 }
 
+// also removes zeroes
+template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::saturateAndFixOverflowRational(const std::vector<double>& lpSolution) {
+  removeZeroes();
+  LARGE maxRhs = std::max(getDegree(), rs::abs(getRhs()));
+  if (maxRhs >= INFLPINT) {
+    LARGE d = aux::ceildiv<BigVal>(maxRhs, INFLPINT - 1);
+    assert(d > 1);
+    for (Var v : vars) {
+      LARGE rem = aux::mod_safe<LARGE>(coefs[v], d);
+      if (rem == 0) continue;
+      double d_double = static_cast<double>(d);
+      if (lpSolution[v] == 0 || (std::isfinite(d_double) && d_double * lpSolution[v] < static_cast<double>(rem)))
+        weaken(d - rem, v);
+      else
+        weaken(-rem, v);
+    }
+    divide(d);
+  }
+  saturate();
+  assert(getDegree() < INFLPINT);
+  assert(getRhs() < INFLPINT);
+}
+
+template <typename SMALL, typename LARGE>
+bool ConstrExp<SMALL, LARGE>::fitsInDouble() const {
+  return isSaturated() && getDegree() < INFLPINT && getRhs() < INFLPINT;
+}
+
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::multiply(const SMALL& m) {
   assert(m > 0);
@@ -485,22 +534,6 @@ void ConstrExp<SMALL, LARGE>::weakenNonDivisibleNonFalsifieds(const IntVecIt& le
     for (Var v : vars)
       if (coefs[v] % div != 0 && !falsified(level, v)) weaken(-(coefs[v] % div), v);
   }
-}
-
-template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::weakenDivideRoundRational(const std::vector<double>& assignment, const LARGE& d) {
-  if (d <= 1) return;
-  for (Var v : vars) {
-    LARGE rem = aux::mod_safe<LARGE>(coefs[v], d);
-    if (rem == 0) continue;
-    double d_double = static_cast<double>(d);
-    if (assignment[v] == 0 || (std::isfinite(d_double) && d_double * assignment[v] < static_cast<double>(rem)))
-      weaken(d - rem, v);
-    else
-      weaken(-rem, v);
-  }
-  divide(d);
-  saturate();
 }
 
 template <typename SMALL, typename LARGE>

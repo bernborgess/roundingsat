@@ -34,24 +34,25 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <queue>
 #include "Solver.hpp"
 
-CandidateCut::CandidateCut(ConstrExpArb& in, const std::vector<double>& sol, LpSolver& lpslvr) {
+CandidateCut::CandidateCut(ConstrExpArb& in, const std::vector<double>& sol) {
   assert(in.isSaturated());
-  lpslvr.shrinkToFit(in);
-  simpcons = in.toSimpleCons<long long, int128>();
+  in.saturateAndFixOverflowRational(sol);
+  in.toSimple()->copyTo(simpcons);
   // NOTE: simpcons is already in var-normal form
   initialize(sol);
 }
 
-CandidateCut::CandidateCut(const Constr& in, CRef cref, const std::vector<double>& sol, LpSolver& lpslvr) : cr(cref) {
+CandidateCut::CandidateCut(const Constr& in, CRef cref, const std::vector<double>& sol, ConstrExpPools& pools)
+    : cr(cref) {
   assert(in.degree() > 0);
-  ConstrExpArb& tmp = lpslvr.solver.cePools.takeArb();
+  ConstrExpArb& tmp = pools.takeArb();
   in.toConstraint(tmp);
-  lpslvr.shrinkToFit(tmp);
+  tmp.saturateAndFixOverflowRational(sol);
   if (tmp.isTautology()) {
     tmp.release();
     return;
   }
-  simpcons = tmp.toSimpleCons<long long, int128>();
+  tmp.toSimple()->copyTo(simpcons);
   // NOTE: simpcons is already in var-normal form
   tmp.release();
   initialize(sol);
@@ -231,7 +232,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     assert(lcc.hasNoZeroes());
     lcc.weakenSmalls(lcc.absCoeffSum() / static_cast<bigint>((double)lcc.vars.size() / options.intolerance));
   }
-  CandidateCut result(lcc, lpSolution, *this);
+  CandidateCut result(lcc, lpSolution);
   lcc.release();
   return result;
 }
@@ -286,7 +287,7 @@ void LpSolver::constructLearnedCandidates() {
         containsNonOriginalVars = rs::abs(c.lit(i)) > solver.getNbOrigVars();
       }
       if (containsNonOriginalVars) continue;
-      candidateCuts.emplace_back(c, cr, lpSolution, *this);
+      candidateCuts.emplace_back(c, cr, lpSolution, solver.cePools);
       if (candidateCuts.back().ratSlack >= -options.intolerance) candidateCuts.pop_back();
     }
   }
@@ -314,12 +315,9 @@ void LpSolver::addFilteredCuts() {
 
   for (int i : keptCuts) {
     CandidateCut& cc = candidateCuts[i];
-    ConstrExpArb& ce = solver.cePools.takeArb();
-    ce.init(cc.simpcons);
+    ConstrExpSuper& ce = cc.simpcons.toExpanded(solver.cePools);
     ce.postProcess(solver.getLevel(), solver.getPos(), true, stats);
-    assert(ce.getDegree() < INFLPINT);
-    assert(ce.getRhs() < INFLPINT);
-    assert(ce.isSaturated());
+    assert(ce.fitsInDouble());
     assert(!ce.isTautology());
     if (cc.cr == CRef_Undef) {  // Gomory cut
       solver.learnConstraint(ce, Origin::GOMORY);
@@ -507,14 +505,16 @@ void LpSolver::convertConstraint(const ConstrSimple64& c, soplex::DSVectorReal& 
   assert(validVal(rhs));
 }
 
-void LpSolver::addConstraint(ConstrExpArb& c, bool removable, bool upperbound, bool lowerbound) {
-  shrinkToFit(c);
-  ID id = c.plogger ? c.logProofLineWithInfo("LP", stats) : ++solver.crefID;
+void LpSolver::addConstraint(ConstrExpSuper& c, bool removable, bool upperbound, bool lowerbound) {
+  c.saturateAndFixOverflowRational(lpSolution);
+  ID id = solver.logger ? c.logProofLineWithInfo("LP", stats) : ++solver.crefID;  // TODO: fix this kind of logger check
   if (upperbound || lowerbound) {
     assert(upperbound != lowerbound);
-    boundsToAdd[lowerbound] = {id, c.toSimpleCons<long long, int128>()};
+    boundsToAdd[lowerbound].id = id;
+    c.toSimple()->copyTo(boundsToAdd[lowerbound].cs);
   } else {
-    toAdd[id] = {c.toSimpleCons<long long, int128>(), removable};
+    toAdd[id] = {ConstrSimple64(), removable};
+    c.toSimple()->copyTo(toAdd[id].cs);
   }
 }
 
@@ -573,21 +573,6 @@ void LpSolver::flushConstraints() {
   lpSlackSolution.reDim(getNbRows());
   lpMultipliers.reDim(getNbRows());
   assert((int)row2data.size() == getNbRows());
-}
-
-void LpSolver::shrinkToFit(ConstrExpArb& c) {
-  BigVal maxRhs = std::max(c.getDegree(), rs::abs(c.getRhs()));
-  if (maxRhs >= INFLPINT) {
-    c.weakenDivideRoundRational(lpSolution, aux::ceildiv<BigVal>(maxRhs, INFLPINT - 1));
-    assert(c.getDegree() < INFLPINT);
-    assert(c.getRhs() < INFLPINT);
-    assert(c.isSaturated());
-  } else {
-    c.saturate();
-  }
-  assert(c.getDegree() < INFLPINT);
-  assert(c.getRhs() < INFLPINT);
-  assert(c.isSaturated());
 }
 
 #endif  // WITHSOPLEX

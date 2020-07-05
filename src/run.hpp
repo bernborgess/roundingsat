@@ -80,7 +80,7 @@ struct LazyVar {
 
   LazyVar(const ConstrExpArb& core, Var startVar, const BigVal& m) : mult(m), n(core.vars.size()) {
     assert(core.isCardinality());
-    atLeast = core.toSimpleCons<int, long long>();
+    core.toSimple()->copyTo(atLeast);
     atLeast.toNormalFormLit();
     assert(atLeast.rhs == core.getDegree());
     atMost.rhs = -atLeast.rhs;

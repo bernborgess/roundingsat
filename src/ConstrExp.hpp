@@ -47,6 +47,8 @@ const CRef CRef_Unsat = {std::numeric_limits<uint32_t>::max() - 1};  // TODO: ne
 
 struct IntSet;
 struct ConstraintAllocator;
+struct ConstrSimpleSuper;
+struct ConstrExpPools;
 
 enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
 enum ConstrType { CLAUSE, CARDINALITY, WATCHED32, WATCHED64, WATCHED96, COUNTING32, COUNTING64, COUNTING96, ARBITRARY };
@@ -57,8 +59,9 @@ struct ConstrExpSuper {
 
   virtual void release() = 0;
 
+  virtual ConstrExpSuper& clone(ConstrExpPools& ce) const = 0;
   virtual CRef toConstr(ConstraintAllocator& ca, bool locked, ID id) const = 0;
-  virtual std::unique_ptr<ConstrSimpleSuper> toSimple() = 0;
+  virtual std::unique_ptr<ConstrSimpleSuper> toSimple() const = 0;
 
   virtual bool hasNegativeSlack(const IntVecIt& level) const = 0;
   virtual bool isTautology() const = 0;
@@ -72,6 +75,8 @@ struct ConstrExpSuper {
   virtual void saturate() = 0;
   virtual bool isSaturated() const = 0;
   virtual void saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening, int bitOverflow, int bitReduce) = 0;
+  virtual void saturateAndFixOverflowRational(const std::vector<double>& lpSolution) = 0;
+  virtual bool fitsInDouble() const = 0;
 
   virtual void weakenDivideRound(const IntVecIt& level, Lit l, bool maxdiv, bool fullWeakening) = 0;
 
@@ -124,21 +129,6 @@ struct ConstrExp final : public ConstrExpSuper {
   ConstrExp(ConstrExpPool<ConstrExp<SMALL, LARGE>>& cep);
   void release();
 
-  template <typename CF, typename DG>
-  void init(const ConstrSimple<CF, DG>& sc) {
-    // TODO: assert whether CF/DG can fit SMALL/LARGE? Not always possible.
-    assert(isReset());
-    addRhs(sc.rhs);
-    for (const Term<CF>& t : sc.terms) {
-      addLhs(t.c, t.l);
-    }
-    orig = sc.orig;
-    if (plogger) {
-      proofBuffer.str(std::string());
-      proofBuffer << sc.proofLine;
-    }
-  }
-
   template <typename S, typename L>
   void copyTo(ConstrExp<S, L>& out) const {
     // TODO: assert whether S/L can fit SMALL/LARGE? Not always possible.
@@ -160,30 +150,9 @@ struct ConstrExp final : public ConstrExpSuper {
     }
   }
 
-  template <typename CF, typename DG>
-  ConstrSimple<CF, DG> toSimpleCons() const {
-    ConstrSimple<CF, DG> result;
-    result.rhs = static_cast<DG>(rhs);
-    result.terms.reserve(vars.size());
-    for (Var v : vars)
-      if (coefs[v] != 0) result.terms.emplace_back(static_cast<CF>(coefs[v]), v);
-    if (plogger) result.proofLine = proofBuffer.str();
-    result.orig = orig;
-    return result;
-  }
-
-  std::unique_ptr<ConstrSimpleSuper> toSimple() {
-    std::unique_ptr<ConstrSimple<SMALL, LARGE>> result = std::make_unique<ConstrSimple<SMALL, LARGE>>();
-    result->rhs = rhs;
-    result->terms.reserve(vars.size());
-    for (Var v : vars)
-      if (coefs[v] != 0) result->terms.emplace_back(coefs[v], v);
-    if (plogger) result->proofLine = proofBuffer.str();
-    result->orig = orig;
-    return result;
-  };
-
+  ConstrExpSuper& clone(ConstrExpPools& ce) const;
   CRef toConstr(ConstraintAllocator& ca, bool locked, ID id) const;
+  std::unique_ptr<ConstrSimpleSuper> toSimple() const;
 
   void resize(size_t s);
   void resetBuffer(ID proofID = ID_Trivial);
@@ -227,6 +196,8 @@ struct ConstrExp final : public ConstrExpSuper {
   void saturate();
   bool isSaturated() const;
   void saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening, int bitOverflow, int bitReduce);
+  void saturateAndFixOverflowRational(const std::vector<double>& lpSolution);
+  bool fitsInDouble() const;
 
   template <typename S, typename L>
   void addUp(ConstrExp<S, L>& c, const SMALL& cmult = 1, const SMALL& thismult = 1) {
@@ -262,7 +233,6 @@ struct ConstrExp final : public ConstrExpSuper {
   void divideRoundUp(const LARGE& d);
   void weakenDivideRound(const IntVecIt& level, Lit l, bool slackdiv, bool fullWeakening);
   void weakenNonDivisibleNonFalsifieds(const IntVecIt& level, const LARGE& div, bool fullWeakening, Lit asserting);
-  void weakenDivideRoundRational(const std::vector<double>& assignment, const LARGE& d);
   void applyMIR(const LARGE& d, std::function<Lit(Var)> toLit);
 
   bool divideByGCD();

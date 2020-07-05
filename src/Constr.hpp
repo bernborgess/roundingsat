@@ -74,8 +74,8 @@ struct Constr {  // internal solver constraint optimized for fast propagation
   virtual void resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver) = 0;
 
   template <typename S, typename L>
-  inline void toConstraint(ConstrExp<S, L>& out) const {
-    assert(out.isReset());  // don't use a ConstrExp used by other stuff
+  inline void toConstraint(ConstrExp<S, L>& out) const {  // TODO: can be more efficient by not going to bigint
+    assert(out.isReset());                                // don't use a ConstrExp used by other stuff
     out.addRhs(static_cast<L>(degree()));
     for (size_t i = 0; i < size(); ++i) {
       assert(coef(i) != 0);
@@ -85,16 +85,7 @@ struct Constr {  // internal solver constraint optimized for fast propagation
     out.orig = getOrigin();
     if (out.plogger) out.resetBuffer(id);
   }
-  template <typename CF, typename DG>
-  ConstrSimple<CF, DG> toSimpleCons() const {
-    ConstrSimple<CF, DG> result;
-    result.rhs = static_cast<DG>(degree());
-    result.proofLine = std::to_string(id) + " ";
-    result.orig = getOrigin();
-    result.terms.reserve(size());
-    for (unsigned int i = 0; i < size(); ++i) result.terms.emplace_back(static_cast<CF>(coef(i)), lit(i));
-    return result;
-  }
+
   std::ostream& operator<<(std::ostream& o) {
     for (size_t i = 0; i < size(); ++i) {
       o << coef(i) << "x" << lit(i) << " ";
