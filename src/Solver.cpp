@@ -545,7 +545,7 @@ void Solver::garbage_collect() {
   for (int i = 1; i < (int)constraints.size(); ++i) assert(constraints[i - 1].ofs < constraints[i].ofs);
   for (CRef& cr : constraints) {
     uint32_t offset = cr.ofs;
-    int memSize = ca[cr].getMemSize();
+    size_t memSize = ca[cr].getMemSize();
     memmove(ca.memory + ca.at, ca.memory + cr.ofs, sizeof(uint32_t) * memSize);
     cr.ofs = ca.at;
     ca.at += memSize;

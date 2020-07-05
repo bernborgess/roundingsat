@@ -40,8 +40,7 @@ enum WatchStatus { DROPWATCH, KEEPWATCH, CONFLICTING };
 class Solver;
 // TODO: check all static_cast downcasts of bigints
 struct Constr {  // internal solver constraint optimized for fast propagation
-  virtual int getMemSize(unsigned int length) const = 0;
-  int getMemSize() const { return getMemSize(size()); }
+  virtual size_t getMemSize() const = 0;
 
   ID id;
   // NOTE: above attributes not strictly needed in cache-sensitive Constr, but it did not matter after testing
@@ -112,7 +111,8 @@ struct Constr {  // internal solver constraint optimized for fast propagation
 struct Clause final : public Constr {
   Lit data[];
 
-  int getMemSize(unsigned int length) const { return (sizeof(Clause) + sizeof(Lit) * length) / sizeof(uint32_t); }
+  static size_t getMemSize(unsigned int length) { return (sizeof(Clause) + sizeof(Lit) * length) / sizeof(uint32_t); }
+  size_t getMemSize() const { return getMemSize(size()); }
 
   BigVal degree() const { return 1; }
   BigCoef coef([[maybe_unused]] unsigned int i) const { return 1; }
@@ -147,7 +147,10 @@ struct Cardinality final : public Constr {
   long long ntrailpops;
   Lit data[];
 
-  int getMemSize(unsigned int length) const { return (sizeof(Cardinality) + sizeof(Lit) * length) / sizeof(uint32_t); }
+  static size_t getMemSize(unsigned int length) {
+    return (sizeof(Cardinality) + sizeof(Lit) * length) / sizeof(uint32_t);
+  }
+  size_t getMemSize() const { return getMemSize(size()); }
 
   BigVal degree() const { return degr; }
   BigCoef coef([[maybe_unused]] unsigned int i) const { return 1; }
@@ -188,9 +191,10 @@ struct Counting final : public Constr {
   DG slack;  // sum of non-falsifieds minus w
   Term<CF> data[];
 
-  int getMemSize(unsigned int length) const {
+  static size_t getMemSize(unsigned int length) {
     return (sizeof(Counting<CF, DG>) + sizeof(Term<CF>) * length) / sizeof(uint32_t);
   }
+  size_t getMemSize() const { return getMemSize(size()); }
 
   BigVal degree() const { return degr; }
   BigCoef coef(unsigned int i) const { return data[i].c; }
@@ -236,9 +240,10 @@ struct Watched final : public Constr {
   DG watchslack;  // sum of non-falsified watches minus w
   Term<CF> data[];
 
-  int getMemSize(unsigned int length) const {
+  static size_t getMemSize(unsigned int length) {
     return (sizeof(Watched<CF, DG>) + sizeof(Term<CF>) * length) / sizeof(uint32_t);
   }
+  size_t getMemSize() const { return getMemSize(size()); }
 
   BigVal degree() const { return degr; }
   BigCoef coef(unsigned int i) const { return rs::abs(data[i].c); }
@@ -285,7 +290,10 @@ struct Arbitrary final : public Constr {
   std::vector<BigCoef> coefs;  // NOTE: seemed not possible to put bigints in below dynamic array
   Lit lits[];
 
-  int getMemSize(unsigned int length) const { return (sizeof(Arbitrary) + sizeof(Lit) * length) / sizeof(uint32_t); }
+  static size_t getMemSize(unsigned int length) {
+    return (sizeof(Arbitrary) + sizeof(Lit) * length) / sizeof(uint32_t);
+  }
+  size_t getMemSize() const { return getMemSize(size()); }
 
   BigVal degree() const { return degr; }
   BigCoef coef(unsigned int i) const { return coefs[i]; }

@@ -51,25 +51,15 @@ CRef ConstrExp<SMALL, LARGE>::toConstr(ConstraintAllocator& ca, bool locked, ID 
   assert(!isTautology());
   assert(vars.size() > 0);
 
-  Constr* constr = (Constr*)(ca.memory + ca.at);
   CRef result = CRef{ca.at};
-
-  unsigned int nTerms = vars.size();
-  // TODO: deduplicate code below
   if (options.clauseProp && getDegree() == 1) {
-    new (constr) Clause;
-    ca.increaseAt(constr->getMemSize(nTerms));
-    static_cast<Clause*>(constr)->initialize(*this, locked, id);
+    ca.alloc<Clause>(vars.size())->initialize(*this, locked, id);
   } else if (options.cardProp && isCardinality()) {
-    new (constr) Cardinality;
-    ca.increaseAt(constr->getMemSize(nTerms));
-    static_cast<Cardinality*>(constr)->initialize(*this, locked, id);
+    ca.alloc<Cardinality>(vars.size())->initialize(*this, locked, id);
   } else {
     LARGE maxCoef = rs::abs(coefs[vars[0]]);
     if (maxCoef > limit96) {
-      new (constr) Arbitrary;
-      ca.increaseAt(constr->getMemSize(nTerms));
-      static_cast<Arbitrary*>(constr)->initialize(*this, locked, id);
+      ca.alloc<Arbitrary>(vars.size())->initialize(*this, locked, id);
     } else {
       LARGE watchSum = -degree;
       unsigned int minWatches = 1;  // sorted per decreasing coefs, so we can skip the first, largest coef
@@ -77,34 +67,22 @@ CRef ConstrExp<SMALL, LARGE>::toConstr(ConstraintAllocator& ca, bool locked, ID 
       bool useCounting = options.countingProp == 1 || options.countingProp > (1 - minWatches / (double)vars.size());
       if (maxCoef <= limit32) {
         if (useCounting) {
-          new (constr) Counting32;
-          ca.increaseAt(constr->getMemSize(nTerms));
-          static_cast<Counting32*>(constr)->initialize(*this, locked, id);
+          ca.alloc<Counting32>(vars.size())->initialize(*this, locked, id);
         } else {
-          new (constr) Watched32;
-          ca.increaseAt(constr->getMemSize(nTerms));
-          static_cast<Watched32*>(constr)->initialize(*this, locked, id);
+          ca.alloc<Watched32>(vars.size())->initialize(*this, locked, id);
         }
       } else if (maxCoef <= limit64) {
         if (useCounting) {
-          new (constr) Counting64;
-          ca.increaseAt(constr->getMemSize(nTerms));
-          static_cast<Counting64*>(constr)->initialize(*this, locked, id);
+          ca.alloc<Counting64>(vars.size())->initialize(*this, locked, id);
         } else {
-          new (constr) Watched64;
-          ca.increaseAt(constr->getMemSize(nTerms));
-          static_cast<Watched64*>(constr)->initialize(*this, locked, id);
+          ca.alloc<Watched64>(vars.size())->initialize(*this, locked, id);
         }
       } else {
         assert(maxCoef <= limit96);
         if (useCounting) {
-          new (constr) Counting96;
-          ca.increaseAt(constr->getMemSize(nTerms));
-          static_cast<Counting96*>(constr)->initialize(*this, locked, id);
+          ca.alloc<Counting96>(vars.size())->initialize(*this, locked, id);
         } else {
-          new (constr) Watched96;
-          ca.increaseAt(constr->getMemSize(nTerms));
-          static_cast<Watched96*>(constr)->initialize(*this, locked, id);
+          ca.alloc<Watched96>(vars.size())->initialize(*this, locked, id);
         }
       }
     }
