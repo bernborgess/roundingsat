@@ -35,19 +35,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <vector>
 #include "typedefs.hpp"
 
-template <typename CF>
-struct Term {
-  Term() : c(0), l(0) {}
-  Term(const CF& x, Lit y) : c(x), l(y) {}
-  CF c;
-  Lit l;
-};
-
-template <typename CF>
-std::ostream& operator<<(std::ostream& o, const Term<CF>& t) {
-  return o << t.c << "x" << t.l;
-}
-
 struct ConstrExpSuper;
 struct ConstrExpPools;
 

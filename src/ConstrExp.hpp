@@ -32,8 +32,9 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include <memory>
 #include <sstream>
-#include "ConstrSimple.hpp"
+#include "IntSet.hpp"
 #include "Logger.hpp"
+#include "globals.hpp"
 #include "typedefs.hpp"
 
 struct CRef {
@@ -49,14 +50,12 @@ const CRef CRef_Unsat = {std::numeric_limits<uint32_t>::max() - 1};  // TODO: ne
 enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
 enum Representation { B32, B64, B96, ARB };
 
-struct IntSet;
 struct ConstraintAllocator;
 struct ConstrSimpleSuper;
 struct ConstrExpPools;
 class Solver;
 struct Clause;
 struct Cardinality;
-struct Arbitrary;
 
 struct ConstrExpSuper {
   std::vector<Var> vars;
@@ -124,15 +123,18 @@ struct ConstrExpSuper {
   virtual void toStreamAsOPB(std::ofstream& o) const = 0;
   virtual void toStreamWithAssignment(std::ostream& o, const IntVecIt& level, const std::vector<int>& pos) const = 0;
 
-  virtual void resolveWith(const Clause& c, Lit l, IntSet* actSet, Solver& solver) = 0;
-  virtual void resolveWith(const Cardinality& c, Lit l, IntSet* actSet, Solver& solver) = 0;
-  virtual void resolveWith(const Counting32& c, Lit l, IntSet* actSet, Solver& solver) = 0;
-  virtual void resolveWith(const Counting64& c, Lit l, IntSet* actSet, Solver& solver) = 0;
-  virtual void resolveWith(const Counting96& c, Lit l, IntSet* actSet, Solver& solver) = 0;
-  virtual void resolveWith(const Watched32& c, Lit l, IntSet* actSet, Solver& solver) = 0;
-  virtual void resolveWith(const Watched64& c, Lit l, IntSet* actSet, Solver& solver) = 0;
-  virtual void resolveWith(const Watched96& c, Lit l, IntSet* actSet, Solver& solver) = 0;
-  virtual void resolveWith(const Arbitrary& c, Lit l, IntSet* actSet, Solver& solver) = 0;
+  virtual void resolveWith(ConstrExp32& c, Lit l, IntSet* actSet, const IntVecIt& Level,
+                           const std::vector<int>& Pos) = 0;
+  virtual void resolveWith(ConstrExp64& c, Lit l, IntSet* actSet, const IntVecIt& Level,
+                           const std::vector<int>& Pos) = 0;
+  virtual void resolveWith(ConstrExp96& c, Lit l, IntSet* actSet, const IntVecIt& Level,
+                           const std::vector<int>& Pos) = 0;
+  virtual void resolveWith(ConstrExpArb& c, Lit l, IntSet* actSet, const IntVecIt& Level,
+                           const std::vector<int>& Pos) = 0;
+  virtual void resolveWith(const Clause& c, Lit l, IntSet* actSet, const IntVecIt& Level,
+                           const std::vector<int>& Pos) = 0;
+  virtual void resolveWith(const Cardinality& c, Lit l, IntSet* actSet, const IntVecIt& Level,
+                           const std::vector<int>& Pos) = 0;
 };
 
 template <typename CE>
@@ -318,19 +320,40 @@ struct ConstrExp final : public ConstrExpSuper {
   void toStreamAsOPB(std::ofstream& o) const;
   void toStreamWithAssignment(std::ostream& o, const IntVecIt& level, const std::vector<int>& pos) const;
 
-  void resolveWith(const Clause& c, Lit l, IntSet* actSet, Solver& solver);
-  void resolveWith(const Cardinality& c, Lit l, IntSet* actSet, Solver& solver);
-  void resolveWith(const Counting32& c, Lit l, IntSet* actSet, Solver& solver);
-  void resolveWith(const Counting64& c, Lit l, IntSet* actSet, Solver& solver);
-  void resolveWith(const Counting96& c, Lit l, IntSet* actSet, Solver& solver);
-  void resolveWith(const Watched32& c, Lit l, IntSet* actSet, Solver& solver);
-  void resolveWith(const Watched64& c, Lit l, IntSet* actSet, Solver& solver);
-  void resolveWith(const Watched96& c, Lit l, IntSet* actSet, Solver& solver);
-  void resolveWith(const Arbitrary& c, Lit l, IntSet* actSet, Solver& solver);
+  void resolveWith(ConstrExp32& c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
+  void resolveWith(ConstrExp64& c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
+  void resolveWith(ConstrExp96& c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
+  void resolveWith(ConstrExpArb& c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
+  void resolveWith(const Clause& c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
+  void resolveWith(const Cardinality& c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
 
  private:
   template <typename CF, typename DG>
-  void genericResolve(ConstrExp<CF, DG>& reason, Lit l, IntSet* actSet, const Solver& solver);
+  void genericResolve(ConstrExp<CF, DG>& reason, Lit l, IntSet* actSet, const IntVecIt& Level,
+                      const std::vector<int>& Pos) {
+    assert(getCoef(-l) > 0);
+    stats.NADDEDLITERALS += reason.vars.size();
+    reason.removeUnitsAndZeroes(Level, Pos);
+    if (options.weakenNonImplying) reason.weakenNonImplying(Level, reason.getCoef(l), reason.getSlack(Level), stats);
+    reason.saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced);
+    assert(reason.getCoef(l) > reason.getSlack(Level));
+    reason.weakenDivideRound(Level, l, options.slackdiv, options.weakenFull);
+    assert(reason.getSlack(Level) <= 0);
+    if (actSet != nullptr) {
+      for (Var v : reason.vars) {
+        Lit l = reason.getLit(v);
+        if (!options.bumpOnlyFalse || isFalse(Level, l)) actSet->add(v);
+        if (options.bumpCanceling && getLit(v) == -l) actSet->add(-v);
+      }
+    }
+    SMALL reason_coef_l = static_cast<SMALL>(reason.getCoef(l));  // NOTE: SMALL >= CF
+    SMALL confl_coef_l = getCoef(-l);
+    SMALL gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
+    addUp(reason, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
+    saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced);
+    assert(getCoef(-l) == 0);
+    assert(hasNegativeSlack(Level));
+  }
 };
 
 template <typename S, typename L>

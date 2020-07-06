@@ -165,3 +165,16 @@ struct Watched;
 using Watched32 = Watched<int, long long>;
 using Watched64 = Watched<long long, int128>;
 using Watched96 = Watched<int128, int128>;
+
+template <typename CF>
+struct Term {
+  Term() : c(0), l(0) {}
+  Term(const CF& x, Lit y) : c(x), l(y) {}
+  CF c;
+  Lit l;
+};
+
+template <typename CF>
+std::ostream& operator<<(std::ostream& o, const Term<CF>& t) {
+  return o << t.c << "x" << t.l;
+}

@@ -241,6 +241,26 @@ void Solver::recomputeLBD(Constr& C) {
   }
 }
 
+ConstrExpSuper& getAnalysisCE(const ConstrExpSuper& conflict, int bitsOverflow, ConstrExpPools& cePools) {
+  if (bitsOverflow <= conflLimit32) {
+    ConstrExp32& confl = cePools.take32();
+    conflict.copyTo(confl);
+    return confl;
+  } else if (options.bitsOverflow <= conflLimit64) {
+    ConstrExp64& confl = cePools.take64();
+    conflict.copyTo(confl);
+    return confl;
+  } else if (options.bitsOverflow <= conflLimit96) {
+    ConstrExp96& confl = cePools.take96();
+    conflict.copyTo(confl);
+    return confl;
+  } else {
+    ConstrExpArb& confl = cePools.takeArb();
+    conflict.copyTo(confl);
+    return confl;
+  }
+}
+
 bool Solver::analyze(ConstrExpArb& conflict) {
   if (logger) logger->logComment("Analyze", stats);
   assert(conflict.hasNegativeSlack(Level));
@@ -248,44 +268,27 @@ bool Solver::analyze(ConstrExpArb& conflict) {
   conflict.removeUnitsAndZeroes(Level, Pos);
   conflict.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
 
-  ConstrExpSuper* conflptr = nullptr;
-  if (options.bitsOverflow <= conflLimit32) {
-    ConstrExp32& confl = cePools.take32();
-    conflict.copyTo(confl);
-    conflptr = &confl;
-  } else if (options.bitsOverflow <= conflLimit64) {
-    ConstrExp64& confl = cePools.take64();
-    conflict.copyTo(confl);
-    conflptr = &confl;
-  } else if (options.bitsOverflow <= conflLimit96) {
-    ConstrExp96& confl = cePools.take96();
-    conflict.copyTo(confl);
-    conflptr = &confl;
-  } else {
-    ConstrExpArb& confl = cePools.takeArb();
-    conflict.copyTo(confl);
-    conflptr = &confl;
-  }
+  ConstrExpSuper& confl = getAnalysisCE(conflict, options.bitsOverflow, cePools);
   conflict.reset();
 
   assert(actSet.size() == 0);  // will hold the literals that need their activity bumped
-  for (Var v : conflptr->vars) {
-    if (!options.bumpOnlyFalse || isFalse(Level, conflptr->getLit(v))) actSet.add(v);
+  for (Var v : confl.vars) {
+    if (!options.bumpOnlyFalse || isFalse(Level, confl.getLit(v))) actSet.add(v);
   }
   while (decisionLevel() > 0) {
     if (asynch_interrupt) {
-      conflptr->release();
+      confl.release();
       return false;
     }
     Lit l = trail.back();
-    if (conflptr->hasLit(-l)) {
-      assert(conflptr->hasNegativeSlack(Level));
-      AssertionStatus status = conflptr->isAssertingBefore(Level, decisionLevel());
+    if (confl.hasLit(-l)) {
+      assert(confl.hasNegativeSlack(Level));
+      AssertionStatus status = confl.isAssertingBefore(Level, decisionLevel());
       if (status == AssertionStatus::ASSERTING)
         break;
       else if (status == AssertionStatus::FALSIFIED) {
         backjumpTo(decisionLevel() - 1);
-        assert(conflptr->hasNegativeSlack(Level));
+        assert(confl.hasNegativeSlack(Level));
         continue;
       }
       assert(Reason[toVar(l)] != CRef_Undef);
@@ -303,17 +306,17 @@ bool Solver::analyze(ConstrExpArb& conflict) {
       stats.NLPENCLEARNEDFARKAS += reasonC.getOrigin() == Origin::LEARNEDFARKAS;
       stats.NLPENCFARKAS += reasonC.getOrigin() == Origin::FARKAS;
       ++stats.NRESOLVESTEPS;
-      reasonC.resolveWith(*conflptr, l, &actSet, *this);
+      reasonC.resolveWith(confl, l, &actSet, *this);
     }
     undoOne();
   }
-  assert(conflptr->hasNegativeSlack(Level));
+  assert(confl.hasNegativeSlack(Level));
   for (Lit l : actSet.keys)
     if (l != 0) vBumpActivity(toVar(l));
   actSet.reset();
 
-  conflptr->copyTo(conflict);
-  conflptr->release();
+  confl.copyTo(conflict);
+  confl.release();
   return true;
 }
 
@@ -355,44 +358,27 @@ bool Solver::extractCore(ConstrExpArb& conflict, const IntSet& assumptions, Cons
   conflict.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
   assert(conflict.hasNegativeSlack(Level));
 
-  ConstrExpSuper* conflptr = nullptr;
-  if (options.bitsOverflow <= conflLimit32) {
-    ConstrExp32& confl = cePools.take32();
-    conflict.copyTo(confl);
-    conflptr = &confl;
-  } else if (options.bitsOverflow <= conflLimit64) {
-    ConstrExp64& confl = cePools.take64();
-    conflict.copyTo(confl);
-    conflptr = &confl;
-  } else if (options.bitsOverflow <= conflLimit96) {
-    ConstrExp96& confl = cePools.take96();
-    conflict.copyTo(confl);
-    conflptr = &confl;
-  } else {
-    ConstrExpArb& confl = cePools.takeArb();
-    conflict.copyTo(confl);
-    conflptr = &confl;
-  }
+  ConstrExpSuper& confl = getAnalysisCE(conflict, options.bitsOverflow, cePools);
   conflict.reset();
 
   // analyze conflict
   while (decisionLevel() > 0) {
     if (asynch_interrupt) return false;
     Lit l = trail.back();
-    if (conflptr->hasLit(-l)) {
-      if (conflptr->hasNegativeSlack(assumptions)) break;
+    if (confl.hasLit(-l)) {
+      if (confl.hasNegativeSlack(assumptions)) break;
       assert(Reason[toVar(l)] != CRef_Undef);
       Constr& reasonC = ca[Reason[toVar(l)]];
       // TODO: stats? activity?
-      reasonC.resolveWith(*conflptr, l, nullptr, *this);
+      reasonC.resolveWith(confl, l, nullptr, *this);
     }
     undoOne();
   }
-  assert(conflptr->hasNegativeSlack(assumptions));
-  assert(!conflptr->isTautology());
-  assert(conflptr->isSaturated());
-  conflptr->copyTo(outCore);
-  conflptr->release();
+  assert(confl.hasNegativeSlack(assumptions));
+  assert(!confl.isTautology());
+  assert(confl.isSaturated());
+  confl.copyTo(outCore);
+  confl.release();
 
   // weaken non-falsifieds
   for (Var v : outCore.vars)

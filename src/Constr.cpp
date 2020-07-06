@@ -134,7 +134,7 @@ WatchStatus Clause::checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver
 }
 
 void Clause::resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver) {
-  confl.resolveWith(*this, l, actSet, solver);
+  confl.resolveWith(*this, l, actSet, solver.getLevel(), solver.getPos());
 }
 
 ConstrExpSuper& Clause::toExpanded(ConstrExpPools& cePools) const {
@@ -242,7 +242,7 @@ WatchStatus Cardinality::checkForPropagation(CRef cr, int& idx, [[maybe_unused]]
 }
 
 void Cardinality::resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver) {
-  confl.resolveWith(*this, l, actSet, solver);
+  confl.resolveWith(*this, l, actSet, solver.getLevel(), solver.getPos());
 }
 
 ConstrExpSuper& Cardinality::toExpanded(ConstrExpPools& cePools) const {
@@ -329,7 +329,9 @@ void Counting<CF, DG>::undoFalsified(int i) {
 
 template <typename CF, typename DG>
 void Counting<CF, DG>::resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver) {
-  confl.resolveWith(*this, l, actSet, solver);
+  ConstrExp<CF, DG>& reason = static_cast<ConstrExp<CF, DG>&>(toExpanded(solver.cePools));
+  confl.resolveWith(reason, l, actSet, solver.getLevel(), solver.getPos());
+  reason.release();
 }
 
 template <typename CF, typename DG>
@@ -465,7 +467,9 @@ void Watched<CF, DG>::undoFalsified(int i) {
 
 template <typename CF, typename DG>
 void Watched<CF, DG>::resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver) {
-  confl.resolveWith(*this, l, actSet, solver);
+  ConstrExp<CF, DG>& reason = static_cast<ConstrExp<CF, DG>&>(toExpanded(solver.cePools));
+  confl.resolveWith(reason, l, actSet, solver.getLevel(), solver.getPos());
+  reason.release();
 }
 
 template <typename CF, typename DG>
@@ -547,7 +551,9 @@ void Arbitrary::undoFalsified(int i) {
 }
 
 void Arbitrary::resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver) {
-  confl.resolveWith(*this, l, actSet, solver);
+  ConstrExpArb& reason = static_cast<ConstrExpArb&>(toExpanded(solver.cePools));
+  confl.resolveWith(reason, l, actSet, solver.getLevel(), solver.getPos());
+  reason.release();
 }
 
 ConstrExpSuper& Arbitrary::toExpanded(ConstrExpPools& cePools) const {
