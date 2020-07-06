@@ -62,4 +62,11 @@ struct Logger {
     proof_out << "* " << sts.getDetTime() << " " << comment << "\n";
 #endif
   }
+
+  void logComment([[maybe_unused]] const std::string& comment) {
+#if !NDEBUG
+    proof_out << "* "
+              << " " << comment << "\n";
+#endif
+  }
 };

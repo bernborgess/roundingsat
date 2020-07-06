@@ -242,20 +242,24 @@ void Solver::recomputeLBD(Constr& C) {
 }
 
 ConstrExpSuper& getAnalysisCE(const ConstrExpSuper& conflict, int bitsOverflow, ConstrExpPools& cePools) {
-  if (bitsOverflow <= conflLimit32) {
-    ConstrExp32& confl = cePools.take32();
+  if (bitsOverflow == 0 || bitsOverflow > conflLimit128) {
+    ConstrExpArb& confl = cePools.takeArb();
     conflict.copyTo(confl);
     return confl;
-  } else if (options.bitsOverflow <= conflLimit64) {
-    ConstrExp64& confl = cePools.take64();
+  } else if (options.bitsOverflow > conflLimit96) {
+    ConstrExp128& confl = cePools.take128();
     conflict.copyTo(confl);
     return confl;
-  } else if (options.bitsOverflow <= conflLimit96) {
+  } else if (options.bitsOverflow > conflLimit64) {
     ConstrExp96& confl = cePools.take96();
     conflict.copyTo(confl);
     return confl;
+  } else if (options.bitsOverflow > conflLimit32) {
+    ConstrExp64& confl = cePools.take64();
+    conflict.copyTo(confl);
+    return confl;
   } else {
-    ConstrExpArb& confl = cePools.takeArb();
+    ConstrExp32& confl = cePools.take32();
     conflict.copyTo(confl);
     return confl;
   }

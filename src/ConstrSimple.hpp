@@ -44,6 +44,7 @@ struct ConstrSimpleSuper {
   virtual void copyTo(ConstrSimple32& out) const = 0;
   virtual void copyTo(ConstrSimple64& out) const = 0;
   virtual void copyTo(ConstrSimple96& out) const = 0;
+  virtual void copyTo(ConstrSimple128& out) const = 0;
   virtual void copyTo(ConstrSimpleArb& out) const = 0;
 };
 
@@ -81,6 +82,7 @@ struct ConstrSimple final : public ConstrSimpleSuper {
   void copyTo(ConstrSimple32& out) const { copy_(out); }
   void copyTo(ConstrSimple64& out) const { copy_(out); }
   void copyTo(ConstrSimple96& out) const { copy_(out); }
+  void copyTo(ConstrSimple128& out) const { copy_(out); }
   void copyTo(ConstrSimpleArb& out) const { copy_(out); }
 };
 

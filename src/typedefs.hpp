@@ -38,7 +38,9 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <unordered_map>
 #include <vector>
 
-using int128 = __int128;  // NOTE: int128_t from Boost should work too, using a slightly less efficient extra sign bit.
+using int128 =
+    __int128;  // NOTE: boost::multiprecision::int128_t should work too, using a slightly less efficient extra sign bit.
+using int256 = boost::multiprecision::int256_t;
 using bigint = boost::multiprecision::cpp_int;
 using BigCoef = bigint;
 using BigVal = bigint;
@@ -52,6 +54,10 @@ template <>
 inline bigint abs(const bigint& x) {
   return boost::multiprecision::abs(x);
 }
+template <>
+inline int256 abs(const int256& x) {
+  return boost::multiprecision::abs(x);
+}
 
 template <typename T>
 inline T gcd(const T& x, const T& y) {
@@ -61,6 +67,10 @@ template <>
 inline bigint gcd(const bigint& x, const bigint& y) {
   return boost::multiprecision::gcd(x, y);
 }
+template <>
+inline int256 gcd(const int256& x, const int256& y) {
+  return boost::multiprecision::gcd(x, y);
+}
 
 template <typename T>
 inline T lcm(const T& x, const T& y) {
@@ -68,6 +78,10 @@ inline T lcm(const T& x, const T& y) {
 }
 template <>
 inline bigint lcm(const bigint& x, const bigint& y) {
+  return boost::multiprecision::lcm(x, y);
+}
+template <>
+inline int256 lcm(const int256& x, const int256& y) {
   return boost::multiprecision::lcm(x, y);
 }
 
@@ -82,6 +96,11 @@ inline unsigned msb(const bigint& x) {
   assert(x > 0);
   return boost::multiprecision::msb(x);
 }
+template <>
+inline unsigned msb(const int256& x) {
+  assert(x > 0);
+  return boost::multiprecision::msb(x);
+}
 
 template <typename T>
 inline T pow(const T& x, unsigned y) {
@@ -89,6 +108,10 @@ inline T pow(const T& x, unsigned y) {
 }
 template <>
 inline bigint pow(const bigint& x, unsigned y) {
+  return boost::multiprecision::pow(x, y);
+}
+template <>
+inline int256 pow(const int256& x, unsigned y) {
   return boost::multiprecision::pow(x, y);
 }
 }  // namespace rs
@@ -105,12 +128,14 @@ inline Var toVar(Lit l) { return rs::abs(l); }
 const int INF = 1e9 + 1;  // 1e9 is the maximum number of variables in the system, anything beyond is infinity
 const long long INFLPINT = 1e15 + 1;  // based on max long range captured by double
 
-const int limit32 = 1e9;  // 2^29-2^30
-const int conflLimit32 = 14;
+const int limit32 = 1e9;         // 2^29-2^30
 const long long limit64 = 2e18;  // 2^60-2^61
+const int128 limit96 = 8e27;     // 2^92-2^93, so 46 bits is less than half
+const int128 limit128 = 32e36;   // 2^124-2^125, so 62 bits is less than half
+const int conflLimit32 = 14;
 const int conflLimit64 = 30;
-const int128 limit96 = 8e27;  // 2^92-2^93, so 46 bits is less than half
 const int conflLimit96 = 46;
+const int conflLimit128 = 62;
 
 using IntVecIt = std::vector<int>::iterator;
 
@@ -145,6 +170,7 @@ struct ConstrExp;
 using ConstrExp32 = ConstrExp<int, long long>;
 using ConstrExp64 = ConstrExp<long long, int128>;
 using ConstrExp96 = ConstrExp<int128, int128>;
+using ConstrExp128 = ConstrExp<int128, int256>;
 using ConstrExpArb = ConstrExp<bigint, bigint>;
 
 template <typename CF, typename DG>
@@ -152,6 +178,7 @@ struct ConstrSimple;
 using ConstrSimple32 = ConstrSimple<int, long long>;
 using ConstrSimple64 = ConstrSimple<long long, int128>;
 using ConstrSimple96 = ConstrSimple<int128, int128>;
+using ConstrSimple128 = ConstrSimple<int128, int256>;
 using ConstrSimpleArb = ConstrSimple<bigint, bigint>;
 
 template <typename CF, typename DG>

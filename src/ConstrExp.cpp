@@ -39,6 +39,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 template class ConstrExp<int, long long>;
 template class ConstrExp<long long, int128>;
 template class ConstrExp<int128, int128>;
+template class ConstrExp<int128, int256>;
 template class ConstrExp<bigint, bigint>;
 
 template <typename SMALL, typename LARGE>
@@ -64,6 +65,10 @@ ConstrExpSuper& ConstrExp<SMALL, LARGE>::reduce(ConstrExpPools& ce) const {
     return result;
   } else if (rep == Representation::B96) {
     ConstrExp96& result = ce.take96();
+    copyTo(result);
+    return result;
+  } else if (rep == Representation::B128) {
+    ConstrExp128& result = ce.take128();
     copyTo(result);
     return result;
   } else {
@@ -143,6 +148,8 @@ Representation ConstrExp<SMALL, LARGE>::minRepresentation() const {
     return Representation::B64;
   } else if (maxVal <= limit96) {
     return Representation::B96;
+  } else if (maxVal <= limit128) {
+    return Representation::B128;
   } else {
     return Representation::ARB;
   }
@@ -441,10 +448,12 @@ void ConstrExp<SMALL, LARGE>::saturate(const std::vector<Var>& vs) {
     return;
   }
   for (Var v : vs) {
-    if (coefs[v] < -degree)
-      rhs -= coefs[v] + degree, coefs[v] = -degree;
-    else
-      coefs[v] = std::min<LARGE>(coefs[v], degree);
+    if (coefs[v] < -degree) {
+      rhs -= coefs[v] + degree;
+      coefs[v] = static_cast<SMALL>(-degree);
+    } else {
+      coefs[v] = static_cast<SMALL>(std::min<LARGE>(coefs[v], degree));
+    }
   }
   assert(isSaturated());
 }
@@ -482,7 +491,7 @@ void ConstrExp<SMALL, LARGE>::saturateAndFixOverflow(const IntVecIt& level, bool
   for (Var v : vars) {
     largest = std::max(largest, rs::abs(coefs[v]));
   }
-  largest = std::min<LARGE>(largest, degree);  // takes saturated coefficients into account
+  largest = static_cast<SMALL>(std::min<LARGE>(largest, degree));  // takes saturated coefficients into account
   if (largest == 0) return;
   if ((int)rs::msb(largest) >= bitOverflow) {
     LARGE cutoff = 2;
@@ -501,18 +510,16 @@ void ConstrExp<SMALL, LARGE>::saturateAndFixOverflowRational(const std::vector<d
   removeZeroes();
   LARGE maxRhs = std::max(getDegree(), rs::abs(getRhs()));
   if (maxRhs >= INFLPINT) {
-    LARGE d = aux::ceildiv<BigVal>(maxRhs, INFLPINT - 1);
+    LARGE d = aux::ceildiv<LARGE>(maxRhs, INFLPINT - 1);
     assert(d > 1);
     for (Var v : vars) {
-      LARGE rem = aux::mod_safe<LARGE>(coefs[v], d);
-      if (rem == 0) continue;
-      double d_double = static_cast<double>(d);
-      if (lpSolution[v] == 0 || (std::isfinite(d_double) && d_double * lpSolution[v] < static_cast<double>(rem)))
-        weaken(d - rem, v);
-      else
-        weaken(-rem, v);
+      Lit l = getLit(v);
+      if ((l < 0 ? 1 - lpSolution[v] : lpSolution[v]) <= 1 - options.intolerance) {
+        SMALL rem = static_cast<SMALL>(rs::abs(coefs[v]) % d);
+        weaken(l < 0 ? rem : -rem, v);
+      }
     }
-    divide(d);
+    divideRoundUp(d);
   }
   saturate();
   assert(getDegree() < INFLPINT);
@@ -536,10 +543,12 @@ void ConstrExp<SMALL, LARGE>::multiply(const SMALL& m) {
 
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::divide(const LARGE& d) {
+  assert(d > 0);
+  if (d == 1) return;
   if (plogger) proofBuffer << d << " d ";
   for (Var v : vars) {
     assert(coefs[v] % d == 0);
-    coefs[v] /= d;
+    coefs[v] = static_cast<SMALL>(coefs[v] / d);  // divides towards zero
   }
   // NOTE: as all coefficients are divisible by d, we can aux::ceildiv the rhs and the degree
   rhs = aux::ceildiv_safe(rhs, d);
@@ -550,11 +559,17 @@ template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::divideRoundUp(const LARGE& d) {
   assert(d > 0);
   if (d == 1) return;
+  if (plogger) proofBuffer << d << " d ";
   for (Var v : vars) {
-    if (coefs[v] % d == 0) continue;
-    weaken((coefs[v] < 0 ? 0 : d) - aux::mod_safe<LARGE>(coefs[v], d), v);
+    if (coefs[v] == 0) continue;
+    if (coefs[v] % d == 0) {
+      coefs[v] = static_cast<SMALL>(coefs[v] / d);
+    } else {
+      coefs[v] = (coefs[v] > 0 ? 1 : -1) + static_cast<SMALL>(coefs[v] / d);  // divides towards zero
+    }
   }
-  divide(d);
+  degree = aux::ceildiv_safe(degree, d);
+  rhs = calcRhs();
 }
 
 template <typename SMALL, typename LARGE>
@@ -577,7 +592,7 @@ void ConstrExp<SMALL, LARGE>::weakenNonDivisibleNonFalsifieds(const IntVecIt& le
       if (coefs[v] % div != 0 && !falsified(level, v) && v != toVar(asserting)) weaken(-coefs[v], v);
   } else {
     for (Var v : vars)
-      if (coefs[v] % div != 0 && !falsified(level, v)) weaken(-(coefs[v] % div), v);
+      if (coefs[v] % div != 0 && !falsified(level, v)) weaken(static_cast<SMALL>(-(coefs[v] % div)), v);
   }
 }
 
@@ -591,11 +606,12 @@ void ConstrExp<SMALL, LARGE>::applyMIR(const LARGE& d, std::function<Lit(Var)> t
   rhs = bmodd * aux::ceildiv_safe(tmpRhs, d);
   for (Var v : vars) {
     if (toLit(v) < 0) {
-      coefs[v] =
-          -(bmodd * aux::floordiv_safe<LARGE>(-coefs[v], d) + std::min(aux::mod_safe<LARGE>(-coefs[v], d), bmodd));
+      coefs[v] = static_cast<SMALL>(
+          -(bmodd * aux::floordiv_safe<LARGE>(-coefs[v], d) + std::min(aux::mod_safe<LARGE>(-coefs[v], d), bmodd)));
       rhs += coefs[v];
     } else
-      coefs[v] = bmodd * aux::floordiv_safe<LARGE>(coefs[v], d) + std::min(aux::mod_safe<LARGE>(coefs[v], d), bmodd);
+      coefs[v] = static_cast<SMALL>(bmodd * aux::floordiv_safe<LARGE>(coefs[v], d) +
+                                    std::min(aux::mod_safe<LARGE>(coefs[v], d), bmodd));
   }
   degree = calcDegree();
 }
@@ -924,7 +940,7 @@ void ConstrExp<SMALL, LARGE>::logInconsistency(const IntVecIt& level, const std:
 }
 
 template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::toStreamAsOPB(std::ofstream& o) const {
+void ConstrExp<SMALL, LARGE>::toStreamAsOPB(std::ostream& o) const {
   std::vector<Var> vs = vars;
   std::sort(vs.begin(), vs.end(), [](Var v1, Var v2) { return v1 < v2; });
   for (Var v : vs) {
@@ -1053,6 +1069,11 @@ void ConstrExp<SMALL, LARGE>::resolveWith(ConstrExp96& c, Lit l, IntSet* actSet,
   genericResolve(c, l, actSet, Level, Pos);
 }
 template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::resolveWith(ConstrExp128& c, Lit l, IntSet* actSet, const IntVecIt& Level,
+                                          const std::vector<int>& Pos) {
+  genericResolve(c, l, actSet, Level, Pos);
+}
+template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::resolveWith(ConstrExpArb& c, Lit l, IntSet* actSet, const IntVecIt& Level,
                                           const std::vector<int>& Pos) {
   genericResolve(c, l, actSet, Level, Pos);
@@ -1062,6 +1083,7 @@ void ConstrExpPools::resize(size_t newn) {
   ce32s.resize(newn);
   ce64s.resize(newn);
   ce96s.resize(newn);
+  ce128s.resize(newn);
   ceArbs.resize(newn);
 }
 
@@ -1069,6 +1091,7 @@ void ConstrExpPools::initializeLogging(std::shared_ptr<Logger> lgr) {
   ce32s.initializeLogging(lgr);
   ce64s.initializeLogging(lgr);
   ce96s.initializeLogging(lgr);
+  ce128s.initializeLogging(lgr);
   ceArbs.initializeLogging(lgr);
 }
 
@@ -1085,6 +1108,10 @@ ConstrExp96& ConstrExpPools::take<int128, int128>() {
   return ce96s.take();
 }
 template <>
+ConstrExp128& ConstrExpPools::take<int128, int256>() {
+  return ce128s.take();
+}
+template <>
 ConstrExpArb& ConstrExpPools::take<bigint, bigint>() {
   return ceArbs.take();
 }
@@ -1092,4 +1119,5 @@ ConstrExpArb& ConstrExpPools::take<bigint, bigint>() {
 ConstrExp32& ConstrExpPools::take32() { return take<int, long long>(); }
 ConstrExp64& ConstrExpPools::take64() { return take<long long, int128>(); }
 ConstrExp96& ConstrExpPools::take96() { return take<int128, int128>(); }
+ConstrExp128& ConstrExpPools::take128() { return take<int128, int256>(); }
 ConstrExpArb& ConstrExpPools::takeArb() { return take<bigint, bigint>(); }

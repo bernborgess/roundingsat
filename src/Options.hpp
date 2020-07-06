@@ -71,8 +71,8 @@ struct Options {
   bool bumpOnlyFalse = false;
   bool bumpCanceling = true;
 
-  int bitsOverflow = 29;
-  int bitsReduced = 46;
+  int bitsOverflow = 0;
+  int bitsReduced = 0;
   int bitsLearned = 29;
 
   enum OPTIONS {

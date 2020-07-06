@@ -48,7 +48,7 @@ const CRef CRef_Undef = {std::numeric_limits<uint32_t>::max()};
 const CRef CRef_Unsat = {std::numeric_limits<uint32_t>::max() - 1};  // TODO: needed?
 
 enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
-enum Representation { B32, B64, B96, ARB };
+enum Representation { B32, B64, B96, B128, ARB };
 
 struct ConstraintAllocator;
 struct ConstrSimpleSuper;
@@ -66,6 +66,7 @@ struct ConstrExpSuper {
   virtual void copyTo(ConstrExp32& ce) const = 0;
   virtual void copyTo(ConstrExp64& ce) const = 0;
   virtual void copyTo(ConstrExp96& ce) const = 0;
+  virtual void copyTo(ConstrExp128& ce) const = 0;
   virtual void copyTo(ConstrExpArb& ce) const = 0;
 
   virtual ConstrExpSuper& reduce(ConstrExpPools& ce) const = 0;
@@ -120,7 +121,7 @@ struct ConstrExpSuper {
   virtual void logUnit(const IntVecIt& level, const std::vector<int>& pos, Var v_unit, const Stats& sts) = 0;
   virtual void logInconsistency(const IntVecIt& level, const std::vector<int>& pos, const Stats& sts) = 0;
 
-  virtual void toStreamAsOPB(std::ofstream& o) const = 0;
+  virtual void toStreamAsOPB(std::ostream& o) const = 0;
   virtual void toStreamWithAssignment(std::ostream& o, const IntVecIt& level, const std::vector<int>& pos) const = 0;
 
   virtual void resolveWith(ConstrExp32& c, Lit l, IntSet* actSet, const IntVecIt& Level,
@@ -128,6 +129,8 @@ struct ConstrExpSuper {
   virtual void resolveWith(ConstrExp64& c, Lit l, IntSet* actSet, const IntVecIt& Level,
                            const std::vector<int>& Pos) = 0;
   virtual void resolveWith(ConstrExp96& c, Lit l, IntSet* actSet, const IntVecIt& Level,
+                           const std::vector<int>& Pos) = 0;
+  virtual void resolveWith(ConstrExp128& c, Lit l, IntSet* actSet, const IntVecIt& Level,
                            const std::vector<int>& Pos) = 0;
   virtual void resolveWith(ConstrExpArb& c, Lit l, IntSet* actSet, const IntVecIt& Level,
                            const std::vector<int>& Pos) = 0;
@@ -194,6 +197,7 @@ struct ConstrExp final : public ConstrExpSuper {
   void copyTo(ConstrExp32& ce) const { copyTo_(ce); }
   void copyTo(ConstrExp64& ce) const { copyTo_(ce); }
   void copyTo(ConstrExp96& ce) const { copyTo_(ce); }
+  void copyTo(ConstrExp128& ce) const { copyTo_(ce); }
   void copyTo(ConstrExpArb& ce) const { copyTo_(ce); }
 
   ConstrExpSuper& reduce(ConstrExpPools& ce) const;
@@ -317,12 +321,13 @@ struct ConstrExp final : public ConstrExpSuper {
   void logUnit(const IntVecIt& level, const std::vector<int>& pos, Var v_unit, const Stats& sts);
   void logInconsistency(const IntVecIt& level, const std::vector<int>& pos, const Stats& sts);
 
-  void toStreamAsOPB(std::ofstream& o) const;
+  void toStreamAsOPB(std::ostream& o) const;
   void toStreamWithAssignment(std::ostream& o, const IntVecIt& level, const std::vector<int>& pos) const;
 
   void resolveWith(ConstrExp32& c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
   void resolveWith(ConstrExp64& c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
   void resolveWith(ConstrExp96& c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
+  void resolveWith(ConstrExp128& c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
   void resolveWith(ConstrExpArb& c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
   void resolveWith(const Clause& c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
   void resolveWith(const Cardinality& c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
@@ -414,6 +419,7 @@ class ConstrExpPools {
   ConstrExpPool<ConstrExp32> ce32s;
   ConstrExpPool<ConstrExp64> ce64s;
   ConstrExpPool<ConstrExp96> ce96s;
+  ConstrExpPool<ConstrExp128> ce128s;
   ConstrExpPool<ConstrExpArb> ceArbs;
 
  public:
@@ -426,5 +432,6 @@ class ConstrExpPools {
   ConstrExp32& take32();
   ConstrExp64& take64();
   ConstrExp96& take96();
+  ConstrExp128& take128();
   ConstrExpArb& takeArb();
 };
