@@ -281,7 +281,7 @@ bool Solver::analyze(ConstrExpArb& confl) {
       stats.NLPENCLEARNEDFARKAS += reasonC.getOrigin() == Origin::LEARNEDFARKAS;
       stats.NLPENCFARKAS += reasonC.getOrigin() == Origin::FARKAS;
 
-      reasonC.resolveWith(confl, l, confl_coef_l, &actSet, *this);
+      reasonC.resolveWith(confl, l, &actSet, *this);
     }
     undoOne();
   }
@@ -338,7 +338,7 @@ bool Solver::extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrE
     Lit l = trail.back();
     BigCoef confl_coef_l = confl.getCoef(-l);
     if (confl_coef_l > 0) {
-      ca[Reason[toVar(l)]].resolveWith(confl, l, confl_coef_l, nullptr, *this);
+      ca[Reason[toVar(l)]].resolveWith(confl, l, nullptr, *this);
       assumpslk = confl.getSlack(assumptions);
     }
     assert(decisionLevel() == (int)decisions.size());

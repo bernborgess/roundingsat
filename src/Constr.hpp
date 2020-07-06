@@ -71,7 +71,7 @@ struct Constr {  // internal solver constraint optimized for fast propagation
   virtual void initializeWatches(CRef cr, Solver& solver) = 0;
   virtual WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& slvr) = 0;
   virtual void undoFalsified(int i) = 0;
-  virtual void resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver) = 0;
+  virtual void resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver) = 0;
 
   virtual ConstrExpSuper& toExpanded(ConstrExpPools& cePools) const = 0;
 
@@ -118,7 +118,7 @@ struct Clause final : public Constr {
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified([[maybe_unused]] int i) { assert(false); }
-  void resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver);
+  void resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver);
 
   ConstrExpSuper& toExpanded(ConstrExpPools& cePools) const;
 };
@@ -162,7 +162,7 @@ struct Cardinality final : public Constr {
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified([[maybe_unused]] int i) { assert(false); }
-  void resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver);
+  void resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver);
 
   ConstrExpSuper& toExpanded(ConstrExpPools& cePools) const;
 };
@@ -207,16 +207,12 @@ struct Counting final : public Constr {
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
-  void resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver);
+  void resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver);
 
   ConstrExpSuper& toExpanded(ConstrExpPools& cePools) const;
 
   bool hasCorrectSlack(const Solver& solver);
 };
-
-using Counting32 = Counting<int, long long>;
-using Counting64 = Counting<long long, int128>;
-using Counting96 = Counting<int128, int128>;
 
 template <typename CF, typename DG>
 struct Watched final : public Constr {
@@ -258,17 +254,13 @@ struct Watched final : public Constr {
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
-  void resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver);
+  void resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver);
 
   ConstrExpSuper& toExpanded(ConstrExpPools& cePools) const;
 
   bool hasCorrectSlack(const Solver& solver);
   bool hasCorrectWatches(const Solver& solver);
 };
-
-using Watched32 = Watched<int, long long>;
-using Watched64 = Watched<long long, int128>;
-using Watched96 = Watched<int128, int128>;
 
 struct Arbitrary final : public Constr {
   unsigned int watchIdx;
@@ -311,7 +303,7 @@ struct Arbitrary final : public Constr {
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
-  void resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver);
+  void resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver);
 
   ConstrExpSuper& toExpanded(ConstrExpPools& cePools) const;
 

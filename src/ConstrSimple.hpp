@@ -50,12 +50,6 @@ std::ostream& operator<<(std::ostream& o, const Term<CF>& t) {
 
 struct ConstrExpSuper;
 struct ConstrExpPools;
-template <typename CF, typename DG>
-struct ConstrSimple;
-using ConstrSimple32 = ConstrSimple<int, long long>;
-using ConstrSimple64 = ConstrSimple<long long, int128>;
-using ConstrSimple96 = ConstrSimple<int128, int128>;
-using ConstrSimpleArb = ConstrSimple<bigint, bigint>;
 
 struct ConstrSimpleSuper {
   Origin orig = Origin::UNKNOWN;

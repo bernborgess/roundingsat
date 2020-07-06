@@ -31,52 +31,14 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Constr.hpp"
 #include "Solver.hpp"
 
-template <typename CF, typename DG>
-void genericResolve(ConstrExp<CF, DG>& reason, ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet,
-                    const IntVecIt& Level, const std::vector<int>& Pos) {
-  stats.NADDEDLITERALS += reason.vars.size();
-  reason.removeUnitsAndZeroes(Level, Pos);  // NOTE: also saturates
-  if (options.weakenNonImplying)
-    reason.weakenNonImplying(Level, reason.getCoef(l), reason.getSlack(Level),
-                             stats);  // NOTE: also saturates
-  reason.saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced);
-  assert(reason.getCoef(l) > reason.getSlack(Level));
-  reason.weakenDivideRound(Level, l, options.slackdiv, options.weakenFull);
-  assert(reason.getSlack(Level) <= 0);
-  if (actSet != nullptr) {
-    for (Var v : reason.vars) {
-      Lit ll = reason.getLit(v);
-      if (!options.bumpOnlyFalse || isFalse(Level, ll)) actSet->add(v);
-      if (options.bumpCanceling && confl.getLit(v) == -ll) actSet->add(-v);
-    }
-  }
-  CF reason_coef_l = reason.getCoef(l);
-  CF gcd_coef_l = rs::gcd<BigCoef>(reason_coef_l, confl_coef_l);
-  confl.addUp(reason, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
-  confl.saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced);
-  assert(confl.getCoef(-l) == 0);
-  assert(confl.hasNegativeSlack(Level));
-}
 
-void genericSimpleResolve(ConstrExp32& reason, ConstrExpArb& confl, [[maybe_unused]] Lit l, const BigCoef& confl_coef_l,
-                          IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos) {
-  // TODO: remove conversion to ConstrExp32
-  stats.NADDEDLITERALS += reason.vars.size();
-  reason.removeUnitsAndZeroes(Level, Pos);  // NOTE: also saturates
-  assert(reason.getCoef(l) > reason.getSlack(Level));
-  assert(reason.getSlack(Level) <= 0);
-  if (actSet != nullptr) {
-    for (Var v : reason.vars) {
-      Lit ll = reason.getLit(v);
-      if (!options.bumpOnlyFalse || isFalse(Level, ll)) actSet->add(v);
-      if (options.bumpCanceling && confl.getLit(v) == -ll) actSet->add(-v);
-    }
-  }
-  confl.addUp(reason, confl_coef_l);
-  confl.saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced);
-  assert(confl.getCoef(-l) == 0);
-  assert(confl.hasNegativeSlack(Level));
-}
+template class Counting<int, long long>;
+template class Counting<long long, int128>;
+template class Counting<int128, int128>;
+
+template class Watched<int, long long>;
+template class Watched<long long, int128>;
+template class Watched<int128, int128>;
 
 void Clause::initializeWatches(CRef cr, Solver& solver) {
   auto& Level = solver.Level;
@@ -171,10 +133,8 @@ WatchStatus Clause::checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver
   return WatchStatus::KEEPWATCH;
 }
 
-void Clause::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver) {
-  ConstrExp32& reason = static_cast<ConstrExp32&>(toExpanded(solver.cePools));
-  genericSimpleResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
-  reason.release();
+void Clause::resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver) {
+  confl.resolveWith(*this, l, actSet, solver);
 }
 
 ConstrExpSuper& Clause::toExpanded(ConstrExpPools& cePools) const {
@@ -281,10 +241,8 @@ WatchStatus Cardinality::checkForPropagation(CRef cr, int& idx, [[maybe_unused]]
   return WatchStatus::KEEPWATCH;
 }
 
-void Cardinality::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver) {
-  ConstrExp32& reason = static_cast<ConstrExp32&>(toExpanded(solver.cePools));
-  genericSimpleResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
-  reason.release();
+void Cardinality::resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver) {
+  confl.resolveWith(*this, l, actSet, solver);
 }
 
 ConstrExpSuper& Cardinality::toExpanded(ConstrExpPools& cePools) const {
@@ -370,11 +328,8 @@ void Counting<CF, DG>::undoFalsified(int i) {
 }
 
 template <typename CF, typename DG>
-void Counting<CF, DG>::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet,
-                                   Solver& solver) {
-  ConstrExp<CF, DG>& reason = static_cast<ConstrExp<CF, DG>&>(toExpanded(solver.cePools));
-  genericResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
-  reason.release();
+void Counting<CF, DG>::resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver) {
+  confl.resolveWith(*this, l, actSet, solver);
 }
 
 template <typename CF, typename DG>
@@ -509,11 +464,8 @@ void Watched<CF, DG>::undoFalsified(int i) {
 }
 
 template <typename CF, typename DG>
-void Watched<CF, DG>::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet,
-                                  Solver& solver) {
-  ConstrExp<CF, DG>& reason = static_cast<ConstrExp<CF, DG>&>(toExpanded(solver.cePools));
-  genericResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
-  reason.release();
+void Watched<CF, DG>::resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver) {
+  confl.resolveWith(*this, l, actSet, solver);
 }
 
 template <typename CF, typename DG>
@@ -594,10 +546,8 @@ void Arbitrary::undoFalsified(int i) {
   ++stats.NWATCHLOOKUPSBJ;
 }
 
-void Arbitrary::resolveWith(ConstrExpArb& confl, Lit l, const BigCoef& confl_coef_l, IntSet* actSet, Solver& solver) {
-  ConstrExpArb& reason = static_cast<ConstrExpArb&>(toExpanded(solver.cePools));
-  genericResolve(reason, confl, l, confl_coef_l, actSet, solver.getLevel(), solver.getPos());
-  reason.release();
+void Arbitrary::resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver) {
+  confl.resolveWith(*this, l, actSet, solver);
 }
 
 ConstrExpSuper& Arbitrary::toExpanded(ConstrExpPools& cePools) const {
@@ -684,11 +634,3 @@ bool Watched<CF, DG>::hasCorrectWatches([[maybe_unused]] const Solver& solver) {
   }
   return true;
 }
-
-template class Counting<int, long long>;
-template class Counting<long long, int128>;
-template class Counting<int128, int128>;
-
-template class Watched<int, long long>;
-template class Watched<long long, int128>;
-template class Watched<int128, int128>;

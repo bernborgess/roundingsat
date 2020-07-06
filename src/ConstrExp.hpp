@@ -34,6 +34,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <sstream>
 #include "ConstrSimple.hpp"
 #include "Logger.hpp"
+#include "typedefs.hpp"
 
 struct CRef {
   uint32_t ofs;
@@ -52,12 +53,10 @@ struct IntSet;
 struct ConstraintAllocator;
 struct ConstrSimpleSuper;
 struct ConstrExpPools;
-template <typename SMALL, typename LARGE>
-struct ConstrExp;
-using ConstrExp32 = ConstrExp<int, long long>;
-using ConstrExp64 = ConstrExp<long long, int128>;
-using ConstrExp96 = ConstrExp<int128, int128>;
-using ConstrExpArb = ConstrExp<bigint, bigint>;
+class Solver;
+struct Clause;
+struct Cardinality;
+struct Arbitrary;
 
 struct ConstrExpSuper {
   std::vector<Var> vars;
@@ -75,6 +74,15 @@ struct ConstrExpSuper {
   virtual std::unique_ptr<ConstrSimpleSuper> toSimple() const = 0;
   virtual Representation minRepresentation() const = 0;
 
+  virtual void resize(size_t s) = 0;
+  virtual void resetBuffer(ID proofID = ID_Trivial) = 0;
+  virtual void initializeLogging(std::shared_ptr<Logger>& l) = 0;
+  virtual void stopLogging() = 0;
+  virtual bool isReset() const = 0;
+  virtual void reset() = 0;
+
+  virtual Lit getLit(Lit l) const = 0;
+
   virtual bool hasNegativeSlack(const IntVecIt& level) const = 0;
   virtual bool isTautology() const = 0;
   virtual bool isInconsistency() const = 0;
@@ -91,7 +99,7 @@ struct ConstrExpSuper {
   virtual void saturateAndFixOverflowRational(const std::vector<double>& lpSolution) = 0;
   virtual bool fitsInDouble() const = 0;
 
-  virtual void weakenDivideRound(const IntVecIt& level, Lit l, bool maxdiv, bool fullWeakening) = 0;
+  virtual void weakenDivideRound(const IntVecIt& level, Lit l, bool slackdiv, bool fullWeakening) = 0;
 
   virtual bool divideByGCD() = 0;
   virtual void postProcess(const IntVecIt& level, const std::vector<int>& pos, bool sortFirst, Stats& sts) = 0;
@@ -113,6 +121,16 @@ struct ConstrExpSuper {
 
   virtual void toStreamAsOPB(std::ofstream& o) const = 0;
   virtual void toStreamWithAssignment(std::ostream& o, const IntVecIt& level, const std::vector<int>& pos) const = 0;
+
+  virtual void resolveWith(const Clause& c, Lit l, IntSet* actSet, Solver& solver) = 0;
+  virtual void resolveWith(const Cardinality& c, Lit l, IntSet* actSet, Solver& solver) = 0;
+  virtual void resolveWith(const Counting32& c, Lit l, IntSet* actSet, Solver& solver) = 0;
+  virtual void resolveWith(const Counting64& c, Lit l, IntSet* actSet, Solver& solver) = 0;
+  virtual void resolveWith(const Counting96& c, Lit l, IntSet* actSet, Solver& solver) = 0;
+  virtual void resolveWith(const Watched32& c, Lit l, IntSet* actSet, Solver& solver) = 0;
+  virtual void resolveWith(const Watched64& c, Lit l, IntSet* actSet, Solver& solver) = 0;
+  virtual void resolveWith(const Watched96& c, Lit l, IntSet* actSet, Solver& solver) = 0;
+  virtual void resolveWith(const Arbitrary& c, Lit l, IntSet* actSet, Solver& solver) = 0;
 };
 
 template <typename CE>
@@ -138,6 +156,12 @@ struct ConstrExp final : public ConstrExpSuper {
   LARGE calcRhs() const;
   bool testConstraint() const;
   bool falsified(const IntVecIt& level, Var v) const;
+  template <typename T>
+  std::string proofMult(const T& mult) {
+    std::stringstream ss;
+    if (mult != 1) ss << mult << " * ";
+    return ss.str();
+  }
 
  public:
   ConstrExp(ConstrExpPool<ConstrExp<SMALL, LARGE>>& cep);
@@ -177,13 +201,6 @@ struct ConstrExp final : public ConstrExpSuper {
   void resetBuffer(ID proofID = ID_Trivial);
   void initializeLogging(std::shared_ptr<Logger>& l);
   void stopLogging();
-
-  template <typename T>
-  std::string proofMult(const T& mult) {
-    std::stringstream ss;
-    if (mult != 1) ss << mult << " * ";
-    return ss.str();
-  }
 
   bool isReset() const;
   void reset();
@@ -296,6 +313,20 @@ struct ConstrExp final : public ConstrExpSuper {
 
   void toStreamAsOPB(std::ofstream& o) const;
   void toStreamWithAssignment(std::ostream& o, const IntVecIt& level, const std::vector<int>& pos) const;
+
+  void resolveWith(const Clause& c, Lit l, IntSet* actSet, Solver& solver);
+  void resolveWith(const Cardinality& c, Lit l, IntSet* actSet, Solver& solver);
+  void resolveWith(const Counting32& c, Lit l, IntSet* actSet, Solver& solver);
+  void resolveWith(const Counting64& c, Lit l, IntSet* actSet, Solver& solver);
+  void resolveWith(const Counting96& c, Lit l, IntSet* actSet, Solver& solver);
+  void resolveWith(const Watched32& c, Lit l, IntSet* actSet, Solver& solver);
+  void resolveWith(const Watched64& c, Lit l, IntSet* actSet, Solver& solver);
+  void resolveWith(const Watched96& c, Lit l, IntSet* actSet, Solver& solver);
+  void resolveWith(const Arbitrary& c, Lit l, IntSet* actSet, Solver& solver);
+
+ private:
+  template <typename CF, typename DG>
+  void genericResolve(ConstrExp<CF, DG>& reason, Lit l, IntSet* actSet, const Solver& solver);
 };
 
 template <typename S, typename L>

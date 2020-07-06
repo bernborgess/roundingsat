@@ -132,3 +132,29 @@ inline bool isTrue(const IntVecIt& level, Lit l) { return level[l] != INF; }
 inline bool isFalse(const IntVecIt& level, Lit l) { return level[-l] != INF; }
 inline bool isUnit(const IntVecIt& level, Lit l) { return level[l] == 0; }
 inline bool isUnknown(const std::vector<int>& pos, Lit l) { return pos[toVar(l)] == INF; }
+
+template <typename SMALL, typename LARGE>
+struct ConstrExp;
+using ConstrExp32 = ConstrExp<int, long long>;
+using ConstrExp64 = ConstrExp<long long, int128>;
+using ConstrExp96 = ConstrExp<int128, int128>;
+using ConstrExpArb = ConstrExp<bigint, bigint>;
+
+template <typename CF, typename DG>
+struct ConstrSimple;
+using ConstrSimple32 = ConstrSimple<int, long long>;
+using ConstrSimple64 = ConstrSimple<long long, int128>;
+using ConstrSimple96 = ConstrSimple<int128, int128>;
+using ConstrSimpleArb = ConstrSimple<bigint, bigint>;
+
+template <typename CF, typename DG>
+struct Counting;
+using Counting32 = Counting<int, long long>;
+using Counting64 = Counting<long long, int128>;
+using Counting96 = Counting<int128, int128>;
+
+template <typename CF, typename DG>
+struct Watched;
+using Watched32 = Watched<int, long long>;
+using Watched64 = Watched<long long, int128>;
+using Watched96 = Watched<int128, int128>;

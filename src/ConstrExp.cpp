@@ -34,6 +34,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Constr.hpp"
 #include "ConstrSimple.hpp"
 #include "IntSet.hpp"
+#include "Solver.hpp"
 #include "SolverStructs.hpp"
 #include "Stats.hpp"
 #include "aux.hpp"
@@ -43,6 +44,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 const int limit32 = 1e9;
 const long long limit64 = 1e18;
 const int128 limit96 = 1e27;
+
+template class ConstrExp<int, long long>;
+template class ConstrExp<long long, int128>;
+template class ConstrExp<int128, int128>;
+template class ConstrExp<bigint, bigint>;
 
 template <typename SMALL, typename LARGE>
 ConstrExp<SMALL, LARGE>::ConstrExp(ConstrExpPool<ConstrExp<SMALL, LARGE>>& cep) : pool(cep) {
@@ -942,10 +948,132 @@ void ConstrExp<SMALL, LARGE>::toStreamWithAssignment(std::ostream& o, const IntV
   o << ">= " << degree << "(" << getSlack(level) << ")";
 }
 
-template class ConstrExp<int, long long>;
-template class ConstrExp<long long, int128>;
-template class ConstrExp<int128, int128>;
-template class ConstrExp<bigint, bigint>;
+void updateActSet(const ConstrExpSuper& reason, const ConstrExpSuper& confl, IntSet* actSet, const IntVecIt& level) {
+  if (actSet != nullptr) {
+    for (Var v : reason.vars) {
+      Lit l = reason.getLit(v);
+      if (!options.bumpOnlyFalse || isFalse(level, l)) actSet->add(v);
+      if (options.bumpCanceling && confl.getLit(v) == -l) actSet->add(-v);
+    }
+  }
+}
+
+template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::resolveWith(const Clause& c, Lit l, IntSet* actSet, Solver& solver) {
+  assert(getCoef(-l) > 0);
+  const IntVecIt& level = solver.getLevel();
+  ConstrExp32& reason = static_cast<ConstrExp32&>(c.toExpanded(solver.cePools));
+  // TODO: remove conversion to ConstrExp32
+  stats.NADDEDLITERALS += reason.vars.size();
+  reason.removeUnitsAndZeroes(level, solver.getPos());  // NOTE: also saturates
+  assert(reason.getSlack(level) <= 0);
+  updateActSet(reason, *this, actSet, level);
+  addUp(reason, getCoef(-l));
+  saturateAndFixOverflow(level, options.weakenFull, options.bitsOverflow, options.bitsReduced);
+  assert(getCoef(-l) == 0);
+  assert(hasNegativeSlack(level));
+  reason.release();
+}
+
+template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::resolveWith(const Cardinality& c, Lit l, IntSet* actSet, Solver& solver) {
+  assert(getCoef(-l) > 0);
+  const IntVecIt& level = solver.getLevel();
+  ConstrExp32& reason = static_cast<ConstrExp32&>(c.toExpanded(solver.cePools));
+  // TODO: remove conversion to ConstrExp32
+  stats.NADDEDLITERALS += reason.vars.size();
+  reason.removeUnitsAndZeroes(level, solver.getPos());  // NOTE: also saturates
+  assert(reason.getSlack(level) <= 0);
+  updateActSet(reason, *this, actSet, level);
+  addUp(reason, getCoef(-l));
+  saturateAndFixOverflow(level, options.weakenFull, options.bitsOverflow, options.bitsReduced);
+  assert(getCoef(-l) == 0);
+  assert(hasNegativeSlack(level));
+  reason.release();
+}
+
+template <typename SMALL, typename LARGE>
+template <typename CF, typename DG>
+void ConstrExp<SMALL, LARGE>::genericResolve(ConstrExp<CF, DG>& reason, Lit l, IntSet* actSet, const Solver& solver) {
+  assert(getCoef(-l) > 0);
+  const IntVecIt& Level = solver.getLevel();
+  stats.NADDEDLITERALS += reason.vars.size();
+  reason.removeUnitsAndZeroes(Level, solver.getPos());
+  if (options.weakenNonImplying) reason.weakenNonImplying(Level, reason.getCoef(l), reason.getSlack(Level), stats);
+  reason.saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced);
+  assert(reason.getCoef(l) > reason.getSlack(Level));
+  reason.weakenDivideRound(Level, l, options.slackdiv, options.weakenFull);
+  assert(reason.getSlack(Level) <= 0);
+  updateActSet(reason, *this, actSet, Level);
+  SMALL reason_coef_l = static_cast<SMALL>(reason.getCoef(l));  // NOTE: SMALL >= CF
+  SMALL confl_coef_l = getCoef(-l);
+  SMALL gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
+  addUp(reason, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
+  saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced);
+  assert(getCoef(-l) == 0);
+  assert(hasNegativeSlack(Level));
+}
+
+// to avoid having to declare genericResolve in the header, we explicitly need to instantiate it here
+template void ConstrExp32::genericResolve<int, long long>(ConstrExp32&, Lit, IntSet*, const Solver&);
+template void ConstrExp64::genericResolve<int, long long>(ConstrExp32&, Lit, IntSet*, const Solver&);
+template void ConstrExp96::genericResolve<int, long long>(ConstrExp32&, Lit, IntSet*, const Solver&);
+template void ConstrExpArb::genericResolve<int, long long>(ConstrExp32&, Lit, IntSet*, const Solver&);
+template void ConstrExp32::genericResolve<long long, int128>(ConstrExp64&, Lit, IntSet*, const Solver&);
+template void ConstrExp64::genericResolve<long long, int128>(ConstrExp64&, Lit, IntSet*, const Solver&);
+template void ConstrExp96::genericResolve<long long, int128>(ConstrExp64&, Lit, IntSet*, const Solver&);
+template void ConstrExpArb::genericResolve<long long, int128>(ConstrExp64&, Lit, IntSet*, const Solver&);
+template void ConstrExp32::genericResolve<int128, int128>(ConstrExp96&, Lit, IntSet*, const Solver&);
+template void ConstrExp64::genericResolve<int128, int128>(ConstrExp96&, Lit, IntSet*, const Solver&);
+template void ConstrExp96::genericResolve<int128, int128>(ConstrExp96&, Lit, IntSet*, const Solver&);
+template void ConstrExpArb::genericResolve<int128, int128>(ConstrExp96&, Lit, IntSet*, const Solver&);
+template void ConstrExp32::genericResolve<bigint, bigint>(ConstrExpArb&, Lit, IntSet*, const Solver&);
+template void ConstrExp64::genericResolve<bigint, bigint>(ConstrExpArb&, Lit, IntSet*, const Solver&);
+template void ConstrExp96::genericResolve<bigint, bigint>(ConstrExpArb&, Lit, IntSet*, const Solver&);
+template void ConstrExpArb::genericResolve<bigint, bigint>(ConstrExpArb&, Lit, IntSet*, const Solver&);
+
+template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::resolveWith(const Counting32& c, Lit l, IntSet* actSet, Solver& solver) {
+  ConstrExp32& reason = static_cast<ConstrExp32&>(c.toExpanded(solver.cePools));
+  genericResolve(reason, l, actSet, solver);
+  reason.release();
+}
+template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::resolveWith(const Counting64& c, Lit l, IntSet* actSet, Solver& solver) {
+  ConstrExp64& reason = static_cast<ConstrExp64&>(c.toExpanded(solver.cePools));
+  genericResolve(reason, l, actSet, solver);
+  reason.release();
+}
+template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::resolveWith(const Counting96& c, Lit l, IntSet* actSet, Solver& solver) {
+  ConstrExp96& reason = static_cast<ConstrExp96&>(c.toExpanded(solver.cePools));
+  genericResolve(reason, l, actSet, solver);
+  reason.release();
+}
+template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::resolveWith(const Watched32& c, Lit l, IntSet* actSet, Solver& solver) {
+  ConstrExp32& reason = static_cast<ConstrExp32&>(c.toExpanded(solver.cePools));
+  genericResolve(reason, l, actSet, solver);
+  reason.release();
+}
+template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::resolveWith(const Watched64& c, Lit l, IntSet* actSet, Solver& solver) {
+  ConstrExp64& reason = static_cast<ConstrExp64&>(c.toExpanded(solver.cePools));
+  genericResolve(reason, l, actSet, solver);
+  reason.release();
+}
+template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::resolveWith(const Watched96& c, Lit l, IntSet* actSet, Solver& solver) {
+  ConstrExp96& reason = static_cast<ConstrExp96&>(c.toExpanded(solver.cePools));
+  genericResolve(reason, l, actSet, solver);
+  reason.release();
+}
+template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::resolveWith(const Arbitrary& c, Lit l, IntSet* actSet, Solver& solver) {
+  ConstrExpArb& reason = static_cast<ConstrExpArb&>(c.toExpanded(solver.cePools));
+  genericResolve(reason, l, actSet, solver);
+  reason.release();
+}
 
 void ConstrExpPools::resize(size_t newn) {
   ce32s.resize(newn);
