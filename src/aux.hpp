@@ -43,6 +43,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <unordered_set>
 #include <vector>
 
+#define _unused(x) ((void)(x))  // marks variables unused in release mode, use [[maybe_unused]] where possible
+
 template <typename T, typename U>
 std::ostream& operator<<(std::ostream& os, const std::pair<T, U>& p) {
   os << p.first << "," << p.second;

@@ -283,7 +283,8 @@ void Counting<CF, DG>::initializeWatches(CRef cr, Solver& solver) {
 }
 
 template <typename CF, typename DG>
-WatchStatus Counting<CF, DG>::checkForPropagation(CRef cr, int& idx, [[maybe_unused]] Lit p, Solver& solver) {
+WatchStatus Counting<CF, DG>::checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver) {
+  _unused(p);
   auto& Pos = solver.Pos;
 
   assert(idx >= INF);
@@ -393,7 +394,8 @@ void Watched<CF, DG>::initializeWatches(CRef cr, Solver& solver) {
 }
 
 template <typename CF, typename DG>
-WatchStatus Watched<CF, DG>::checkForPropagation(CRef cr, int& idx, [[maybe_unused]] Lit p, Solver& solver) {
+WatchStatus Watched<CF, DG>::checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver) {
+  _unused(p);
   auto& Level = solver.Level;
   auto& Pos = solver.Pos;
   auto& adj = solver.adj;
@@ -628,7 +630,8 @@ bool Arbitrary::hasCorrectSlack(const Solver& solver) {
 }
 
 template <typename CF, typename DG>
-bool Watched<CF, DG>::hasCorrectWatches([[maybe_unused]] const Solver& solver) {
+bool Watched<CF, DG>::hasCorrectWatches(const Solver& solver) {
+  _unused(solver);
   if (watchslack >= largestCoef()) return true;
   for (int i = 0; i < (int)watchIdx; ++i) assert(!isUnknown(solver.getPos(), lit(i)));
   for (int i = 0; i < (int)size(); ++i) {
