@@ -41,10 +41,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "globals.hpp"
 #include "typedefs.hpp"
 
-const int limit32 = 1e9;
-const long long limit64 = 1e18;
-const int128 limit96 = 1e27;
-
 template class ConstrExp<int, long long>;
 template class ConstrExp<long long, int128>;
 template class ConstrExp<int128, int128>;
@@ -280,6 +276,13 @@ Lit ConstrExp<SMALL, LARGE>::getLit(Lit l) const {  // NOTE: answer of 0 means c
 }
 
 template <typename SMALL, typename LARGE>
+bool ConstrExp<SMALL, LARGE>::hasLit(Lit l) const {  // NOTE: answer of 0 means coef 0
+  Var v = toVar(l);
+  assert(v < (Var)coefs.size());
+  return (coefs[v] == 0) ? false : ((coefs[v] < 0) == (l < 0));
+}
+
+template <typename SMALL, typename LARGE>
 bool ConstrExp<SMALL, LARGE>::falsified(const IntVecIt& level, Var v) const {
   assert(v > 0);
   assert((getLit(v) != 0 && !isFalse(level, getLit(v))) == (coefs[v] > 0 && !isFalse(level, v)) ||
@@ -296,6 +299,11 @@ LARGE ConstrExp<SMALL, LARGE>::getSlack(const IntVecIt& level) const {
 }
 
 template <typename SMALL, typename LARGE>
+bool ConstrExp<SMALL, LARGE>::hasNegativeSlack(const IntVecIt& level) const {
+  return getSlack(level) < 0;
+}
+
+template <typename SMALL, typename LARGE>
 LARGE ConstrExp<SMALL, LARGE>::getSlack(const IntSet& assumptions) const {
   LARGE slack = -rhs;
   for (Var v : vars)
@@ -304,8 +312,8 @@ LARGE ConstrExp<SMALL, LARGE>::getSlack(const IntSet& assumptions) const {
 }
 
 template <typename SMALL, typename LARGE>
-bool ConstrExp<SMALL, LARGE>::hasNegativeSlack(const IntVecIt& level) const {
-  return getSlack(level) < 0;
+bool ConstrExp<SMALL, LARGE>::hasNegativeSlack(const IntSet& assumptions) const {
+  return getSlack(assumptions) < 0;
 }
 
 template <typename SMALL, typename LARGE>

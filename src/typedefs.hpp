@@ -105,6 +105,10 @@ inline Var toVar(Lit l) { return rs::abs(l); }
 const int INF = 1e9 + 1;  // 1e9 is the maximum number of variables in the system, anything beyond is infinity
 const long long INFLPINT = 1e15 + 1;  // based on max long range captured by double
 
+const int limit32 = 1e9;         // 2^29-2^30
+const long long limit64 = 2e18;  // 2^60-2^61
+const int128 limit96 = 8e27;     // 2^92-2^93, so 46 bits is less than half
+
 using IntVecIt = std::vector<int>::iterator;
 
 using ActValV = long double;

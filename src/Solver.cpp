@@ -241,22 +241,28 @@ void Solver::recomputeLBD(Constr& C) {
   }
 }
 
-bool Solver::analyze(ConstrExpArb& confl) {
+bool Solver::analyze(ConstrExpArb& conflict) {
   if (logger) logger->logComment("Analyze", stats);
-  assert(confl.hasNegativeSlack(Level));
-  stats.NADDEDLITERALS += confl.vars.size();
-  confl.removeUnitsAndZeroes(Level, Pos);
-  confl.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
+  assert(conflict.hasNegativeSlack(Level));
+  stats.NADDEDLITERALS += conflict.vars.size();
+  conflict.removeUnitsAndZeroes(Level, Pos);
+  conflict.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
+
+  ConstrExpSuper& confl = cePools.takeArb();
+  conflict.copyTo(confl);
+  conflict.reset();
+
   assert(actSet.size() == 0);  // will hold the literals that need their activity bumped
   for (Var v : confl.vars) {
     if (!options.bumpOnlyFalse || isFalse(Level, confl.getLit(v))) actSet.add(v);
   }
   while (decisionLevel() > 0) {
-    if (asynch_interrupt) return false;
+    if (asynch_interrupt) {
+      confl.release();
+      return false;
+    }
     Lit l = trail.back();
-    BigCoef confl_coef_l = confl.getCoef(-l);
-    if (confl_coef_l > 0) {
-      ++stats.NRESOLVESTEPS;
+    if (confl.hasLit(-l)) {
       assert(confl.hasNegativeSlack(Level));
       AssertionStatus status = confl.isAssertingBefore(Level, decisionLevel());
       if (status == AssertionStatus::ASSERTING)
@@ -280,7 +286,7 @@ bool Solver::analyze(ConstrExpArb& confl) {
       stats.NLPENCGOMORY += reasonC.getOrigin() == Origin::GOMORY;
       stats.NLPENCLEARNEDFARKAS += reasonC.getOrigin() == Origin::LEARNEDFARKAS;
       stats.NLPENCFARKAS += reasonC.getOrigin() == Origin::FARKAS;
-
+      ++stats.NRESOLVESTEPS;
       reasonC.resolveWith(confl, l, &actSet, *this);
     }
     undoOne();
@@ -289,11 +295,14 @@ bool Solver::analyze(ConstrExpArb& confl) {
   for (Lit l : actSet.keys)
     if (l != 0) vBumpActivity(toVar(l));
   actSet.reset();
+
+  confl.copyTo(conflict);
+  confl.release();
   return true;
 }
 
-bool Solver::extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrExpArb& outCore, Lit l_assump) {
-  assert(!confl.isReset());
+bool Solver::extractCore(ConstrExpArb& conflict, const IntSet& assumptions, ConstrExpArb& outCore, Lit l_assump) {
+  assert(!conflict.isReset());
   assert(outCore.isReset());
 
   if (l_assump != 0) {  // l_assump is an assumption propagated to the opposite value
@@ -325,29 +334,33 @@ bool Solver::extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrE
   for (Lit l : decisions) decide(l);
   for (Lit l : props) propagate(l, Reason[toVar(l)]);
 
-  stats.NADDEDLITERALS += confl.vars.size();
-  confl.removeUnitsAndZeroes(Level, Pos);
-  confl.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
-  assert(confl.hasNegativeSlack(Level));
+  stats.NADDEDLITERALS += conflict.vars.size();
+  conflict.removeUnitsAndZeroes(Level, Pos);
+  conflict.saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
+  assert(conflict.hasNegativeSlack(Level));
+
+  ConstrExpSuper& confl = cePools.takeArb();
+  conflict.copyTo(confl);
+  conflict.reset();
 
   // analyze conflict
-  BigVal assumpslk = confl.getSlack(assumptions);
-  //  int128 assumpslk = confl.getSlack(assumptions);
-  while (assumpslk >= 0) {
+  while (decisionLevel() > 0) {
     if (asynch_interrupt) return false;
     Lit l = trail.back();
-    BigCoef confl_coef_l = confl.getCoef(-l);
-    if (confl_coef_l > 0) {
-      ca[Reason[toVar(l)]].resolveWith(confl, l, nullptr, *this);
-      assumpslk = confl.getSlack(assumptions);
+    if (confl.hasLit(-l)) {
+      if (confl.hasNegativeSlack(assumptions)) break;
+      assert(Reason[toVar(l)] != CRef_Undef);
+      Constr& reasonC = ca[Reason[toVar(l)]];
+      // TODO: stats? activity?
+      reasonC.resolveWith(confl, l, nullptr, *this);
     }
-    assert(decisionLevel() == (int)decisions.size());
     undoOne();
   }
+  assert(confl.hasNegativeSlack(assumptions));
   assert(!confl.isTautology());
   assert(confl.isSaturated());
   confl.copyTo(outCore);
-  confl.reset();
+  confl.release();
 
   // weaken non-falsifieds
   for (Var v : outCore.vars)

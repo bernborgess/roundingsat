@@ -82,8 +82,10 @@ struct ConstrExpSuper {
   virtual void reset() = 0;
 
   virtual Lit getLit(Lit l) const = 0;
+  virtual bool hasLit(Lit l) const = 0;
 
   virtual bool hasNegativeSlack(const IntVecIt& level) const = 0;
+  virtual bool hasNegativeSlack(const IntSet& assumptions) const = 0;
   virtual bool isTautology() const = 0;
   virtual bool isInconsistency() const = 0;
 
@@ -210,14 +212,16 @@ struct ConstrExp final : public ConstrExpSuper {
   SMALL getCoef(Lit l) const;
   SMALL getLargestCoef() const;
   Lit getLit(Lit l) const;
+  bool hasLit(Lit l) const;
 
   void addRhs(const LARGE& r);
   void addLhs(const SMALL& cf, Lit l);  // TODO: Term?
   void weaken(const SMALL& m, Var v);
 
   LARGE getSlack(const IntVecIt& level) const;
-  LARGE getSlack(const IntSet& assumptions) const;
   bool hasNegativeSlack(const IntVecIt& level) const;
+  LARGE getSlack(const IntSet& assumptions) const;
+  bool hasNegativeSlack(const IntSet& assumptions) const;
   bool isTautology() const;
   bool isInconsistency() const;
 
