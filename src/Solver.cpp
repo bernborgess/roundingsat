@@ -180,6 +180,12 @@ void Solver::propagate(Lit l, CRef reason) {
  * @post: all watches up to trail[qhead] have been propagated
  */
 ConstrExpSuper& Solver::runPropagation(bool onlyUnitPropagation) {
+  ConstrExpSuper& confl = processLearnedStack();
+  if (confl.isTautology()) {
+    confl.release();
+  } else {
+    return confl;
+  }
   while (qhead < (int)trail.size()) {
     Lit p = trail[qhead++];
     std::vector<Watch>& ws = adj[-p];
@@ -449,7 +455,7 @@ void Solver::learnConstraint(const ConstrExpSuper& c, Origin orig) {
 }
 
 // NOTE: backjumps to place where the constraint is not conflicting, as otherwise we might miss propagations
-CRef Solver::processLearnedStack() {
+ConstrExpSuper& Solver::processLearnedStack() {
   // loop back to front as the last constraint in the queue is a result of conflict analysis
   // and we want to first check this constraint to backjump.
   while (learnedStack.size() > 0) {
@@ -460,10 +466,7 @@ CRef Solver::processLearnedStack() {
     int assertionLevel = learned.getAssertionLevel(Level, Pos);
     if (assertionLevel < 0) {
       backjumpTo(0);
-      assert(learned.hasNegativeSlack(Level));
-      if (logger) learned.logInconsistency(Level, Pos, stats);
-      learned.release();
-      return CRef_Unsat;
+      return learned;
     }
     backjumpTo(assertionLevel);
     assert(!learned.hasNegativeSlack(Level));
@@ -483,7 +486,7 @@ CRef Solver::processLearnedStack() {
       C.setLBD(C.size());  // the LBD of non-asserting constraints is undefined, so we take a safe upper bound
     learned.release();
   }
-  return CRef_Undef;
+  return cePools.take32();
 }
 
 std::pair<ID, ID> Solver::addInputConstraint(ConstrExpSuper& ce) {
@@ -714,7 +717,6 @@ SolveState Solver::solve(const IntSet& assumptions, ConstrExpArb& core, std::vec
   bool allClear = false;
   while (true) {
     if (asynch_interrupt) return SolveState::INTERRUPTED;
-    if (processLearnedStack() == CRef_Unsat) return SolveState::UNSAT;
     ConstrExpSuper& confl = runPropagation(allClear);
     assert(confl.isTautology() || confl.hasNegativeSlack(Level));
     allClear = confl.isTautology();

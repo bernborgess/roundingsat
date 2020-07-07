@@ -165,7 +165,7 @@ class Solver {
 
   CRef attachConstraint(ConstrExpSuper& constraint, bool locked);
   void learnConstraint(const ConstrExpSuper& c, Origin orig);
-  CRef processLearnedStack();
+  ConstrExpSuper& processLearnedStack();
   std::pair<ID, ID> addInputConstraint(ConstrExpSuper& ce);
   void removeConstraint(Constr& C, bool override = false);
 
