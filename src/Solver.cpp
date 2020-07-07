@@ -71,6 +71,10 @@ void Solver::init() {
 }
 
 void Solver::initLP(const ConstrExpArb& objective) {
+#if WITHSOPLEX
+#else
+  return;
+#endif  // WITHSOPLEX
   if (options.lpPivotRatio == 0) return;
   bool pureCNF = objective.vars.size() == 0;
   for (CRef cr : constraints) {
@@ -207,11 +211,9 @@ ConstrExpSuper& Solver::runPropagation(bool onlyUnitPropagation) {
   }
   if (onlyUnitPropagation) return cePools.take32();
   if (lpSolver) {
-    ConstrExpArb& confl = cePools.takeArb();
-    if (lpSolver->checkFeasibility(confl) != INFEASIBLE) {
-      confl.reset();
-    }
-    return confl;
+    std::pair<LpStatus, ConstrExpSuper&> lpResult = lpSolver->checkFeasibility();
+    assert((lpResult.first == INFEASIBLE) == lpResult.second.hasNegativeSlack(Level));
+    return lpResult.second;
   }
   return cePools.take32();
   ;

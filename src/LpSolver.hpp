@@ -113,8 +113,8 @@ class LpSolver {
   LpSolver(Solver& solver, const ConstrExpArb& objective);
   void setNbVariables(int n);
 
-  LpStatus checkFeasibility(ConstrExpArb& confl,
-                            bool inProcessing = false);  // TODO: don't use objective function here?
+  std::pair<LpStatus, ConstrExpSuper&> checkFeasibility(
+      bool inProcessing = false);  // TODO: don't use objective function here?
   void inProcess();
 
   void addConstraint(ConstrExpSuper& c, bool removable, bool upperbound = false, bool lowerbound = false);
@@ -126,12 +126,12 @@ class LpSolver {
 
   void flushConstraints();
 
-  LpStatus _checkFeasibility(ConstrExpArb& confl, bool inProcessing);
+  std::pair<LpStatus, ConstrExpSuper&> _checkFeasibility(bool inProcessing);
   void _inProcess();
 
   void convertConstraint(const ConstrSimple64& c, soplex::DSVectorReal& row, double& rhs);
   void resetBasis();
-  void createLinearCombinationFarkas(ConstrExpArb& out, soplex::DVectorReal& mults);
+  ConstrExpSuper& createLinearCombinationFarkas(soplex::DVectorReal& mults);
   CandidateCut createLinearCombinationGomory(soplex::DVectorReal& mults);
   double getScaleFactor(soplex::DVectorReal& mults, bool removeNegatives);
   ConstrExp64& rowToConstraint(int row);
@@ -149,11 +149,13 @@ class LpSolver {
 // TODO: check correspondence to above
 class LpSolver {
  public:
-  LpSolver([[maybe_unused]] Solver& solver, [[maybe_unused]] const ConstrExpArb& objective){};
+  LpSolver([[maybe_unused]] Solver& slvr, [[maybe_unused]] const ConstrExpArb& objective){};
   void setNbVariables([[maybe_unused]] int n){};
 
-  LpStatus checkFeasibility([[maybe_unused]] ConstrExpArb& confl, [[maybe_unused]] bool inProcessing = false) {
-    return LpStatus::UNDETERMINED;
+  std::pair<LpStatus, ConstrExpSuper&> checkFeasibility([[maybe_unused]] bool inProcessing = false) {
+    assert(false);
+    ConstrExp32* result = nullptr;
+    return {LpStatus::UNDETERMINED, *result};
   }
   void inProcess() {}
 

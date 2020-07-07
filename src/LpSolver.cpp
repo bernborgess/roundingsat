@@ -160,12 +160,12 @@ void LpSolver::setNbVariables(int n) {
 int LpSolver::getNbVariables() const { return lp.numCols(); }
 int LpSolver::getNbRows() const { return lp.numRows(); }
 
-void LpSolver::createLinearCombinationFarkas(ConstrExpArb& out, soplex::DVectorReal& mults) {
-  assert(out.isReset());
+ConstrExpSuper& LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
   double scale = getScaleFactor(mults, true);
-  if (scale == 0) return;
+  if (scale == 0) return solver.cePools.take32();
   assert(scale > 0);
 
+  ConstrExpArb& out = solver.cePools.takeArb();
   for (int r = 0; r < mults.dim(); ++r) {
     bigint factor = static_cast<bigint>(mults[r] * scale);
     if (factor <= 0) continue;
@@ -178,6 +178,7 @@ void LpSolver::createLinearCombinationFarkas(ConstrExpArb& out, soplex::DVectorR
   assert(out.hasNoZeroes());
   out.weakenSmalls(out.absCoeffSum() / static_cast<bigint>((double)out.vars.size() / options.intolerance));
   out.saturateAndFixOverflow(solver.getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
+  return out;
 }
 
 CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults) {
@@ -369,9 +370,9 @@ ConstrExp64& LpSolver::rowToConstraint(int row) {
   return ce;
 }
 
-LpStatus LpSolver::checkFeasibility(ConstrExpArb& confl, bool inProcessing) {
+std::pair<LpStatus, ConstrExpSuper&> LpSolver::checkFeasibility(bool inProcessing) {
   double startTime = aux::cpuTime();
-  LpStatus result = _checkFeasibility(confl, inProcessing);
+  std::pair<LpStatus, ConstrExpSuper&> result = _checkFeasibility(inProcessing);
   stats.LPTOTALTIME += aux::cpuTime() - startTime;
   return result;
 }
@@ -382,12 +383,12 @@ void LpSolver::inProcess() {
   stats.LPTOTALTIME += aux::cpuTime() - startTime;
 }
 
-LpStatus LpSolver::_checkFeasibility(ConstrExpArb& confl, bool inProcessing) {
+std::pair<LpStatus, ConstrExpSuper&> LpSolver::_checkFeasibility(bool inProcessing) {
   if (solver.logger) solver.logger->logComment("Checking LP", stats);
   if (options.lpPivotRatio < 0)
     lp.setIntParam(soplex::SoPlex::ITERLIMIT, -1);  // no pivot limit
   else if (options.lpPivotRatio * stats.NCONFL < (inProcessing ? stats.NLPPIVOTSROOT : stats.NLPPIVOTSINTERNAL))
-    return PIVOTLIMIT;  // pivot ratio exceeded
+    return {PIVOTLIMIT, solver.cePools.take32()};  // pivot ratio exceeded
   else
     lp.setIntParam(soplex::SoPlex::ITERLIMIT, options.lpPivotBudget * lpPivotMult);
   flushConstraints();
@@ -417,7 +418,7 @@ LpStatus LpSolver::_checkFeasibility(ConstrExpArb& confl, bool inProcessing) {
 
   if (stat == soplex::SPxSolver::Status::ABORT_ITER) {
     lpPivotMult *= 2;  // increase pivot budget when calling the LP solver
-    return PIVOTLIMIT;
+    return {PIVOTLIMIT, solver.cePools.take32()};
   }
 
   if (stat == soplex::SPxSolver::Status::OPTIMAL) {
@@ -427,23 +428,23 @@ LpStatus LpSolver::_checkFeasibility(ConstrExpArb& confl, bool inProcessing) {
       resetBasis();
     }
     if (lp.numIterations() == 0) ++stats.NLPNOPIVOT;
-    return OPTIMAL;
+    return {OPTIMAL, solver.cePools.take32()};
   }
 
   if (stat == soplex::SPxSolver::Status::ABORT_CYCLING) {
     ++stats.NLPCYCLING;
     resetBasis();
-    return UNDETERMINED;
+    return {UNDETERMINED, solver.cePools.take32()};
   }
   if (stat == soplex::SPxSolver::Status::SINGULAR) {
     ++stats.NLPSINGULAR;
     resetBasis();
-    return UNDETERMINED;
+    return {UNDETERMINED, solver.cePools.take32()};
   }
   if (stat != soplex::SPxSolver::Status::INFEASIBLE) {
     ++stats.NLPOTHER;
     resetBasis();
-    return UNDETERMINED;
+    return {UNDETERMINED, solver.cePools.take32()};
   }
 
   // Infeasible LP :)
@@ -453,21 +454,22 @@ LpStatus LpSolver::_checkFeasibility(ConstrExpArb& confl, bool inProcessing) {
   if (!lp.getDualFarkas(lpMultipliers)) {
     ++stats.NLPNOFARKAS;
     resetBasis();
-    return UNDETERMINED;
+    return {UNDETERMINED, solver.cePools.take32()};
   }
 
-  createLinearCombinationFarkas(confl, lpMultipliers);
+  ConstrExpSuper& confl = createLinearCombinationFarkas(lpMultipliers);
   solver.learnConstraint(confl, Origin::FARKAS);
-  if (confl.hasNegativeSlack(solver.getLevel())) return INFEASIBLE;
+  if (confl.hasNegativeSlack(solver.getLevel())) return {INFEASIBLE, confl};
   confl.reset();
-  return UNDETERMINED;
+  return {UNDETERMINED, confl};
 }
 
 void LpSolver::_inProcess() {
   assert(solver.decisionLevel() == 0);
-  ConstrExpArb& confl = solver.cePools.takeArb();
-  LpStatus lpstat = checkFeasibility(confl, true);
-  assert(lpstat != INFEASIBLE || confl.hasNegativeSlack(solver.getLevel()));
+  std::pair<LpStatus, ConstrExpSuper&> lpResult = _checkFeasibility(true);
+  LpStatus lpstat = lpResult.first;
+  ConstrExpSuper& confl = lpResult.second;
+  assert((lpstat == INFEASIBLE) == confl.hasNegativeSlack(solver.getLevel()));
   confl.release();  // in case of unsatisfiability, it will be triggered via the learned Farkas
   if (lpstat != OPTIMAL) return;
   if (!lp.hasSol()) return;
