@@ -37,11 +37,9 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // ---------------------------------------------------------------------
 // Initialization
 
-Solver::Solver() : conflConstraint(cePools.takeArb()), order_heap(activity) {
+Solver::Solver() : order_heap(activity) {
   ca.capacity(1024 * 1024);  // 4MB
 }
-
-Solver::~Solver() { conflConstraint.release(); }
 
 void Solver::setNbVars(long long nvars) {
   assert(nvars > 0);
@@ -54,7 +52,6 @@ void Solver::setNbVars(long long nvars) {
   activity.resize(nvars + 1, 1 / actLimitV);
   phase.resize(nvars + 1);
   cePools.resize(nvars + 1);
-  assert(conflConstraint.coefs.size() == (size_t)nvars + 1);
   order_heap.resize(nvars + 1);
   for (Var v = n + 1; v <= nvars; ++v) phase[v] = -v, order_heap.insert(v);
   if (lpSolver) lpSolver->setNbVariables(nvars + 1);
@@ -178,8 +175,7 @@ void Solver::propagate(Lit l, CRef reason) {
  * Unit propagation with watched literals.
  * @post: all watches up to trail[qhead] have been propagated
  */
-bool Solver::runPropagation(ConstrExpArb& confl, bool onlyUnitPropagation) {
-  assert(confl.isReset());
+ConstrExpSuper& Solver::runPropagation(bool onlyUnitPropagation) {
   while (qhead < (int)trail.size()) {
     Lit p = trail[qhead++];
     std::vector<Watch>& ws = adj[-p];
@@ -205,18 +201,20 @@ bool Solver::runPropagation(ConstrExpArb& confl, bool onlyUnitPropagation) {
           cBumpActivity(C);
           recomputeLBD(C);
         }
-        ConstrExpSuper& tmp = C.toExpanded(cePools);
-        tmp.copyTo(confl);
-        tmp.release();
-        return false;
+        return C.toExpanded(cePools);
       }
     }
   }
-  if (onlyUnitPropagation) return true;
+  if (onlyUnitPropagation) return cePools.take32();
   if (lpSolver) {
-    return lpSolver->checkFeasibility(confl) != INFEASIBLE;
+    ConstrExpArb& confl = cePools.takeArb();
+    if (lpSolver->checkFeasibility(confl) != INFEASIBLE) {
+      confl.reset();
+    }
+    return confl;
   }
-  return true;
+  return cePools.take32();
+  ;
 }
 
 WatchStatus Solver::checkForPropagation(CRef cr, int& idx, Lit p) {
@@ -265,7 +263,7 @@ ConstrExpSuper& getAnalysisCE(const ConstrExpSuper& conflict, int bitsOverflow, 
   }
 }
 
-bool Solver::analyze(ConstrExpArb& conflict) {
+std::pair<bool, ConstrExpSuper&> Solver::analyze(ConstrExpSuper& conflict) {
   if (logger) logger->logComment("Analyze", stats);
   assert(conflict.hasNegativeSlack(Level));
   stats.NADDEDLITERALS += conflict.vars.size();
@@ -281,8 +279,7 @@ bool Solver::analyze(ConstrExpArb& conflict) {
   }
   while (decisionLevel() > 0) {
     if (asynch_interrupt) {
-      confl.release();
-      return false;
+      return {false, confl};
     }
     Lit l = trail.back();
     if (confl.hasLit(-l)) {
@@ -319,12 +316,10 @@ bool Solver::analyze(ConstrExpArb& conflict) {
     if (l != 0) vBumpActivity(toVar(l));
   actSet.reset();
 
-  confl.copyTo(conflict);
-  confl.release();
-  return true;
+  return {true, confl};
 }
 
-bool Solver::extractCore(ConstrExpArb& conflict, const IntSet& assumptions, ConstrExpArb& outCore, Lit l_assump) {
+bool Solver::extractCore(ConstrExpSuper& conflict, const IntSet& assumptions, ConstrExpArb& outCore, Lit l_assump) {
   assert(!conflict.isReset());
   assert(outCore.isReset());
 
@@ -511,8 +506,9 @@ std::pair<ID, ID> Solver::addInputConstraint(ConstrExpSuper& ce) {
   }  // TODO: don't check for this here, but just add the constraints to the learned stack?
 
   CRef cr = attachConstraint(ce, true);
-  auto& confl = cePools.takeArb();
-  if (!runPropagation(confl, true)) {
+  ConstrExpSuper& confl = runPropagation(true);
+  assert(confl.isTautology() || confl.hasNegativeSlack(Level));
+  if (!confl.isTautology()) {
     if (options.verbosity > 0) puts("c Input conflict");
     if (logger) confl.logInconsistency(Level, Pos, stats);
     confl.release();
@@ -717,9 +713,10 @@ SolveState Solver::solve(const IntSet& assumptions, ConstrExpArb& core, std::vec
   while (true) {
     if (asynch_interrupt) return SolveState::INTERRUPTED;
     if (processLearnedStack() == CRef_Unsat) return SolveState::UNSAT;
-    allClear = runPropagation(conflConstraint, allClear);
+    ConstrExpSuper& confl = runPropagation(allClear);
+    assert(confl.isTautology() || confl.hasNegativeSlack(Level));
+    allClear = confl.isTautology();
     if (!allClear) {
-      assert(!conflConstraint.isReset());
       vDecayActivity();
       cDecayActivity();
       stats.NCONFL++;
@@ -737,24 +734,36 @@ SolveState Solver::solve(const IntSet& assumptions, ConstrExpArb& core, std::vec
       }
       if (decisionLevel() == 0) {
         if (logger) {
-          conflConstraint.logInconsistency(Level, Pos, stats);
-          conflConstraint.reset();
+          confl.logInconsistency(Level, Pos, stats);
         }
+        confl.release();
         return SolveState::UNSAT;
       } else if (decisionLevel() >= (int)assumptions_lim.size()) {
-        if (!analyze(conflConstraint)) return SolveState::INTERRUPTED;
-        assert(!conflConstraint.isTautology());
-        assert(conflConstraint.isSaturated());
+        std::pair<bool, ConstrExpSuper&> analyze_out = analyze(confl);
+        confl.release();
+        ConstrExpSuper& analyzed = analyze_out.second;
+        if (!analyze_out.first) {
+          analyzed.release();
+          return SolveState::INTERRUPTED;
+        }
+        assert(!analyzed.isTautology());
+        assert(analyzed.isSaturated());
         if (learnedStack.size() > 0 && learnedStack.back()->orig == Origin::FARKAS)
-          learnConstraint(conflConstraint, Origin::LEARNEDFARKAS);  // TODO: ugly hack
+          learnConstraint(analyzed, Origin::LEARNEDFARKAS);  // TODO: ugly hack
         else
-          learnConstraint(conflConstraint, Origin::LEARNED);
-        conflConstraint.reset();
+          learnConstraint(analyzed, Origin::LEARNED);
+        analyzed.release();
       } else {
-        if (!extractCore(conflConstraint, assumptions, core)) return SolveState::INTERRUPTED;
-        return SolveState::INCONSISTENT;
+        bool finished = extractCore(confl, assumptions, core);
+        confl.release();
+        if (!finished) {
+          return SolveState::INTERRUPTED;
+        } else {
+          return SolveState::INCONSISTENT;
+        }
       }
     } else {  // no conflict
+      confl.release();
       if (nconfl_to_restart <= 0) {
         backjumpTo(0);
         if (stats.NCONFL >= (stats.NCLEANUP + 1) * nconfl_to_reduce) {
@@ -778,10 +787,12 @@ SolveState Solver::solve(const IntSet& assumptions, ConstrExpArb& core, std::vec
             if (isUnit(Level, l))
               backjumpTo(0);  // negated assumption is unit
             else {
-              ConstrExpSuper& tmp = ca[Reason[toVar(l)]].toExpanded(cePools);
-              tmp.copyTo(conflConstraint);
-              tmp.release();
-              if (!extractCore(conflConstraint, assumptions, core, -l)) return SolveState::INTERRUPTED;
+              ConstrExpSuper& confl = ca[Reason[toVar(l)]].toExpanded(cePools);
+              bool finished = extractCore(confl, assumptions, core, -l);
+              confl.release();
+              if (!finished) {
+                return SolveState::INTERRUPTED;
+              }
             }
             return SolveState::INCONSISTENT;
           }

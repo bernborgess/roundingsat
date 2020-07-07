@@ -67,7 +67,6 @@ class Solver {
   ConstraintAllocator ca;
   IntSet tmpSet;
   IntSet actSet;
-  ConstrExpArb& conflConstraint;
   OrderHeap order_heap;
 
   std::vector<CRef> constraints;
@@ -95,7 +94,6 @@ class Solver {
 
  public:
   Solver();
-  ~Solver();
   void init();  // call after having read options
   void initLP(const ConstrExpArb& objective);
 
@@ -152,15 +150,15 @@ class Solver {
    * @post: all constraints have been checked for propagation under trail[0..qhead[
    * @return: true if inconsistency is detected, false otherwise. The inconsistency is stored in confl.
    */
-  bool runPropagation(ConstrExpArb& confl, bool onlyUnitPropagation = false);
+  ConstrExpSuper& runPropagation(bool onlyUnitPropagation);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p);
 
   // ---------------------------------------------------------------------
   // Conflict analysis
 
   void recomputeLBD(Constr& C);
-  bool analyze(ConstrExpArb& confl);
-  bool extractCore(ConstrExpArb& confl, const IntSet& assumptions, ConstrExpArb& outCore, Lit l_assump = 0);
+  std::pair<bool, ConstrExpSuper&> analyze(ConstrExpSuper& confl);
+  bool extractCore(ConstrExpSuper& confl, const IntSet& assumptions, ConstrExpArb& outCore, Lit l_assump = 0);
 
   // ---------------------------------------------------------------------
   // Constraint management
