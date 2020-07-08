@@ -423,9 +423,9 @@ struct ConstrExp {
     divide(d);
   }
 
-  void weakenDivideRound(const IntVecIt& level, Lit l, bool maxdiv, bool fullWeakening) {
+  void weakenDivideRound(const IntVecIt& level, Lit l, bool slackdiv, bool fullWeakening) {
     assert(getCoef(l) > 0);
-    LARGE div = maxdiv ? getCoef(l) : getSlack(level) + 1;
+    LARGE div = slackdiv ? getSlack(level) + 1 : getCoef(l);
     if (div <= 1) return;
     weakenNonDivisibleNonFalsifieds(level, div, fullWeakening, l);
     divideRoundUp(div);

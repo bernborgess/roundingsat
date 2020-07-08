@@ -64,7 +64,7 @@ struct Options {
   double maxCutCos = 0.1;
   int gomoryCutLimit = 100;
 
-  bool maxdiv = true;
+  bool slackdiv = false;
   bool weakenFull = false;
   bool weakenNonImplying = false;
 
@@ -92,7 +92,7 @@ struct Options {
     LPINTOLERANCE,
     LPMAXCUTCOS,
     LPGOMCUTLIM,
-    CAMAXDIV,
+    CASLACKDIV,
     CAWEAKENFULL,
     CAWEAKENNONIMPLYING,
     BUMPONLYFALSE,
@@ -119,7 +119,7 @@ struct Options {
       "lp-intolerance",
       "lp-maxcutcos",
       "lp-gomcutlim",
-      "ca-maxdiv",
+      "ca-slackdiv",
       "ca-weaken-full",
       "ca-weaken-nonimplying",
       "bump-only-false",
@@ -217,7 +217,7 @@ struct Options {
     getOptionNum(
         opt_val, opts[OPTIONS::LPGOMCUTLIM], [](double x) -> bool { return x >= 1; }, gomoryCutLimit);
     getOptionNum(
-        opt_val, opts[OPTIONS::CAMAXDIV], [](double x) -> bool { return x == 0 || x == 1; }, maxdiv);
+        opt_val, opts[OPTIONS::CASLACKDIV], [](double x) -> bool { return x == 0 || x == 1; }, slackdiv);
     getOptionNum(
         opt_val, opts[OPTIONS::CAWEAKENFULL], [](double x) -> bool { return x == 0 || x == 1; }, weakenFull);
     getOptionNum(
@@ -285,7 +285,9 @@ struct Options {
              "float between 0 and 1", maxCutCos);
     usageVal(opts[OPTIONS::LPGOMCUTLIM], "Max number of rows considered for Gomory cuts in one round", "int >= 1",
              gomoryCutLimit);
-    usageVal(opts[OPTIONS::CAMAXDIV], "Use asserting coefficient as divisor for reason constraints (slack+1 otherwise)", "0 or 1", maxdiv);
+    usageVal(opts[OPTIONS::CASLACKDIV],
+             "Use slack+1 as divisor for reason constraints (instead of the asserting coefficient)", "0 or 1",
+             slackdiv);
     usageVal(opts[OPTIONS::CAWEAKENFULL],
              "Weaken non-divisible non-falsified literals in reason constraints completely", "0 or 1", weakenFull);
     usageVal(opts[OPTIONS::CAWEAKENNONIMPLYING], "Weaken non-implying falsified literals from reason constraints",

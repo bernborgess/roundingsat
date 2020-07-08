@@ -454,7 +454,7 @@ bool Solver::analyze() {
         tmpConstraint.weakenNonImplying(Level, tmpConstraint.getCoef(l), tmpConstraint.getSlack(Level),
                                         stats);  // NOTE: also saturates
       assert(tmpConstraint.getCoef(l) > tmpConstraint.getSlack(Level));
-      tmpConstraint.weakenDivideRound(getLevel(), l, options.maxdiv, options.weakenFull);
+      tmpConstraint.weakenDivideRound(getLevel(), l, options.slackdiv, options.weakenFull);
       assert(tmpConstraint.getSlack(Level) <= 0);
       for (Var v : tmpConstraint.vars) {
         Lit l = tmpConstraint.getLit(v);
@@ -531,7 +531,7 @@ bool Solver::extractCore(const IntSet& assumptions, ConstrExp32& outCore, Lit l_
         tmpConstraint.weakenNonImplying(Level, tmpConstraint.getCoef(l), tmpConstraint.getSlack(Level),
                                         stats);  // NOTE: also saturates
       assert(tmpConstraint.getCoef(l) > tmpConstraint.getSlack(Level));
-      tmpConstraint.weakenDivideRound(getLevel(), l, options.maxdiv, options.weakenFull);
+      tmpConstraint.weakenDivideRound(getLevel(), l, options.slackdiv, options.weakenFull);
       assert(tmpConstraint.getSlack(Level) <= 0);
       Coef reason_coef_l = tmpConstraint.getCoef(l);
       Coef gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
