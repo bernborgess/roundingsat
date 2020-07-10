@@ -45,9 +45,9 @@ int read_number(const std::string& s) {  // TODO: should also read larger number
   return answer;
 }
 
-void opb_read(std::istream& in, Solver& solver, ConstrExpArb& objective) {
-  assert(objective.isReset());
-  ConstrExpArb& input = solver.cePools.takeArb();
+void opb_read(std::istream& in, Solver& solver, ConstrExpArb* objective) {
+  assert(objective->isReset());
+  ConstrExpArb* input = solver.cePools.takeArb();
   [[maybe_unused]] bool first_constraint = true;
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == '*') continue;
@@ -69,7 +69,7 @@ void opb_read(std::istream& in, Solver& solver, ConstrExpArb& objective) {
     }
     first_constraint = false;
     std::istringstream is(line);
-    input.reset();
+    input->reset();
     std::vector<std::string> tokens;
     std::string tmp;
     while (is >> tmp) tokens.push_back(tmp);
@@ -92,26 +92,26 @@ void opb_read(std::istream& in, Solver& solver, ConstrExpArb& objective) {
       Lit l = atoi(var.c_str());
       if (!(1 <= l && l <= solver.getNbVars())) quit::exit_ERROR({"Literal token out of variable range: ", origvar});
       if (negated) l = -l;
-      input.addLhs(coef, l);
+      input->addLhs(coef, l);
     }
     if (opt_line)
-      input.copyTo(objective);
+      input->copyTo(objective);
     else {
-      input.addRhs(read_number(line0.substr(line0.find("=") + 1)));
+      input->addRhs(read_number(line0.substr(line0.find("=") + 1)));
       if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
       if (line0.find(" = ") != std::string::npos) {  // Handle equality case with second constraint
-        input.invert();
+        input->invert();
         if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
       }
     }
   }
-  input.release();
+  input->release();
   solver.setNbOrigVars(solver.getNbVars());
 }
 
-void wcnf_read(std::istream& in, long long top, Solver& solver, ConstrExpArb& objective) {
-  assert(objective.isReset());
-  ConstrExpArb& input = solver.cePools.takeArb();
+void wcnf_read(std::istream& in, long long top, Solver& solver, ConstrExpArb* objective) {
+  assert(objective->isReset());
+  ConstrExpArb* input = solver.cePools.takeArb();
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == 'c')
       continue;
@@ -120,42 +120,42 @@ void wcnf_read(std::istream& in, long long top, Solver& solver, ConstrExpArb& ob
       long long weight;
       is >> weight;
       if (weight == 0) continue;
-      input.reset();
-      input.addRhs(1);
+      input->reset();
+      input->addRhs(1);
       Lit l;
-      while (is >> l, l) input.addLhs(1, l);
+      while (is >> l, l) input->addLhs(1, l);
       if (weight < top) {  // soft clause
         if (weight < 0) quit::exit_ERROR({"Negative clause weight: ", std::to_string(weight)});
         solver.setNbVars(solver.getNbVars() + 1);  // increases n to n+1
-        objective.addLhs(weight, solver.getNbVars());
-        input.addLhs(1, solver.getNbVars());
+        objective->addLhs(weight, solver.getNbVars());
+        input->addLhs(1, solver.getNbVars());
       }  // else hard clause
       if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
     }
   }
-  input.release();
-  solver.setNbOrigVars(solver.getNbVars() - objective.vars.size());
+  input->release();
+  solver.setNbOrigVars(solver.getNbVars() - objective->vars.size());
 }
 
 void cnf_read(std::istream& in, Solver& solver) {
-  ConstrExp32& input = solver.cePools.take32();
+  ConstrExp32* input = solver.cePools.take32();
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == 'c')
       continue;
     else {
       std::istringstream is(line);
-      input.reset();
-      input.addRhs(1);
+      input->reset();
+      input->addRhs(1);
       Lit l;
-      while (is >> l, l) input.addLhs(1, l);
+      while (is >> l, l) input->addLhs(1, l);
       if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
     }
   }
-  input.release();
+  input->release();
   solver.setNbOrigVars(solver.getNbVars());
 }
 
-void file_read(std::istream& in, Solver& solver, ConstrExpArb& objective) {
+void file_read(std::istream& in, Solver& solver, ConstrExpArb* objective) {
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == 'c') continue;
     if (line[0] == 'p') {

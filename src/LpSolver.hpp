@@ -73,7 +73,7 @@ struct CandidateCut {
   double ratSlack = 0;
 
   CandidateCut(){};
-  CandidateCut(ConstrExpSuper& in, const std::vector<double>& sol);
+  CandidateCut(ConstrExpSuper* in, const std::vector<double>& sol);
   CandidateCut(const Constr& in, CRef cr, const std::vector<double>& sol, ConstrExpPools& pools);
   double cosOfAngleTo(const CandidateCut& other) const;
 
@@ -110,14 +110,14 @@ class LpSolver {
   std::vector<CandidateCut> candidateCuts;
 
  public:
-  LpSolver(Solver& solver, const ConstrExpArb& objective);
+  LpSolver(Solver& solver, const ConstrExpArb* objective);
   void setNbVariables(int n);
 
-  std::pair<LpStatus, ConstrExpSuper&> checkFeasibility(
+  std::pair<LpStatus, ConstrExpSuper*> checkFeasibility(
       bool inProcessing = false);  // TODO: don't use objective function here?
   void inProcess();
 
-  void addConstraint(ConstrExpSuper& c, bool removable, bool upperbound = false, bool lowerbound = false);
+  void addConstraint(ConstrExpSuper* c, bool removable, bool upperbound = false, bool lowerbound = false);
   void addConstraint(CRef cr, bool removable, bool upperbound = false, bool lowerbound = false);
 
  private:
@@ -126,15 +126,15 @@ class LpSolver {
 
   void flushConstraints();
 
-  std::pair<LpStatus, ConstrExpSuper&> _checkFeasibility(bool inProcessing);
+  std::pair<LpStatus, ConstrExpSuper*> _checkFeasibility(bool inProcessing);
   void _inProcess();
 
   void convertConstraint(const ConstrSimple64& c, soplex::DSVectorReal& row, double& rhs);
   void resetBasis();
-  ConstrExpSuper& createLinearCombinationFarkas(soplex::DVectorReal& mults);
+  ConstrExpSuper* createLinearCombinationFarkas(soplex::DVectorReal& mults);
   CandidateCut createLinearCombinationGomory(soplex::DVectorReal& mults);
   double getScaleFactor(soplex::DVectorReal& mults, bool removeNegatives);
-  ConstrExp64& rowToConstraint(int row);
+  ConstrExp64* rowToConstraint(int row);
   void constructGomoryCandidates();
   void constructLearnedCandidates();
   void addFilteredCuts();
@@ -149,17 +149,17 @@ class LpSolver {
 // TODO: check correspondence to above
 class LpSolver {
  public:
-  LpSolver([[maybe_unused]] Solver& slvr, [[maybe_unused]] const ConstrExpArb& objective){};
+  LpSolver([[maybe_unused]] Solver& slvr, [[maybe_unused]] const ConstrExpArb* objective){};
   void setNbVariables([[maybe_unused]] int n){};
 
-  std::pair<LpStatus, ConstrExpSuper&> checkFeasibility([[maybe_unused]] bool inProcessing = false) {
+  std::pair<LpStatus, ConstrExpSuper*> checkFeasibility([[maybe_unused]] bool inProcessing = false) {
     assert(false);
     ConstrExp32* result = nullptr;
     return {LpStatus::UNDETERMINED, *result};
   }
   void inProcess() {}
 
-  void addConstraint([[maybe_unused]] ConstrExpSuper& c, [[maybe_unused]] bool removable,
+  void addConstraint([[maybe_unused]] ConstrExpSuper* c, [[maybe_unused]] bool removable,
                      [[maybe_unused]] bool upperbound, [[maybe_unused]] bool lowerbound) {}
   void addConstraint([[maybe_unused]] CRef cr, [[maybe_unused]] bool removable, [[maybe_unused]] bool upperbound,
                      [[maybe_unused]] bool lowerbound) {}

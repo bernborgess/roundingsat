@@ -95,7 +95,7 @@ class Solver {
  public:
   Solver();
   void init();  // call after having read options
-  void initLP(const ConstrExpArb& objective);
+  void initLP(const ConstrExpArb* objective);
 
   int getNbVars() const { return n; }
   void setNbVars(long long nvars);
@@ -106,11 +106,11 @@ class Solver {
   const std::vector<int>& getPos() const { return Pos; }
   int decisionLevel() const { return trail_lim.size(); }
 
-  std::pair<ID, ID> addConstraint(const ConstrExpSuper& c, Origin orig);     // formula line id, processed id
+  std::pair<ID, ID> addConstraint(const ConstrExpSuper* c, Origin orig);     // formula line id, processed id
   std::pair<ID, ID> addConstraint(const ConstrSimpleSuper& c, Origin orig);  // formula line id, processed id
   void dropExternal(ID id, bool erasable, bool forceDelete);
   int getNbConstraints() const { return constraints.size(); }
-  ConstrExpSuper& getIthConstraint(int i) { return ca[constraints[i]].toExpanded(cePools); }
+  ConstrExpSuper* getIthConstraint(int i) { return ca[constraints[i]].toExpanded(cePools); }
 
   /**
    * @return:
@@ -124,7 +124,7 @@ class Solver {
    * 	if core is the empty constraint, at least one assumption is falsified at root
    * @param solution: if SAT, full variable assignment satisfying all constraints, otherwise untouched
    */
-  SolveState solve(const IntSet& assumptions, ConstrExpArb& core, std::vector<bool>& solution);
+  SolveState solve(const IntSet& assumptions, ConstrExpArb* core, std::vector<bool>& solution);
 
  private:
   void presolve();
@@ -148,25 +148,25 @@ class Solver {
   /**
    * Unit propagation with watched literals.
    * @post: all constraints have been checked for propagation under trail[0..qhead[
-   * @return: true if inconsistency is detected, false otherwise. The inconsistency is stored in confl.
+   * @return: true if inconsistency is detected, false otherwise. The inconsistency is stored in confl->
    */
-  ConstrExpSuper& runPropagation(bool onlyUnitPropagation);
+  ConstrExpSuper* runPropagation(bool onlyUnitPropagation);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p);
 
   // ---------------------------------------------------------------------
   // Conflict analysis
 
   void recomputeLBD(Constr& C);
-  std::pair<bool, ConstrExpSuper&> analyze(ConstrExpSuper& confl);
-  bool extractCore(ConstrExpSuper& confl, const IntSet& assumptions, ConstrExpArb& outCore, Lit l_assump = 0);
+  std::pair<bool, ConstrExpSuper*> analyze(ConstrExpSuper* confl);
+  bool extractCore(ConstrExpSuper* confl, const IntSet& assumptions, ConstrExpArb* outCore, Lit l_assump = 0);
 
   // ---------------------------------------------------------------------
   // Constraint management
 
-  CRef attachConstraint(ConstrExpSuper& constraint, bool locked);
-  void learnConstraint(const ConstrExpSuper& c, Origin orig);
-  ConstrExpSuper& processLearnedStack();
-  std::pair<ID, ID> addInputConstraint(ConstrExpSuper& ce);
+  CRef attachConstraint(ConstrExpSuper* constraint, bool locked);
+  void learnConstraint(const ConstrExpSuper* c, Origin orig);
+  ConstrExpSuper* processLearnedStack();
+  std::pair<ID, ID> addInputConstraint(ConstrExpSuper* ce);
   void removeConstraint(Constr& C, bool override = false);
 
   // ---------------------------------------------------------------------

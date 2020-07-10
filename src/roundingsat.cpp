@@ -70,14 +70,14 @@ int main(int argc, char** argv) {
 
   options.parseCommandLine(argc, argv);
   run::solver.init();
-  ConstrExpArb& objective = run::solver.cePools.takeArb();
+  ConstrExpArb* objective = run::solver.cePools.takeArb();
 
   if (!options.formulaName.empty()) {
     std::ifstream fin(options.formulaName);
     if (!fin) quit::exit_ERROR({"Could not open ", options.formulaName});
     parsing::file_read(fin, run::solver, objective);
   } else {
-    if (options.verbosity > 0) std::cout << "c No filename given, reading from standard input." << std::endl;
+    if (options.verbosity > 0) std::cout << "c No filename given, reading from standard input->" << std::endl;
     parsing::file_read(std::cin, run::solver, objective);
   }
 
@@ -85,5 +85,5 @@ int main(int argc, char** argv) {
 
   run::run(objective);
 
-  objective.release();
+  objective->release();
 }

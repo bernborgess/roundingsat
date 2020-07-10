@@ -50,31 +50,31 @@ ConstrExp<SMALL, LARGE>::ConstrExp(ConstrExpPool<ConstrExp<SMALL, LARGE>>& cep) 
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::release() {
   assert(usageCount == 0);
-  pool.release(*this);
+  pool.release(this);
 }
 
 template <typename SMALL, typename LARGE>
-ConstrExpSuper& ConstrExp<SMALL, LARGE>::reduce(ConstrExpPools& ce) const {
+ConstrExpSuper* ConstrExp<SMALL, LARGE>::reduce(ConstrExpPools& cePools) const {
   Representation rep = minRepresentation();
   if (rep == Representation::B32) {
-    ConstrExp32& result = ce.take32();
+    ConstrExp32* result = cePools.take32();
     copyTo(result);
     return result;
   } else if (rep == Representation::B64) {
-    ConstrExp64& result = ce.take64();
+    ConstrExp64* result = cePools.take64();
     copyTo(result);
     return result;
   } else if (rep == Representation::B96) {
-    ConstrExp96& result = ce.take96();
+    ConstrExp96* result = cePools.take96();
     copyTo(result);
     return result;
   } else if (rep == Representation::B128) {
-    ConstrExp128& result = ce.take128();
+    ConstrExp128* result = cePools.take128();
     copyTo(result);
     return result;
   } else {
     assert(rep == Representation::ARB);
-    ConstrExpArb& result = ce.takeArb();
+    ConstrExpArb* result = cePools.takeArb();
     copyTo(result);
     return result;
   }
@@ -91,13 +91,13 @@ CRef ConstrExp<SMALL, LARGE>::toConstr(ConstraintAllocator& ca, bool locked, ID 
 
   CRef result = CRef{ca.at};
   if (options.clauseProp && isClause()) {
-    ca.alloc<Clause>(vars.size())->initialize(*this, locked, id);
+    ca.alloc<Clause>(vars.size())->initialize(this, locked, id);
   } else if (options.cardProp && isCardinality()) {
-    ca.alloc<Cardinality>(vars.size())->initialize(*this, locked, id);
+    ca.alloc<Cardinality>(vars.size())->initialize(this, locked, id);
   } else {
     LARGE maxCoef = rs::abs(coefs[vars[0]]);
     if (maxCoef > limit96) {
-      ca.alloc<Arbitrary>(vars.size())->initialize(*this, locked, id);
+      ca.alloc<Arbitrary>(vars.size())->initialize(this, locked, id);
     } else {
       LARGE watchSum = -degree;
       unsigned int minWatches = 1;  // sorted per decreasing coefs, so we can skip the first, largest coef
@@ -105,22 +105,22 @@ CRef ConstrExp<SMALL, LARGE>::toConstr(ConstraintAllocator& ca, bool locked, ID 
       bool useCounting = options.countingProp == 1 || options.countingProp > (1 - minWatches / (double)vars.size());
       if (maxCoef <= limit32) {
         if (useCounting) {
-          ca.alloc<Counting32>(vars.size())->initialize(*this, locked, id);
+          ca.alloc<Counting32>(vars.size())->initialize(this, locked, id);
         } else {
-          ca.alloc<Watched32>(vars.size())->initialize(*this, locked, id);
+          ca.alloc<Watched32>(vars.size())->initialize(this, locked, id);
         }
       } else if (maxCoef <= limit64) {
         if (useCounting) {
-          ca.alloc<Counting64>(vars.size())->initialize(*this, locked, id);
+          ca.alloc<Counting64>(vars.size())->initialize(this, locked, id);
         } else {
-          ca.alloc<Watched64>(vars.size())->initialize(*this, locked, id);
+          ca.alloc<Watched64>(vars.size())->initialize(this, locked, id);
         }
       } else {
         assert(maxCoef <= limit96);
         if (useCounting) {
-          ca.alloc<Counting96>(vars.size())->initialize(*this, locked, id);
+          ca.alloc<Counting96>(vars.size())->initialize(this, locked, id);
         } else {
-          ca.alloc<Watched96>(vars.size())->initialize(*this, locked, id);
+          ca.alloc<Watched96>(vars.size())->initialize(this, locked, id);
         }
       }
     }
@@ -1055,27 +1055,27 @@ void ConstrExp<SMALL, LARGE>::resolveWith(const Cardinality& c, Lit l, IntSet* a
 }
 
 template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::resolveWith(ConstrExp32& c, Lit l, IntSet* actSet, const IntVecIt& Level,
+void ConstrExp<SMALL, LARGE>::resolveWith(ConstrExp32* c, Lit l, IntSet* actSet, const IntVecIt& Level,
                                           const std::vector<int>& Pos) {
   genericResolve(c, l, actSet, Level, Pos);
 }
 template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::resolveWith(ConstrExp64& c, Lit l, IntSet* actSet, const IntVecIt& Level,
+void ConstrExp<SMALL, LARGE>::resolveWith(ConstrExp64* c, Lit l, IntSet* actSet, const IntVecIt& Level,
                                           const std::vector<int>& Pos) {
   genericResolve(c, l, actSet, Level, Pos);
 }
 template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::resolveWith(ConstrExp96& c, Lit l, IntSet* actSet, const IntVecIt& Level,
+void ConstrExp<SMALL, LARGE>::resolveWith(ConstrExp96* c, Lit l, IntSet* actSet, const IntVecIt& Level,
                                           const std::vector<int>& Pos) {
   genericResolve(c, l, actSet, Level, Pos);
 }
 template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::resolveWith(ConstrExp128& c, Lit l, IntSet* actSet, const IntVecIt& Level,
+void ConstrExp<SMALL, LARGE>::resolveWith(ConstrExp128* c, Lit l, IntSet* actSet, const IntVecIt& Level,
                                           const std::vector<int>& Pos) {
   genericResolve(c, l, actSet, Level, Pos);
 }
 template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::resolveWith(ConstrExpArb& c, Lit l, IntSet* actSet, const IntVecIt& Level,
+void ConstrExp<SMALL, LARGE>::resolveWith(ConstrExpArb* c, Lit l, IntSet* actSet, const IntVecIt& Level,
                                           const std::vector<int>& Pos) {
   genericResolve(c, l, actSet, Level, Pos);
 }
@@ -1097,28 +1097,28 @@ void ConstrExpPools::initializeLogging(std::shared_ptr<Logger> lgr) {
 }
 
 template <>
-ConstrExp32& ConstrExpPools::take<int, long long>() {
+ConstrExp32* ConstrExpPools::take<int, long long>() {
   return ce32s.take();
 }
 template <>
-ConstrExp64& ConstrExpPools::take<long long, int128>() {
+ConstrExp64* ConstrExpPools::take<long long, int128>() {
   return ce64s.take();
 }
 template <>
-ConstrExp96& ConstrExpPools::take<int128, int128>() {
+ConstrExp96* ConstrExpPools::take<int128, int128>() {
   return ce96s.take();
 }
 template <>
-ConstrExp128& ConstrExpPools::take<int128, int256>() {
+ConstrExp128* ConstrExpPools::take<int128, int256>() {
   return ce128s.take();
 }
 template <>
-ConstrExpArb& ConstrExpPools::take<bigint, bigint>() {
+ConstrExpArb* ConstrExpPools::take<bigint, bigint>() {
   return ceArbs.take();
 }
 
-ConstrExp32& ConstrExpPools::take32() { return take<int, long long>(); }
-ConstrExp64& ConstrExpPools::take64() { return take<long long, int128>(); }
-ConstrExp96& ConstrExpPools::take96() { return take<int128, int128>(); }
-ConstrExp128& ConstrExpPools::take128() { return take<int128, int256>(); }
-ConstrExpArb& ConstrExpPools::takeArb() { return take<bigint, bigint>(); }
+ConstrExp32* ConstrExpPools::take32() { return take<int, long long>(); }
+ConstrExp64* ConstrExpPools::take64() { return take<long long, int128>(); }
+ConstrExp96* ConstrExpPools::take96() { return take<int128, int128>(); }
+ConstrExp128* ConstrExpPools::take128() { return take<int128, int256>(); }
+ConstrExpArb* ConstrExpPools::takeArb() { return take<bigint, bigint>(); }

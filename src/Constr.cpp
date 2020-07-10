@@ -132,18 +132,18 @@ WatchStatus Clause::checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver
   return WatchStatus::KEEPWATCH;
 }
 
-void Clause::resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver) {
-  confl.resolveWith(*this, l, actSet, solver.getLevel(), solver.getPos());
+void Clause::resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver) {
+  confl->resolveWith(*this, l, actSet, solver.getLevel(), solver.getPos());
 }
 
-ConstrExpSuper& Clause::toExpanded(ConstrExpPools& cePools) const {
-  ConstrExp32& result = cePools.take32();
-  result.addRhs(1);
+ConstrExpSuper* Clause::toExpanded(ConstrExpPools& cePools) const {
+  ConstrExp32* result = cePools.take32();
+  result->addRhs(1);
   for (size_t i = 0; i < size(); ++i) {
-    result.addLhs(1, data[i]);
+    result->addLhs(1, data[i]);
   }
-  result.orig = getOrigin();
-  if (result.plogger) result.resetBuffer(id);
+  result->orig = getOrigin();
+  if (result->plogger) result->resetBuffer(id);
   return result;
 }
 
@@ -240,18 +240,18 @@ WatchStatus Cardinality::checkForPropagation(CRef cr, int& idx, [[maybe_unused]]
   return WatchStatus::KEEPWATCH;
 }
 
-void Cardinality::resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver) {
-  confl.resolveWith(*this, l, actSet, solver.getLevel(), solver.getPos());
+void Cardinality::resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver) {
+  confl->resolveWith(*this, l, actSet, solver.getLevel(), solver.getPos());
 }
 
-ConstrExpSuper& Cardinality::toExpanded(ConstrExpPools& cePools) const {
-  ConstrExp32& result = cePools.take32();
-  result.addRhs(degr);
+ConstrExpSuper* Cardinality::toExpanded(ConstrExpPools& cePools) const {
+  ConstrExp32* result = cePools.take32();
+  result->addRhs(degr);
   for (size_t i = 0; i < size(); ++i) {
-    result.addLhs(1, data[i]);
+    result->addLhs(1, data[i]);
   }
-  result.orig = getOrigin();
-  if (result.plogger) result.resetBuffer(id);
+  result->orig = getOrigin();
+  if (result->plogger) result->resetBuffer(id);
   return result;
 }
 
@@ -328,21 +328,21 @@ void Counting<CF, DG>::undoFalsified(int i) {
 }
 
 template <typename CF, typename DG>
-void Counting<CF, DG>::resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver) {
-  ConstrExp<CF, DG>& reason = static_cast<ConstrExp<CF, DG>&>(toExpanded(solver.cePools));
-  confl.resolveWith(reason, l, actSet, solver.getLevel(), solver.getPos());
-  reason.release();
+void Counting<CF, DG>::resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver) {
+  ConstrExp<CF, DG>* reason = static_cast<ConstrExp<CF, DG>*>(toExpanded(solver.cePools));
+  confl->resolveWith(reason, l, actSet, solver.getLevel(), solver.getPos());
+  reason->release();
 }
 
 template <typename CF, typename DG>
-ConstrExpSuper& Counting<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
-  ConstrExp<CF, DG>& result = cePools.take<CF, DG>();
-  result.addRhs(degr);
+ConstrExpSuper* Counting<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
+  ConstrExp<CF, DG>* result = cePools.take<CF, DG>();
+  result->addRhs(degr);
   for (size_t i = 0; i < size(); ++i) {
-    result.addLhs(data[i].c, data[i].l);
+    result->addLhs(data[i].c, data[i].l);
   }
-  result.orig = getOrigin();
-  if (result.plogger) result.resetBuffer(id);
+  result->orig = getOrigin();
+  if (result->plogger) result->resetBuffer(id);
   return result;
 }
 
@@ -467,21 +467,21 @@ void Watched<CF, DG>::undoFalsified(int i) {
 }
 
 template <typename CF, typename DG>
-void Watched<CF, DG>::resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver) {
-  ConstrExp<CF, DG>& reason = static_cast<ConstrExp<CF, DG>&>(toExpanded(solver.cePools));
-  confl.resolveWith(reason, l, actSet, solver.getLevel(), solver.getPos());
-  reason.release();
+void Watched<CF, DG>::resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver) {
+  ConstrExp<CF, DG>* reason = static_cast<ConstrExp<CF, DG>*>(toExpanded(solver.cePools));
+  confl->resolveWith(reason, l, actSet, solver.getLevel(), solver.getPos());
+  reason->release();
 }
 
 template <typename CF, typename DG>
-ConstrExpSuper& Watched<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
-  ConstrExp<CF, DG>& result = cePools.take<CF, DG>();
-  result.addRhs(degr);
+ConstrExpSuper* Watched<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
+  ConstrExp<CF, DG>* result = cePools.take<CF, DG>();
+  result->addRhs(degr);
   for (size_t i = 0; i < size(); ++i) {
-    result.addLhs(rs::abs(data[i].c), data[i].l);
+    result->addLhs(rs::abs(data[i].c), data[i].l);
   }
-  result.orig = getOrigin();
-  if (result.plogger) result.resetBuffer(id);
+  result->orig = getOrigin();
+  if (result->plogger) result->resetBuffer(id);
   return result;
 }
 
@@ -551,20 +551,20 @@ void Arbitrary::undoFalsified(int i) {
   ++stats.NWATCHLOOKUPSBJ;
 }
 
-void Arbitrary::resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver) {
-  ConstrExpArb& reason = static_cast<ConstrExpArb&>(toExpanded(solver.cePools));
-  confl.resolveWith(reason, l, actSet, solver.getLevel(), solver.getPos());
-  reason.release();
+void Arbitrary::resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver) {
+  ConstrExpArb* reason = static_cast<ConstrExpArb*>(toExpanded(solver.cePools));
+  confl->resolveWith(reason, l, actSet, solver.getLevel(), solver.getPos());
+  reason->release();
 }
 
-ConstrExpSuper& Arbitrary::toExpanded(ConstrExpPools& cePools) const {
-  ConstrExpArb& result = cePools.takeArb();
-  result.addRhs(degr);
+ConstrExpSuper* Arbitrary::toExpanded(ConstrExpPools& cePools) const {
+  ConstrExpArb* result = cePools.takeArb();
+  result->addRhs(degr);
   for (size_t i = 0; i < size(); ++i) {
-    result.addLhs(coefs[i], lits[i]);
+    result->addLhs(coefs[i], lits[i]);
   }
-  result.orig = getOrigin();
-  if (result.plogger) result.resetBuffer(id);
+  result->orig = getOrigin();
+  if (result->plogger) result->resetBuffer(id);
   return result;
 }
 

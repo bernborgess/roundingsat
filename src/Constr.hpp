@@ -70,9 +70,9 @@ struct Constr {  // internal solver constraint optimized for fast propagation
   virtual void initializeWatches(CRef cr, Solver& solver) = 0;
   virtual WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& slvr) = 0;
   virtual void undoFalsified(int i) = 0;
-  virtual void resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver) = 0;
+  virtual void resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver) = 0;
 
-  virtual ConstrExpSuper& toExpanded(ConstrExpPools& cePools) const = 0;
+  virtual ConstrExpSuper* toExpanded(ConstrExpPools& cePools) const = 0;
 
   std::ostream& operator<<(std::ostream& o) {
     for (size_t i = 0; i < size(); ++i) {
@@ -98,28 +98,28 @@ struct Clause final : public Constr {
   Lit lit(unsigned int i) const { return data[i]; }
 
   template <typename SMALL, typename LARGE>
-  void initialize(const ConstrExp<SMALL, LARGE>& constraint, bool locked, ID _id) {
+  void initialize(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id) {
     assert(_id > ID_Trivial);
-    assert(constraint.vars.size() < INF);
-    assert(constraint.getDegree() == 1);
-    unsigned int length = constraint.vars.size();
+    assert(constraint->vars.size() < INF);
+    assert(constraint->getDegree() == 1);
+    unsigned int length = constraint->vars.size();
 
     id = _id;
     act = 0;
-    header = {0, (unsigned int)constraint.orig, 0x07FFFFFF, 0, locked, length};
+    header = {0, (unsigned int)constraint->orig, 0x07FFFFFF, 0, locked, length};
 
     for (unsigned int i = 0; i < length; ++i) {
-      Var v = constraint.vars[i];
-      assert(constraint.getLit(v) != 0);
-      data[i] = constraint.getLit(v);
+      Var v = constraint->vars[i];
+      assert(constraint->getLit(v) != 0);
+      data[i] = constraint->getLit(v);
     }
   }
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified([[maybe_unused]] int i) { assert(false); }
-  void resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver);
+  void resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver);
 
-  ConstrExpSuper& toExpanded(ConstrExpPools& cePools) const;
+  ConstrExpSuper* toExpanded(ConstrExpPools& cePools) const;
 };
 
 struct Cardinality final : public Constr {
@@ -138,32 +138,32 @@ struct Cardinality final : public Constr {
   Lit lit(unsigned int i) const { return data[i]; }
 
   template <typename SMALL, typename LARGE>
-  void initialize(const ConstrExp<SMALL, LARGE>& constraint, bool locked, ID _id) {
+  void initialize(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id) {
     assert(_id > ID_Trivial);
-    assert(constraint.vars.size() < INF);
-    assert(rs::abs(constraint.coefs[constraint.vars[0]]) == 1);
-    unsigned int length = constraint.vars.size();
-    assert(constraint.getDegree() <= length);
+    assert(constraint->vars.size() < INF);
+    assert(rs::abs(constraint->coefs[constraint->vars[0]]) == 1);
+    unsigned int length = constraint->vars.size();
+    assert(constraint->getDegree() <= length);
 
     id = _id;
     act = 0;
-    degr = static_cast<unsigned int>(constraint.getDegree());
-    header = {0, (unsigned int)constraint.orig, 0x07FFFFFF, 0, locked, length};
+    degr = static_cast<unsigned int>(constraint->getDegree());
+    header = {0, (unsigned int)constraint->orig, 0x07FFFFFF, 0, locked, length};
     ntrailpops = -1;
     watchIdx = 0;
 
     for (unsigned int i = 0; i < length; ++i) {
-      Var v = constraint.vars[i];
-      assert(constraint.getLit(v) != 0);
-      data[i] = constraint.getLit(v);
+      Var v = constraint->vars[i];
+      assert(constraint->getLit(v) != 0);
+      data[i] = constraint->getLit(v);
     }
   }
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified([[maybe_unused]] int i) { assert(false); }
-  void resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver);
+  void resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver);
 
-  ConstrExpSuper& toExpanded(ConstrExpPools& cePools) const;
+  ConstrExpSuper* toExpanded(ConstrExpPools& cePools) const;
 };
 
 template <typename CF, typename DG>
@@ -184,31 +184,31 @@ struct Counting final : public Constr {
   Lit lit(unsigned int i) const { return data[i].l; }
 
   template <typename SMALL, typename LARGE>
-  void initialize(const ConstrExp<SMALL, LARGE>& constraint, bool locked, ID _id) {
+  void initialize(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id) {
     assert(_id > ID_Trivial);
     // TODO: check whether constraint fits in <CF,DG>
     ++stats.NCOUNTING;
-    unsigned int length = constraint.vars.size();
+    unsigned int length = constraint->vars.size();
 
     id = _id;
     act = 0;
-    degr = static_cast<DG>(constraint.getDegree());
-    header = {0, (unsigned int)constraint.orig, 0x07FFFFFF, 0, locked, length};
+    degr = static_cast<DG>(constraint->getDegree());
+    header = {0, (unsigned int)constraint->orig, 0x07FFFFFF, 0, locked, length};
     ntrailpops = -1;
     watchIdx = 0;
 
     for (unsigned int i = 0; i < length; ++i) {
-      Var v = constraint.vars[i];
-      assert(constraint.getLit(v) != 0);
-      data[i] = {static_cast<CF>(rs::abs(constraint.coefs[v])), constraint.getLit(v)};
+      Var v = constraint->vars[i];
+      assert(constraint->getLit(v) != 0);
+      data[i] = {static_cast<CF>(rs::abs(constraint->coefs[v])), constraint->getLit(v)};
     }
   }
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
-  void resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver);
+  void resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver);
 
-  ConstrExpSuper& toExpanded(ConstrExpPools& cePools) const;
+  ConstrExpSuper* toExpanded(ConstrExpPools& cePools) const;
 
   bool hasCorrectSlack(const Solver& solver);
 };
@@ -231,31 +231,31 @@ struct Watched final : public Constr {
   Lit lit(unsigned int i) const { return data[i].l; }
 
   template <typename SMALL, typename LARGE>
-  void initialize(const ConstrExp<SMALL, LARGE>& constraint, bool locked, ID _id) {
+  void initialize(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id) {
     assert(_id > ID_Trivial);
     // TODO: check whether constraint fits in <CF,DG>
     ++stats.NWATCHED;
-    unsigned int length = constraint.vars.size();
+    unsigned int length = constraint->vars.size();
 
     id = _id;
     act = 0;
-    degr = static_cast<DG>(constraint.getDegree());
-    header = {0, (unsigned int)constraint.orig, 0x07FFFFFF, 0, locked, length};
+    degr = static_cast<DG>(constraint->getDegree());
+    header = {0, (unsigned int)constraint->orig, 0x07FFFFFF, 0, locked, length};
     ntrailpops = -1;
     watchIdx = 0;
 
     for (unsigned int i = 0; i < length; ++i) {
-      Var v = constraint.vars[i];
-      assert(constraint.getLit(v) != 0);
-      data[i] = {static_cast<CF>(rs::abs(constraint.coefs[v])), constraint.getLit(v)};
+      Var v = constraint->vars[i];
+      assert(constraint->getLit(v) != 0);
+      data[i] = {static_cast<CF>(rs::abs(constraint->coefs[v])), constraint->getLit(v)};
     }
   }
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
-  void resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver);
+  void resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver);
 
-  ConstrExpSuper& toExpanded(ConstrExpPools& cePools) const;
+  ConstrExpSuper* toExpanded(ConstrExpPools& cePools) const;
 
   bool hasCorrectSlack(const Solver& solver);
   bool hasCorrectWatches(const Solver& solver);
@@ -279,32 +279,32 @@ struct Arbitrary final : public Constr {
   Lit lit(unsigned int i) const { return lits[i]; }
 
   template <typename SMALL, typename LARGE>
-  void initialize(const ConstrExp<SMALL, LARGE>& constraint, bool locked, ID _id) {
+  void initialize(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id) {
     assert(_id > ID_Trivial);
     ++stats.NCOUNTING;
-    unsigned int length = constraint.vars.size();
+    unsigned int length = constraint->vars.size();
 
     id = _id;
     act = 0;
-    degr = constraint.getDegree();
-    header = {0, (unsigned int)constraint.orig, 0x07FFFFFF, 0, locked, length};
+    degr = constraint->getDegree();
+    header = {0, (unsigned int)constraint->orig, 0x07FFFFFF, 0, locked, length};
     ntrailpops = -1;
     watchIdx = 0;
 
     coefs.resize(length);
     for (unsigned int i = 0; i < length; ++i) {
-      Var v = constraint.vars[i];
-      assert(constraint.getLit(v) != 0);
-      coefs[i] = rs::abs(constraint.coefs[v]);
-      lits[i] = constraint.getLit(v);
+      Var v = constraint->vars[i];
+      assert(constraint->getLit(v) != 0);
+      coefs[i] = rs::abs(constraint->coefs[v]);
+      lits[i] = constraint->getLit(v);
     }
   }
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
-  void resolveWith(ConstrExpSuper& confl, Lit l, IntSet* actSet, Solver& solver);
+  void resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver);
 
-  ConstrExpSuper& toExpanded(ConstrExpPools& cePools) const;
+  ConstrExpSuper* toExpanded(ConstrExpPools& cePools) const;
 
   bool hasCorrectSlack(const Solver& solver);
 };
