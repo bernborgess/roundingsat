@@ -49,6 +49,7 @@ ConstrExp<SMALL, LARGE>::ConstrExp(ConstrExpPool<ConstrExp<SMALL, LARGE>>& cep) 
 
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::release() {
+  assert(usageCount == 0);
   pool.release(*this);
 }
 

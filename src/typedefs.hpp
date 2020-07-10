@@ -172,6 +172,16 @@ using ConstrExp64 = ConstrExp<long long, int128>;
 using ConstrExp96 = ConstrExp<int128, int128>;
 using ConstrExp128 = ConstrExp<int128, int256>;
 using ConstrExpArb = ConstrExp<bigint, bigint>;
+struct ConstrExpSuper;
+
+template <typename CE>
+class CePtr;
+using Ce32 = CePtr<ConstrExp32>;
+using Ce64 = CePtr<ConstrExp64>;
+using Ce96 = CePtr<ConstrExp96>;
+using Ce128 = CePtr<ConstrExp128>;
+using CeArb = CePtr<ConstrExpArb>;
+using CeSuper = CePtr<ConstrExpSuper>;
 
 template <typename CF, typename DG>
 struct ConstrSimple;
@@ -180,6 +190,12 @@ using ConstrSimple64 = ConstrSimple<long long, int128>;
 using ConstrSimple96 = ConstrSimple<int128, int128>;
 using ConstrSimple128 = ConstrSimple<int128, int256>;
 using ConstrSimpleArb = ConstrSimple<bigint, bigint>;
+struct ConstrSimpleSuper;
+
+struct Constr;
+struct Clause;
+struct Cardinality;
+struct Arbitrary;
 
 template <typename CF, typename DG>
 struct Counting;

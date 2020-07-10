@@ -51,17 +51,16 @@ enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
 enum Representation { B32, B64, B96, B128, ARB };
 
 struct ConstraintAllocator;
-struct ConstrSimpleSuper;
 struct ConstrExpPools;
 class Solver;
-struct Clause;
-struct Cardinality;
 
 struct ConstrExpSuper {
   std::vector<Var> vars;
   Origin orig = Origin::UNKNOWN;
 
   virtual void release() = 0;
+  virtual void increaseUsage() = 0;
+  virtual void decreaseUsage() = 0;
 
   virtual void copyTo(ConstrExp32& ce) const = 0;
   virtual void copyTo(ConstrExp64& ce) const = 0;
@@ -147,6 +146,7 @@ template <typename SMALL, typename LARGE>  // LARGE should be able to fit sums o
 struct ConstrExp final : public ConstrExpSuper {
  private:
   ConstrExpPool<ConstrExp<SMALL, LARGE>>& pool;
+  long long usageCount = 0;
 
  public:
   LARGE degree = 0;
@@ -173,6 +173,13 @@ struct ConstrExp final : public ConstrExpSuper {
  public:
   ConstrExp(ConstrExpPool<ConstrExp<SMALL, LARGE>>& cep);
   void release();
+  void increaseUsage() { ++usageCount; }
+  void decreaseUsage() {
+    if (--usageCount == 0) {
+      std::cout << "releasing!" << std::endl;
+      release();
+    }
+  }
 
   template <typename S, typename L>
   void copyTo_(ConstrExp<S, L>& out) const {
@@ -372,6 +379,22 @@ std::ostream& operator<<(std::ostream& o, const ConstrExp<S, L>& C) {
   o << ">= " << C.degree;
   return o;
 }
+
+template <typename CE>
+struct CePtr {
+  CE& ce;
+
+  CePtr(const CePtr& other) : ce{other.ce} { ce.increaseUsage(); }
+  CePtr(CE& c) : ce(c) { ce.increaseUsage(); }
+  template <typename T, typename = std::enable_if_t<std::is_convertible_v<T&, CE&>>>
+  CePtr(const CePtr<T>& other) : ce{other.ce} {  // needed for inheritance of CePtr<Constr
+    ce.increaseUsage();
+  }
+  ~CePtr() { ce.decreaseUsage(); }
+
+  CE& operator*() const { return ce; }
+  CE* operator->() const { return &ce; }
+};
 
 template <typename CE>
 class ConstrExpPool {  // TODO: private constructor for ConstrExp, only accessible to ConstrExpPool?
