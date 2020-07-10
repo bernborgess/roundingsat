@@ -173,8 +173,12 @@ struct ConstrExp final : public ConstrExpSuper {
  public:
   ConstrExp(ConstrExpPool<ConstrExp<SMALL, LARGE>>& cep);
   void release();
-  void increaseUsage() { ++usageCount; }
+  void increaseUsage() {
+    ++usageCount;
+    assert(usageCount > 0);
+  }
   void decreaseUsage() {
+    assert(usageCount > 0);
     if (--usageCount == 0) {
       std::cout << "releasing!" << std::endl;
       release();
@@ -399,29 +403,33 @@ struct CePtr {
 template <typename CE>
 class ConstrExpPool {  // TODO: private constructor for ConstrExp, only accessible to ConstrExpPool?
   size_t n = 0;
-  std::vector<std::unique_ptr<CE>> ces;
+  std::vector<CE*> ces;
   std::vector<CE*> availables;
   std::shared_ptr<Logger> plogger;
 
  public:
+  ~ConstrExpPool() {
+    for (CE* ce : ces) delete ce;
+  }
+
   void resize(size_t newn) {
     assert(n <= INF);
     n = newn;
-    for (auto& ce : ces) ce->resize(n);
+    for (CE* ce : ces) ce->resize(n);
   }
 
   void initializeLogging(std::shared_ptr<Logger>& lgr) {
     plogger = lgr;
-    for (auto& ce : ces) ce->initializeLogging(lgr);
+    for (CE* ce : ces) ce->initializeLogging(lgr);
   }
 
   CE* take() {
     assert(ces.size() < 20);  // Sanity check that no large amounts of ConstrExps are created
     if (availables.size() == 0) {
-      ces.emplace_back(std::make_unique<CE>(*this));
+      ces.emplace_back(new CE(*this));
       ces.back()->resize(n);
       ces.back()->initializeLogging(plogger);
-      availables.push_back(ces.back().get());
+      availables.push_back(ces.back());
     }
     CE* result = availables.back();
     availables.pop_back();
@@ -431,7 +439,7 @@ class ConstrExpPool {  // TODO: private constructor for ConstrExp, only accessib
   }
 
   void release(CE* ce) {
-    assert(std::any_of(ces.begin(), ces.end(), [&](std::unique_ptr<CE>& i) { return i.get() == ce; }));
+    assert(std::any_of(ces.begin(), ces.end(), [&](CE* i) { return i == ce; }));
     assert(std::none_of(availables.begin(), availables.end(), [&](CE* i) { return i == ce; }));
     ce->reset();
     availables.push_back(ce);
