@@ -210,6 +210,15 @@ bool Solver::runPropagation(bool onlyUnitPropagation) {
           recomputeLBD(C);
         }
         C.toConstraint(conflConstraint);
+
+        stats.NENCFORMULA += C.getOrigin() == Origin::FORMULA;
+        stats.NENCLEARNED += C.getOrigin() == Origin::LEARNED;
+        stats.NENCBOUND += C.getOrigin() == Origin::BOUND;
+        stats.NENCCOREGUIDED += C.getOrigin() == Origin::COREGUIDED;
+        stats.NLPENCGOMORY += C.getOrigin() == Origin::GOMORY;
+        stats.NLPENCLEARNEDFARKAS += C.getOrigin() == Origin::LEARNEDFARKAS;
+        stats.NLPENCFARKAS += C.getOrigin() == Origin::FARKAS;
+
         return false;
       }
     }
