@@ -32,8 +32,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "ConstrExp.hpp"
 
 template <typename CF, typename DG>
-ConstrExpSuper* ConstrSimple<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
-  ConstrExp<CF, DG>* ce = cePools.take<CF, DG>();
+CeSuper ConstrSimple<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
+  CePtr<ConstrExp<CF, DG>> ce = cePools.take<CF, DG>();
   ce->addRhs(rhs);
   for (const Term<CF>& t : terms) {
     ce->addLhs(t.c, t.l);

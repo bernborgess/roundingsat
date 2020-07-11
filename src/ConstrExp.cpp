@@ -48,33 +48,27 @@ ConstrExp<SMALL, LARGE>::ConstrExp(ConstrExpPool<ConstrExp<SMALL, LARGE>>& cep) 
 }
 
 template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::release() {
-  assert(usageCount == 0);
-  pool.release(this);
-}
-
-template <typename SMALL, typename LARGE>
-ConstrExpSuper* ConstrExp<SMALL, LARGE>::reduce(ConstrExpPools& cePools) const {
+CeSuper ConstrExp<SMALL, LARGE>::reduce(ConstrExpPools& cePools) const {
   Representation rep = minRepresentation();
   if (rep == Representation::B32) {
-    ConstrExp32* result = cePools.take32();
+    Ce32 result = cePools.take32();
     copyTo(result);
     return result;
   } else if (rep == Representation::B64) {
-    ConstrExp64* result = cePools.take64();
+    Ce64 result = cePools.take64();
     copyTo(result);
     return result;
   } else if (rep == Representation::B96) {
-    ConstrExp96* result = cePools.take96();
+    Ce96 result = cePools.take96();
     copyTo(result);
     return result;
   } else if (rep == Representation::B128) {
-    ConstrExp128* result = cePools.take128();
+    Ce128 result = cePools.take128();
     copyTo(result);
     return result;
   } else {
     assert(rep == Representation::ARB);
-    ConstrExpArb* result = cePools.takeArb();
+    CeArb result = cePools.takeArb();
     copyTo(result);
     return result;
   }
@@ -1055,27 +1049,27 @@ void ConstrExp<SMALL, LARGE>::resolveWith(const Cardinality& c, Lit l, IntSet* a
 }
 
 template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::resolveWith(ConstrExp32* c, Lit l, IntSet* actSet, const IntVecIt& Level,
+void ConstrExp<SMALL, LARGE>::resolveWith(Ce32 c, Lit l, IntSet* actSet, const IntVecIt& Level,
                                           const std::vector<int>& Pos) {
   genericResolve(c, l, actSet, Level, Pos);
 }
 template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::resolveWith(ConstrExp64* c, Lit l, IntSet* actSet, const IntVecIt& Level,
+void ConstrExp<SMALL, LARGE>::resolveWith(Ce64 c, Lit l, IntSet* actSet, const IntVecIt& Level,
                                           const std::vector<int>& Pos) {
   genericResolve(c, l, actSet, Level, Pos);
 }
 template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::resolveWith(ConstrExp96* c, Lit l, IntSet* actSet, const IntVecIt& Level,
+void ConstrExp<SMALL, LARGE>::resolveWith(Ce96 c, Lit l, IntSet* actSet, const IntVecIt& Level,
                                           const std::vector<int>& Pos) {
   genericResolve(c, l, actSet, Level, Pos);
 }
 template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::resolveWith(ConstrExp128* c, Lit l, IntSet* actSet, const IntVecIt& Level,
+void ConstrExp<SMALL, LARGE>::resolveWith(Ce128 c, Lit l, IntSet* actSet, const IntVecIt& Level,
                                           const std::vector<int>& Pos) {
   genericResolve(c, l, actSet, Level, Pos);
 }
 template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::resolveWith(ConstrExpArb* c, Lit l, IntSet* actSet, const IntVecIt& Level,
+void ConstrExp<SMALL, LARGE>::resolveWith(CeArb c, Lit l, IntSet* actSet, const IntVecIt& Level,
                                           const std::vector<int>& Pos) {
   genericResolve(c, l, actSet, Level, Pos);
 }
@@ -1097,28 +1091,28 @@ void ConstrExpPools::initializeLogging(std::shared_ptr<Logger> lgr) {
 }
 
 template <>
-ConstrExp32* ConstrExpPools::take<int, long long>() {
-  return ce32s.take();
+Ce32 ConstrExpPools::take<int, long long>() {
+  return Ce32(ce32s.take());
 }
 template <>
-ConstrExp64* ConstrExpPools::take<long long, int128>() {
-  return ce64s.take();
+Ce64 ConstrExpPools::take<long long, int128>() {
+  return Ce64(ce64s.take());
 }
 template <>
-ConstrExp96* ConstrExpPools::take<int128, int128>() {
-  return ce96s.take();
+Ce96 ConstrExpPools::take<int128, int128>() {
+  return Ce96(ce96s.take());
 }
 template <>
-ConstrExp128* ConstrExpPools::take<int128, int256>() {
-  return ce128s.take();
+Ce128 ConstrExpPools::take<int128, int256>() {
+  return Ce128(ce128s.take());
 }
 template <>
-ConstrExpArb* ConstrExpPools::take<bigint, bigint>() {
-  return ceArbs.take();
+CeArb ConstrExpPools::take<bigint, bigint>() {
+  return CeArb(ceArbs.take());
 }
 
-ConstrExp32* ConstrExpPools::take32() { return take<int, long long>(); }
-ConstrExp64* ConstrExpPools::take64() { return take<long long, int128>(); }
-ConstrExp96* ConstrExpPools::take96() { return take<int128, int128>(); }
-ConstrExp128* ConstrExpPools::take128() { return take<int128, int256>(); }
-ConstrExpArb* ConstrExpPools::takeArb() { return take<bigint, bigint>(); }
+Ce32 ConstrExpPools::take32() { return take<int, long long>(); }
+Ce64 ConstrExpPools::take64() { return take<long long, int128>(); }
+Ce96 ConstrExpPools::take96() { return take<int128, int128>(); }
+Ce128 ConstrExpPools::take128() { return take<int128, int256>(); }
+CeArb ConstrExpPools::takeArb() { return take<bigint, bigint>(); }

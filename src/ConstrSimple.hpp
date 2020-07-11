@@ -40,7 +40,7 @@ struct ConstrExpPools;
 
 struct ConstrSimpleSuper {
   Origin orig = Origin::UNKNOWN;
-  virtual ConstrExpSuper* toExpanded(ConstrExpPools& cePools) const = 0;
+  virtual CeSuper toExpanded(ConstrExpPools& cePools) const = 0;
   virtual void copyTo(ConstrSimple32& out) const = 0;
   virtual void copyTo(ConstrSimple64& out) const = 0;
   virtual void copyTo(ConstrSimple96& out) const = 0;
@@ -60,7 +60,7 @@ struct ConstrSimple final : public ConstrSimpleSuper {
     orig = o;
   }
 
-  ConstrExpSuper* toExpanded(ConstrExpPools& cePools) const;
+  CeSuper toExpanded(ConstrExpPools& cePools) const;
 
   void toNormalFormLit();
   void toNormalFormVar();

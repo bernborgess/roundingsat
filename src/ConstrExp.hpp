@@ -50,6 +50,22 @@ const CRef CRef_Unsat = {std::numeric_limits<uint32_t>::max() - 1};  // TODO: ne
 enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
 enum Representation { B32, B64, B96, B128, ARB };
 
+template <typename CE>
+struct CePtr {
+  CE& ce;  // TODO: ptr
+
+  CePtr(const CePtr& other) : ce{other.ce} { ce.increaseUsage(); }
+  CePtr(CE* c) : ce(*c) { ce.increaseUsage(); }
+  template <typename T, typename = std::enable_if_t<std::is_convertible_v<T&, CE&>>>
+  CePtr(const CePtr<T>& other) : ce{other.ce} {  // needed for inheritance of CePtr<Constr
+    ce.increaseUsage();
+  }
+  ~CePtr() { ce.decreaseUsage(); }
+
+  CE& operator*() const { return ce; }
+  CE* operator->() const { return &ce; }
+};
+
 struct ConstraintAllocator;
 struct ConstrExpPools;
 class Solver;
@@ -58,17 +74,16 @@ struct ConstrExpSuper {
   std::vector<Var> vars;
   Origin orig = Origin::UNKNOWN;
 
-  virtual void release() = 0;
   virtual void increaseUsage() = 0;
   virtual void decreaseUsage() = 0;
 
-  virtual void copyTo(ConstrExp32* ce) const = 0;
-  virtual void copyTo(ConstrExp64* ce) const = 0;
-  virtual void copyTo(ConstrExp96* ce) const = 0;
-  virtual void copyTo(ConstrExp128* ce) const = 0;
-  virtual void copyTo(ConstrExpArb* ce) const = 0;
+  virtual void copyTo(Ce32 ce) const = 0;
+  virtual void copyTo(Ce64 ce) const = 0;
+  virtual void copyTo(Ce96 ce) const = 0;
+  virtual void copyTo(Ce128 ce) const = 0;
+  virtual void copyTo(CeArb ce) const = 0;
 
-  virtual ConstrExpSuper* reduce(ConstrExpPools& ce) const = 0;
+  virtual CeSuper reduce(ConstrExpPools& ce) const = 0;
   virtual CRef toConstr(ConstraintAllocator& ca, bool locked, ID id) const = 0;
   virtual std::unique_ptr<ConstrSimpleSuper> toSimple() const = 0;
   virtual Representation minRepresentation() const = 0;
@@ -123,16 +138,11 @@ struct ConstrExpSuper {
   virtual void toStreamAsOPB(std::ostream& o) const = 0;
   virtual void toStreamWithAssignment(std::ostream& o, const IntVecIt& level, const std::vector<int>& pos) const = 0;
 
-  virtual void resolveWith(ConstrExp32* c, Lit l, IntSet* actSet, const IntVecIt& Level,
-                           const std::vector<int>& Pos) = 0;
-  virtual void resolveWith(ConstrExp64* c, Lit l, IntSet* actSet, const IntVecIt& Level,
-                           const std::vector<int>& Pos) = 0;
-  virtual void resolveWith(ConstrExp96* c, Lit l, IntSet* actSet, const IntVecIt& Level,
-                           const std::vector<int>& Pos) = 0;
-  virtual void resolveWith(ConstrExp128* c, Lit l, IntSet* actSet, const IntVecIt& Level,
-                           const std::vector<int>& Pos) = 0;
-  virtual void resolveWith(ConstrExpArb* c, Lit l, IntSet* actSet, const IntVecIt& Level,
-                           const std::vector<int>& Pos) = 0;
+  virtual void resolveWith(Ce32 c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos) = 0;
+  virtual void resolveWith(Ce64 c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos) = 0;
+  virtual void resolveWith(Ce96 c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos) = 0;
+  virtual void resolveWith(Ce128 c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos) = 0;
+  virtual void resolveWith(CeArb c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos) = 0;
   virtual void resolveWith(const Clause& c, Lit l, IntSet* actSet, const IntVecIt& Level,
                            const std::vector<int>& Pos) = 0;
   virtual void resolveWith(const Cardinality& c, Lit l, IntSet* actSet, const IntVecIt& Level,
@@ -172,7 +182,6 @@ struct ConstrExp final : public ConstrExpSuper {
 
  public:
   ConstrExp(ConstrExpPool<ConstrExp<SMALL, LARGE>>& cep);
-  void release();
   void increaseUsage() {
     ++usageCount;
     assert(usageCount > 0);
@@ -180,13 +189,12 @@ struct ConstrExp final : public ConstrExpSuper {
   void decreaseUsage() {
     assert(usageCount > 0);
     if (--usageCount == 0) {
-      std::cout << "releasing!" << std::endl;
-      release();
+      pool.release(this);
     }
   }
 
   template <typename S, typename L>
-  void copyTo_(ConstrExp<S, L>* out) const {
+  void copyTo_(CePtr<ConstrExp<S, L>> out) const {
     // TODO: assert whether S/L can fit SMALL/LARGE? Not always possible.
     assert(out->isReset());
     out->degree = static_cast<L>(degree);
@@ -205,13 +213,13 @@ struct ConstrExp final : public ConstrExpSuper {
       out->proofBuffer << proofBuffer.str();
     }
   }
-  void copyTo(ConstrExp32* ce) const { copyTo_(ce); }
-  void copyTo(ConstrExp64* ce) const { copyTo_(ce); }
-  void copyTo(ConstrExp96* ce) const { copyTo_(ce); }
-  void copyTo(ConstrExp128* ce) const { copyTo_(ce); }
-  void copyTo(ConstrExpArb* ce) const { copyTo_(ce); }
+  void copyTo(Ce32 ce) const { copyTo_(ce); }
+  void copyTo(Ce64 ce) const { copyTo_(ce); }
+  void copyTo(Ce96 ce) const { copyTo_(ce); }
+  void copyTo(Ce128 ce) const { copyTo_(ce); }
+  void copyTo(CeArb ce) const { copyTo_(ce); }
 
-  ConstrExpSuper* reduce(ConstrExpPools& ce) const;
+  CeSuper reduce(ConstrExpPools& ce) const;
   CRef toConstr(ConstraintAllocator& ca, bool locked, ID id) const;
   std::unique_ptr<ConstrSimpleSuper> toSimple() const;
   Representation minRepresentation() const;
@@ -258,7 +266,7 @@ struct ConstrExp final : public ConstrExpSuper {
   bool fitsInDouble() const;
 
   template <typename S, typename L>
-  void addUp(ConstrExp<S, L>* c, const SMALL& cmult = 1, const SMALL& thismult = 1) {
+  void addUp(CePtr<ConstrExp<S, L>> c, const SMALL& cmult = 1, const SMALL& thismult = 1) {
     assert(cmult >= 1);
     assert(thismult >= 1);
     if (plogger) proofBuffer << proofMult(thismult) << c->proofBuffer.str() << proofMult(cmult) << "+ ";
@@ -335,17 +343,17 @@ struct ConstrExp final : public ConstrExpSuper {
   void toStreamAsOPB(std::ostream& o) const;
   void toStreamWithAssignment(std::ostream& o, const IntVecIt& level, const std::vector<int>& pos) const;
 
-  void resolveWith(ConstrExp32* c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
-  void resolveWith(ConstrExp64* c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
-  void resolveWith(ConstrExp96* c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
-  void resolveWith(ConstrExp128* c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
-  void resolveWith(ConstrExpArb* c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
+  void resolveWith(Ce32 c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
+  void resolveWith(Ce64 c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
+  void resolveWith(Ce96 c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
+  void resolveWith(Ce128 c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
+  void resolveWith(CeArb c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
   void resolveWith(const Clause& c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
   void resolveWith(const Cardinality& c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
 
  private:
   template <typename CF, typename DG>
-  void genericResolve(ConstrExp<CF, DG>* reason, Lit l, IntSet* actSet, const IntVecIt& Level,
+  void genericResolve(CePtr<ConstrExp<CF, DG>> reason, Lit l, IntSet* actSet, const IntVecIt& Level,
                       const std::vector<int>& Pos) {
     assert(getCoef(-l) > 0);
     stats.NADDEDLITERALS += reason->vars.size();
@@ -373,7 +381,7 @@ struct ConstrExp final : public ConstrExpSuper {
 };
 
 template <typename S, typename L>
-std::ostream& operator<<(std::ostream& o, const ConstrExp<S, L>* C) {
+std::ostream& operator<<(std::ostream& o, const CePtr<ConstrExp<S, L>> C) {
   std::vector<Var> vars = C.vars;
   std::sort(vars.begin(), vars.end(), [](Var v1, Var v2) { return v1 < v2; });
   for (Var v : vars) {
@@ -383,22 +391,6 @@ std::ostream& operator<<(std::ostream& o, const ConstrExp<S, L>* C) {
   o << ">= " << C.degree;
   return o;
 }
-
-template <typename CE>
-struct CePtr {
-  CE& ce;
-
-  CePtr(const CePtr& other) : ce{other.ce} { ce->increaseUsage(); }
-  CePtr(CE& c) : ce(c) { ce->increaseUsage(); }
-  template <typename T, typename = std::enable_if_t<std::is_convertible_v<T&, CE&>>>
-  CePtr(const CePtr<T>& other) : ce{other.ce} {  // needed for inheritance of CePtr<Constr
-    ce->increaseUsage();
-  }
-  ~CePtr() { ce->decreaseUsage(); }
-
-  CE& operator*() const { return ce; }
-  CE* operator->() const { return &ce; }
-};
 
 template <typename CE>
 class ConstrExpPool {  // TODO: private constructor for ConstrExp, only accessible to ConstrExpPool?
@@ -458,11 +450,11 @@ class ConstrExpPools {
   void initializeLogging(std::shared_ptr<Logger> lgr);
 
   template <typename SMALL, typename LARGE>
-  ConstrExp<SMALL, LARGE>* take();  // NOTE: only call specializations
+  CePtr<ConstrExp<SMALL, LARGE>> take();  // NOTE: only call specializations
 
-  ConstrExp32* take32();
-  ConstrExp64* take64();
-  ConstrExp96* take96();
-  ConstrExp128* take128();
-  ConstrExpArb* takeArb();
+  Ce32 take32();
+  Ce64 take64();
+  Ce96 take96();
+  Ce128 take128();
+  CeArb takeArb();
 };

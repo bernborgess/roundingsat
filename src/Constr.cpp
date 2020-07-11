@@ -132,12 +132,12 @@ WatchStatus Clause::checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver
   return WatchStatus::KEEPWATCH;
 }
 
-void Clause::resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver) {
+void Clause::resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver) {
   confl->resolveWith(*this, l, actSet, solver.getLevel(), solver.getPos());
 }
 
-ConstrExpSuper* Clause::toExpanded(ConstrExpPools& cePools) const {
-  ConstrExp32* result = cePools.take32();
+CeSuper Clause::toExpanded(ConstrExpPools& cePools) const {
+  Ce32 result = cePools.take32();
   result->addRhs(1);
   for (size_t i = 0; i < size(); ++i) {
     result->addLhs(1, data[i]);
@@ -240,12 +240,12 @@ WatchStatus Cardinality::checkForPropagation(CRef cr, int& idx, [[maybe_unused]]
   return WatchStatus::KEEPWATCH;
 }
 
-void Cardinality::resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver) {
+void Cardinality::resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver) {
   confl->resolveWith(*this, l, actSet, solver.getLevel(), solver.getPos());
 }
 
-ConstrExpSuper* Cardinality::toExpanded(ConstrExpPools& cePools) const {
-  ConstrExp32* result = cePools.take32();
+CeSuper Cardinality::toExpanded(ConstrExpPools& cePools) const {
+  Ce32 result = cePools.take32();
   result->addRhs(degr);
   for (size_t i = 0; i < size(); ++i) {
     result->addLhs(1, data[i]);
@@ -328,15 +328,13 @@ void Counting<CF, DG>::undoFalsified(int i) {
 }
 
 template <typename CF, typename DG>
-void Counting<CF, DG>::resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver) {
-  ConstrExp<CF, DG>* reason = static_cast<ConstrExp<CF, DG>*>(toExpanded(solver.cePools));
-  confl->resolveWith(reason, l, actSet, solver.getLevel(), solver.getPos());
-  reason->release();
+void Counting<CF, DG>::resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver) {
+  confl->resolveWith(expandTo(solver.cePools), l, actSet, solver.getLevel(), solver.getPos());
 }
 
 template <typename CF, typename DG>
-ConstrExpSuper* Counting<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
-  ConstrExp<CF, DG>* result = cePools.take<CF, DG>();
+CePtr<ConstrExp<CF, DG>> Counting<CF, DG>::expandTo(ConstrExpPools& cePools) const {
+  CePtr<ConstrExp<CF, DG>> result = cePools.take<CF, DG>();
   result->addRhs(degr);
   for (size_t i = 0; i < size(); ++i) {
     result->addLhs(data[i].c, data[i].l);
@@ -344,6 +342,11 @@ ConstrExpSuper* Counting<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
   result->orig = getOrigin();
   if (result->plogger) result->resetBuffer(id);
   return result;
+}
+
+template <typename CF, typename DG>
+CeSuper Counting<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
+  return expandTo(cePools);
 }
 
 template <typename CF, typename DG>
@@ -467,15 +470,13 @@ void Watched<CF, DG>::undoFalsified(int i) {
 }
 
 template <typename CF, typename DG>
-void Watched<CF, DG>::resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver) {
-  ConstrExp<CF, DG>* reason = static_cast<ConstrExp<CF, DG>*>(toExpanded(solver.cePools));
-  confl->resolveWith(reason, l, actSet, solver.getLevel(), solver.getPos());
-  reason->release();
+void Watched<CF, DG>::resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver) {
+  confl->resolveWith(expandTo(solver.cePools), l, actSet, solver.getLevel(), solver.getPos());
 }
 
 template <typename CF, typename DG>
-ConstrExpSuper* Watched<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
-  ConstrExp<CF, DG>* result = cePools.take<CF, DG>();
+CePtr<ConstrExp<CF, DG>> Watched<CF, DG>::expandTo(ConstrExpPools& cePools) const {
+  CePtr<ConstrExp<CF, DG>> result = cePools.take<CF, DG>();
   result->addRhs(degr);
   for (size_t i = 0; i < size(); ++i) {
     result->addLhs(rs::abs(data[i].c), data[i].l);
@@ -483,6 +484,11 @@ ConstrExpSuper* Watched<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
   result->orig = getOrigin();
   if (result->plogger) result->resetBuffer(id);
   return result;
+}
+
+template <typename CF, typename DG>
+CeSuper Watched<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
+  return expandTo(cePools);
 }
 
 void Arbitrary::initializeWatches(CRef cr, Solver& solver) {
@@ -551,14 +557,12 @@ void Arbitrary::undoFalsified(int i) {
   ++stats.NWATCHLOOKUPSBJ;
 }
 
-void Arbitrary::resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver) {
-  ConstrExpArb* reason = static_cast<ConstrExpArb*>(toExpanded(solver.cePools));
-  confl->resolveWith(reason, l, actSet, solver.getLevel(), solver.getPos());
-  reason->release();
+void Arbitrary::resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver) {
+  confl->resolveWith(expandTo(solver.cePools), l, actSet, solver.getLevel(), solver.getPos());
 }
 
-ConstrExpSuper* Arbitrary::toExpanded(ConstrExpPools& cePools) const {
-  ConstrExpArb* result = cePools.takeArb();
+CeArb Arbitrary::expandTo(ConstrExpPools& cePools) const {
+  CeArb result = cePools.takeArb();
   result->addRhs(degr);
   for (size_t i = 0; i < size(); ++i) {
     result->addLhs(coefs[i], lits[i]);
@@ -567,6 +571,8 @@ ConstrExpSuper* Arbitrary::toExpanded(ConstrExpPools& cePools) const {
   if (result->plogger) result->resetBuffer(id);
   return result;
 }
+
+CeSuper Arbitrary::toExpanded(ConstrExpPools& cePools) const { return expandTo(cePools); }
 
 // TODO: keep below test methods?
 

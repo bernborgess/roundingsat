@@ -45,9 +45,9 @@ int read_number(const std::string& s) {  // TODO: should also read larger number
   return answer;
 }
 
-void opb_read(std::istream& in, Solver& solver, ConstrExpArb* objective) {
+void opb_read(std::istream& in, Solver& solver, CeArb objective) {
   assert(objective->isReset());
-  ConstrExpArb* input = solver.cePools.takeArb();
+  CeArb input = solver.cePools.takeArb();
   [[maybe_unused]] bool first_constraint = true;
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == '*') continue;
@@ -105,13 +105,12 @@ void opb_read(std::istream& in, Solver& solver, ConstrExpArb* objective) {
       }
     }
   }
-  input->release();
   solver.setNbOrigVars(solver.getNbVars());
 }
 
-void wcnf_read(std::istream& in, long long top, Solver& solver, ConstrExpArb* objective) {
+void wcnf_read(std::istream& in, long long top, Solver& solver, CeArb objective) {
   assert(objective->isReset());
-  ConstrExpArb* input = solver.cePools.takeArb();
+  CeArb input = solver.cePools.takeArb();
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == 'c')
       continue;
@@ -133,12 +132,11 @@ void wcnf_read(std::istream& in, long long top, Solver& solver, ConstrExpArb* ob
       if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
     }
   }
-  input->release();
   solver.setNbOrigVars(solver.getNbVars() - objective->vars.size());
 }
 
 void cnf_read(std::istream& in, Solver& solver) {
-  ConstrExp32* input = solver.cePools.take32();
+  Ce32 input = solver.cePools.take32();
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == 'c')
       continue;
@@ -151,11 +149,10 @@ void cnf_read(std::istream& in, Solver& solver) {
       if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
     }
   }
-  input->release();
   solver.setNbOrigVars(solver.getNbVars());
 }
 
-void file_read(std::istream& in, Solver& solver, ConstrExpArb* objective) {
+void file_read(std::istream& in, Solver& solver, CeArb objective) {
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == 'c') continue;
     if (line[0] == 'p') {

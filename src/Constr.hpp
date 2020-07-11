@@ -70,9 +70,9 @@ struct Constr {  // internal solver constraint optimized for fast propagation
   virtual void initializeWatches(CRef cr, Solver& solver) = 0;
   virtual WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& slvr) = 0;
   virtual void undoFalsified(int i) = 0;
-  virtual void resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver) = 0;
+  virtual void resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver) = 0;
 
-  virtual ConstrExpSuper* toExpanded(ConstrExpPools& cePools) const = 0;
+  virtual CeSuper toExpanded(ConstrExpPools& cePools) const = 0;
 
   std::ostream& operator<<(std::ostream& o) {
     for (size_t i = 0; i < size(); ++i) {
@@ -117,9 +117,9 @@ struct Clause final : public Constr {
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified([[maybe_unused]] int i) { assert(false); }
-  void resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver);
+  void resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver);
 
-  ConstrExpSuper* toExpanded(ConstrExpPools& cePools) const;
+  CeSuper toExpanded(ConstrExpPools& cePools) const;
 };
 
 struct Cardinality final : public Constr {
@@ -161,9 +161,9 @@ struct Cardinality final : public Constr {
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified([[maybe_unused]] int i) { assert(false); }
-  void resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver);
+  void resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver);
 
-  ConstrExpSuper* toExpanded(ConstrExpPools& cePools) const;
+  CeSuper toExpanded(ConstrExpPools& cePools) const;
 };
 
 template <typename CF, typename DG>
@@ -206,9 +206,10 @@ struct Counting final : public Constr {
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
-  void resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver);
+  void resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver);
 
-  ConstrExpSuper* toExpanded(ConstrExpPools& cePools) const;
+  CePtr<ConstrExp<CF, DG>> expandTo(ConstrExpPools& cePools) const;
+  CeSuper toExpanded(ConstrExpPools& cePools) const;
 
   bool hasCorrectSlack(const Solver& solver);
 };
@@ -253,9 +254,10 @@ struct Watched final : public Constr {
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
-  void resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver);
+  void resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver);
 
-  ConstrExpSuper* toExpanded(ConstrExpPools& cePools) const;
+  CePtr<ConstrExp<CF, DG>> expandTo(ConstrExpPools& cePools) const;
+  CeSuper toExpanded(ConstrExpPools& cePools) const;
 
   bool hasCorrectSlack(const Solver& solver);
   bool hasCorrectWatches(const Solver& solver);
@@ -302,9 +304,10 @@ struct Arbitrary final : public Constr {
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
-  void resolveWith(ConstrExpSuper* confl, Lit l, IntSet* actSet, Solver& solver);
+  void resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver);
 
-  ConstrExpSuper* toExpanded(ConstrExpPools& cePools) const;
+  CeArb expandTo(ConstrExpPools& cePools) const;
+  CeSuper toExpanded(ConstrExpPools& cePools) const;
 
   bool hasCorrectSlack(const Solver& solver);
 };

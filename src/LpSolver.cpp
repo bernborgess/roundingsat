@@ -34,7 +34,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <queue>
 #include "Solver.hpp"
 
-CandidateCut::CandidateCut(ConstrExpSuper* in, const std::vector<double>& sol) {
+CandidateCut::CandidateCut(CeSuper in, const std::vector<double>& sol) {
   assert(in->isSaturated());
   in->saturateAndFixOverflowRational(sol);
   in->toSimple()->copyTo(simpcons);
@@ -45,15 +45,13 @@ CandidateCut::CandidateCut(ConstrExpSuper* in, const std::vector<double>& sol) {
 CandidateCut::CandidateCut(const Constr& in, CRef cref, const std::vector<double>& sol, ConstrExpPools& pools)
     : cr(cref) {
   assert(in.degree() > 0);
-  ConstrExpSuper* tmp = in.toExpanded(pools);
+  CeSuper tmp = in.toExpanded(pools);
   tmp->saturateAndFixOverflowRational(sol);
   if (tmp->isTautology()) {
-    tmp->release();
     return;
   }
   tmp->toSimple()->copyTo(simpcons);
   // NOTE: simpcons is already in var-normal form
-  tmp->release();
   initialize(sol);
   assert(cr != CRef_Undef);
 }
@@ -102,7 +100,7 @@ std::ostream& operator<<(std::ostream& o, const CandidateCut& cc) {
   return o << cc.simpcons << " norm " << cc.norm << " ratSlack " << cc.ratSlack;
 }
 
-LpSolver::LpSolver(Solver& slvr, const ConstrExpArb* o) : solver(slvr) {
+LpSolver::LpSolver(Solver& slvr, const CeArb o) : solver(slvr) {
   assert(INFTY == lp.realParam(lp.INFTY));
 
   if (options.verbosity > 1) std::cout << "c Initializing LP" << std::endl;
@@ -160,19 +158,17 @@ void LpSolver::setNbVariables(int n) {
 int LpSolver::getNbVariables() const { return lp.numCols(); }
 int LpSolver::getNbRows() const { return lp.numRows(); }
 
-ConstrExpSuper* LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
+CeSuper LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
   double scale = getScaleFactor(mults, true);
   if (scale == 0) return solver.cePools.take32();
   assert(scale > 0);
 
-  ConstrExpArb* out = solver.cePools.takeArb();
+  CeArb out = solver.cePools.takeArb();
   for (int r = 0; r < mults.dim(); ++r) {
     bigint factor = static_cast<bigint>(mults[r] * scale);
     if (factor <= 0) continue;
     assert(lp.lhsReal(r) != INFTY);
-    ConstrExp64* ce = rowToConstraint(r);
-    out->addUp(ce, factor);
-    ce->release();
+    out->addUp(rowToConstraint(r), factor);
   }
   out->removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
   assert(out->hasNoZeroes());
@@ -185,16 +181,15 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   double scale = getScaleFactor(mults, false);
   if (scale == 0) return CandidateCut();
   assert(scale > 0);
-  ConstrExpArb* lcc = solver.cePools.takeArb();
+  CeArb lcc = solver.cePools.takeArb();
 
   std::vector<std::pair<BigCoef, int>> slacks;
   for (int r = 0; r < mults.dim(); ++r) {
     bigint factor = static_cast<bigint>(mults[r] * scale);
     if (factor == 0) continue;
-    ConstrExp64* ce = rowToConstraint(r);
+    Ce64 ce = rowToConstraint(r);
     if (factor < 0) ce->invert();
     lcc->addUp(ce, rs::abs(factor));
-    ce->release();
     slacks.emplace_back(-factor, r);
   }
 
@@ -202,7 +197,6 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   for (Var v : lcc->vars)
     if (lpSolution[v] > 0.5) b -= lcc->coefs[v];
   if (b == 0) {
-    lcc->release();
     return CandidateCut();
   }
 
@@ -217,10 +211,9 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     bigint factor =
         bmodd * aux::floordiv_safe(slacks[i].first, divisor) + std::min(aux::mod_safe(slacks[i].first, divisor), bmodd);
     if (factor == 0) continue;
-    ConstrExp64* ce = rowToConstraint(slacks[i].second);
+    Ce64 ce = rowToConstraint(slacks[i].second);
     if (factor < 0) ce->invert();
     lcc->addUp(ce, rs::abs(factor));
-    ce->release();
   }
   if (lcc->plogger) lcc->logAsInput();
   // TODO: fix logging for Gomory cuts
@@ -233,7 +226,6 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     lcc->weakenSmalls(lcc->absCoeffSum() / static_cast<bigint>((double)lcc->vars.size() / options.intolerance));
   }
   CandidateCut result(lcc, lpSolution);
-  lcc->release();
   return result;
 }
 
@@ -315,7 +307,7 @@ void LpSolver::addFilteredCuts() {
 
   for (int i : keptCuts) {
     CandidateCut& cc = candidateCuts[i];
-    ConstrExpSuper* ce = cc.simpcons.toExpanded(solver.cePools);
+    CeSuper ce = cc.simpcons.toExpanded(solver.cePools);
     ce->postProcess(solver.getLevel(), solver.getPos(), true, stats);
     assert(ce->fitsInDouble());
     assert(!ce->isTautology());
@@ -325,7 +317,6 @@ void LpSolver::addFilteredCuts() {
       ++stats.NLPLEARNEDCUTS;
     }
     addConstraint(ce, true);
-    ce->release();
   }
 }
 
@@ -351,8 +342,8 @@ double LpSolver::getScaleFactor(soplex::DVectorReal& mults, bool removeNegatives
   return maxMult / largest;
 }
 
-ConstrExp64* LpSolver::rowToConstraint(int row) {
-  ConstrExp64* ce = solver.cePools.take64();
+Ce64 LpSolver::rowToConstraint(int row) {
+  Ce64 ce = solver.cePools.take64();
   double rhs = lp.lhsReal(row);
   assert(rs::abs(rhs) != INFTY);
   assert(validVal(rhs));
@@ -370,9 +361,9 @@ ConstrExp64* LpSolver::rowToConstraint(int row) {
   return ce;
 }
 
-std::pair<LpStatus, ConstrExpSuper*> LpSolver::checkFeasibility(bool inProcessing) {
+std::pair<LpStatus, CeSuper> LpSolver::checkFeasibility(bool inProcessing) {
   double startTime = aux::cpuTime();
-  std::pair<LpStatus, ConstrExpSuper*> result = _checkFeasibility(inProcessing);
+  std::pair<LpStatus, CeSuper> result = _checkFeasibility(inProcessing);
   stats.LPTOTALTIME += aux::cpuTime() - startTime;
   return result;
 }
@@ -383,7 +374,7 @@ void LpSolver::inProcess() {
   stats.LPTOTALTIME += aux::cpuTime() - startTime;
 }
 
-std::pair<LpStatus, ConstrExpSuper*> LpSolver::_checkFeasibility(bool inProcessing) {
+std::pair<LpStatus, CeSuper> LpSolver::_checkFeasibility(bool inProcessing) {
   if (solver.logger) solver.logger->logComment("Checking LP", stats);
   if (options.lpPivotRatio < 0)
     lp.setIntParam(soplex::SoPlex::ITERLIMIT, -1);  // no pivot limit
@@ -457,7 +448,7 @@ std::pair<LpStatus, ConstrExpSuper*> LpSolver::_checkFeasibility(bool inProcessi
     return {UNDETERMINED, solver.cePools.take32()};
   }
 
-  ConstrExpSuper* confl = createLinearCombinationFarkas(lpMultipliers);
+  CeSuper confl = createLinearCombinationFarkas(lpMultipliers);
   solver.learnConstraint(confl, Origin::FARKAS);
   if (confl->hasNegativeSlack(solver.getLevel())) return {INFEASIBLE, confl};
   confl->reset();
@@ -466,11 +457,11 @@ std::pair<LpStatus, ConstrExpSuper*> LpSolver::_checkFeasibility(bool inProcessi
 
 void LpSolver::_inProcess() {
   assert(solver.decisionLevel() == 0);
-  std::pair<LpStatus, ConstrExpSuper*> lpResult = _checkFeasibility(true);
+  std::pair<LpStatus, CeSuper> lpResult = _checkFeasibility(true);
   LpStatus lpstat = lpResult.first;
-  ConstrExpSuper* confl = lpResult.second;
+  CeSuper confl = lpResult.second;
   assert((lpstat == INFEASIBLE) == confl->hasNegativeSlack(solver.getLevel()));
-  confl->release();  // in case of unsatisfiability, it will be triggered via the learned Farkas
+  // in case of unsatisfiability, it will be triggered via the learned Farkas
   if (lpstat != OPTIMAL) return;
   if (!lp.hasSol()) return;
   lp.getPrimal(lpSol);
@@ -506,7 +497,7 @@ void LpSolver::convertConstraint(const ConstrSimple64& c, soplex::DSVectorReal& 
   assert(validVal(rhs));
 }
 
-void LpSolver::addConstraint(ConstrExpSuper* c, bool removable, bool upperbound, bool lowerbound) {
+void LpSolver::addConstraint(CeSuper c, bool removable, bool upperbound, bool lowerbound) {
   c->saturateAndFixOverflowRational(lpSolution);
   ID id =
       solver.logger ? c->logProofLineWithInfo("LP", stats) : ++solver.crefID;  // TODO: fix this kind of logger check
@@ -523,9 +514,7 @@ void LpSolver::addConstraint(ConstrExpSuper* c, bool removable, bool upperbound,
 void LpSolver::addConstraint(CRef cr, bool removable, bool upperbound, bool lowerbound) {
   assert(cr != CRef_Undef);
   assert(cr != CRef_Unsat);
-  ConstrExpSuper* ce = solver.ca[cr].toExpanded(solver.cePools);
-  addConstraint(ce, removable, upperbound, lowerbound);
-  ce->release();
+  addConstraint(solver.ca[cr].toExpanded(solver.cePools), removable, upperbound, lowerbound);
 }
 
 void LpSolver::flushConstraints() {

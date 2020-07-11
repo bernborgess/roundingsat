@@ -70,7 +70,7 @@ int main(int argc, char** argv) {
 
   options.parseCommandLine(argc, argv);
   run::solver.init();
-  ConstrExpArb* objective = run::solver.cePools.takeArb();
+  CeArb objective = run::solver.cePools.takeArb();
 
   if (!options.formulaName.empty()) {
     std::ifstream fin(options.formulaName);
@@ -84,6 +84,4 @@ int main(int argc, char** argv) {
   run::solver.initLP(objective);
 
   run::run(objective);
-
-  objective->release();
 }

@@ -70,7 +70,7 @@ void Solver::init() {
   cePools.initializeLogging(logger);
 }
 
-void Solver::initLP(const ConstrExpArb* objective) {
+void Solver::initLP(const CeArb objective) {
 #if WITHSOPLEX
 #else
   return;
@@ -129,9 +129,7 @@ void Solver::uncheckedEnqueue(Lit p, CRef from) {
     Reason[v] = CRef_Undef;  // no need to keep track of reasons for unit literals
     if (logger) {
       Constr& C = ca[from];
-      ConstrExpSuper* logConstraint = C.toExpanded(cePools);
-      logConstraint->logUnit(Level, Pos, v, stats);
-      logConstraint->release();
+      C.toExpanded(cePools)->logUnit(Level, Pos, v, stats);
       assert(logger->unitIDs.size() == trail.size() + 1);
     }
   }
@@ -179,11 +177,9 @@ void Solver::propagate(Lit l, CRef reason) {
  * Unit propagation with watched literals.
  * @post: all watches up to trail[qhead] have been propagated
  */
-ConstrExpSuper* Solver::runPropagation(bool onlyUnitPropagation) {
-  ConstrExpSuper* confl = processLearnedStack();
-  if (confl->isTautology()) {
-    confl->release();
-  } else {
+CeSuper Solver::runPropagation(bool onlyUnitPropagation) {
+  CeSuper confl = processLearnedStack();
+  if (!confl->isTautology()) {
     return confl;
   }
   while (qhead < (int)trail.size()) {
@@ -217,7 +213,7 @@ ConstrExpSuper* Solver::runPropagation(bool onlyUnitPropagation) {
   }
   if (onlyUnitPropagation) return cePools.take32();
   if (lpSolver) {
-    std::pair<LpStatus, ConstrExpSuper*> lpResult = lpSolver->checkFeasibility();
+    std::pair<LpStatus, CeSuper> lpResult = lpSolver->checkFeasibility();
     assert((lpResult.first == INFEASIBLE) == lpResult.second->hasNegativeSlack(Level));
     return lpResult.second;
   }
@@ -247,38 +243,38 @@ void Solver::recomputeLBD(Constr& C) {
   }
 }
 
-ConstrExpSuper* getAnalysisCE(const ConstrExpSuper* conflict, int bitsOverflow, ConstrExpPools& cePools) {
+CeSuper getAnalysisCE(const CeSuper conflict, int bitsOverflow, ConstrExpPools& cePools) {
   if (bitsOverflow == 0 || bitsOverflow > conflLimit128) {
-    ConstrExpArb* confl = cePools.takeArb();
+    CeArb confl = cePools.takeArb();
     conflict->copyTo(confl);
     return confl;
   } else if (options.bitsOverflow > conflLimit96) {
-    ConstrExp128* confl = cePools.take128();
+    Ce128 confl = cePools.take128();
     conflict->copyTo(confl);
     return confl;
   } else if (options.bitsOverflow > conflLimit64) {
-    ConstrExp96* confl = cePools.take96();
+    Ce96 confl = cePools.take96();
     conflict->copyTo(confl);
     return confl;
   } else if (options.bitsOverflow > conflLimit32) {
-    ConstrExp64* confl = cePools.take64();
+    Ce64 confl = cePools.take64();
     conflict->copyTo(confl);
     return confl;
   } else {
-    ConstrExp32* confl = cePools.take32();
+    Ce32 confl = cePools.take32();
     conflict->copyTo(confl);
     return confl;
   }
 }
 
-std::pair<bool, ConstrExpSuper*> Solver::analyze(ConstrExpSuper* conflict) {
+std::pair<bool, CeSuper> Solver::analyze(CeSuper conflict) {
   if (logger) logger->logComment("Analyze", stats);
   assert(conflict->hasNegativeSlack(Level));
   stats.NADDEDLITERALS += conflict->vars.size();
   conflict->removeUnitsAndZeroes(Level, Pos);
   conflict->saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
 
-  ConstrExpSuper* confl = getAnalysisCE(conflict, options.bitsOverflow, cePools);
+  CeSuper confl = getAnalysisCE(conflict, options.bitsOverflow, cePools);
   conflict->reset();
 
   assert(actSet.size() == 0);  // will hold the literals that need their activity bumped
@@ -327,7 +323,7 @@ std::pair<bool, ConstrExpSuper*> Solver::analyze(ConstrExpSuper* conflict) {
   return {true, confl};
 }
 
-bool Solver::extractCore(ConstrExpSuper* conflict, const IntSet& assumptions, ConstrExpArb* outCore, Lit l_assump) {
+bool Solver::extractCore(CeSuper conflict, const IntSet& assumptions, CeArb outCore, Lit l_assump) {
   assert(!conflict->isReset());
   assert(outCore->isReset());
 
@@ -365,7 +361,7 @@ bool Solver::extractCore(ConstrExpSuper* conflict, const IntSet& assumptions, Co
   conflict->saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
   assert(conflict->hasNegativeSlack(Level));
 
-  ConstrExpSuper* confl = getAnalysisCE(conflict, options.bitsOverflow, cePools);
+  CeSuper confl = getAnalysisCE(conflict, options.bitsOverflow, cePools);
   conflict->reset();
 
   // analyze conflict
@@ -385,7 +381,6 @@ bool Solver::extractCore(ConstrExpSuper* conflict, const IntSet& assumptions, Co
   assert(!confl->isTautology());
   assert(confl->isSaturated());
   confl->copyTo(outCore);
-  confl->release();
 
   // weaken non-falsifieds
   for (Var v : outCore->vars)
@@ -399,7 +394,7 @@ bool Solver::extractCore(ConstrExpSuper* conflict, const IntSet& assumptions, Co
 // ---------------------------------------------------------------------
 // Constraint management
 
-CRef Solver::attachConstraint(ConstrExpSuper* constraint, bool locked) {
+CRef Solver::attachConstraint(CeSuper constraint, bool locked) {
   assert(constraint->isSortedInDecreasingCoefOrder());
   assert(constraint->isSaturated());
   assert(constraint->hasNoZeroes());
@@ -445,21 +440,20 @@ CRef Solver::attachConstraint(ConstrExpSuper* constraint, bool locked) {
   return cr;
 }
 
-void Solver::learnConstraint(const ConstrExpSuper* c, Origin orig) {
+void Solver::learnConstraint(const CeSuper c, Origin orig) {
   assert(orig == Origin::LEARNED || orig == Origin::FARKAS || orig == Origin::LEARNEDFARKAS || orig == Origin::GOMORY);
-  ConstrExpSuper* learned = c->reduce(cePools);
+  CeSuper learned = c->reduce(cePools);
   learned->orig = orig;
   learned->saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsLearned, options.bitsLearned);
   learnedStack.push_back(learned->toSimple());
-  learned->release();
 }
 
 // NOTE: backjumps to place where the constraint is not conflicting, as otherwise we might miss propagations
-ConstrExpSuper* Solver::processLearnedStack() {
+CeSuper Solver::processLearnedStack() {
   // loop back to front as the last constraint in the queue is a result of conflict analysis
   // and we want to first check this constraint to backjump.
   while (learnedStack.size() > 0) {
-    ConstrExpSuper* learned = learnedStack.back()->toExpanded(cePools);
+    CeSuper learned = learnedStack.back()->toExpanded(cePools);
     learnedStack.pop_back();
     learned->removeUnitsAndZeroes(Level, Pos, true);
     learned->sortInDecreasingCoefOrder();
@@ -474,7 +468,6 @@ ConstrExpSuper* Solver::processLearnedStack() {
     learned->postProcess(Level, Pos, false, stats);
     assert(learned->isSaturated());
     if (learned->isTautology()) {
-      learned->release();
       continue;
     }
     CRef cr = attachConstraint(learned, false);
@@ -484,12 +477,11 @@ ConstrExpSuper* Solver::processLearnedStack() {
       recomputeLBD(C);
     else
       C.setLBD(C.size());  // the LBD of non-asserting constraints is undefined, so we take a safe upper bound
-    learned->release();
   }
   return cePools.take32();
 }
 
-std::pair<ID, ID> Solver::addInputConstraint(ConstrExpSuper* ce) {
+std::pair<ID, ID> Solver::addInputConstraint(CeSuper ce) {
   assert(ce->orig == Origin::FORMULA || ce->orig == Origin::UPPERBOUND || ce->orig == Origin::LOWERBOUND ||
          ce->orig == Origin::COREGUIDED);
   assert(decisionLevel() == 0);
@@ -511,16 +503,14 @@ std::pair<ID, ID> Solver::addInputConstraint(ConstrExpSuper* ce) {
   }  // TODO: don't check for this here, but just add the constraints to the learned stack?
 
   CRef cr = attachConstraint(ce, true);
-  ConstrExpSuper* confl = runPropagation(true);
+  CeSuper confl = runPropagation(true);
   assert(confl->isTautology() || confl->hasNegativeSlack(Level));
   if (!confl->isTautology()) {
     if (options.verbosity > 0) puts("c Input conflict");
     if (logger) confl->logInconsistency(Level, Pos, stats);
-    confl->release();
     assert(decisionLevel() == 0);
     return {input, ID_Unsat};
   }
-  confl->release();
   ID id = ca[cr].id;
   Origin orig = ca[cr].getOrigin();
   if (orig != Origin::FORMULA) {
@@ -532,20 +522,18 @@ std::pair<ID, ID> Solver::addInputConstraint(ConstrExpSuper* ce) {
   return {input, id};
 }
 
-std::pair<ID, ID> Solver::addConstraint(const ConstrExpSuper* c, Origin orig) {
+std::pair<ID, ID> Solver::addConstraint(const CeSuper c, Origin orig) {
   // NOTE: copy to temporary constraint guarantees original constraint is not changed and does not need logger
-  ConstrExpSuper* ce = c->reduce(cePools);
+  CeSuper ce = c->reduce(cePools);
   ce->orig = orig;
   std::pair<ID, ID> result = addInputConstraint(ce);
-  ce->release();
   return result;
 }
 
 std::pair<ID, ID> Solver::addConstraint(const ConstrSimpleSuper& c, Origin orig) {
-  ConstrExpSuper* ce = c.toExpanded(cePools);
+  CeSuper ce = c.toExpanded(cePools);
   ce->orig = orig;
   std::pair<ID, ID> result = addInputConstraint(ce);
-  ce->release();
   return result;
 }
 
@@ -708,7 +696,7 @@ void Solver::presolve() {
  * @param solution: if SAT, full variable assignment satisfying all constraints, otherwise untouched
  */
 // TODO: use a coroutine / yield instead of a SolveState return value
-SolveState Solver::solve(const IntSet& assumptions, ConstrExpArb* core, std::vector<bool>& solution) {
+SolveState Solver::solve(const IntSet& assumptions, CeArb core, std::vector<bool>& solution) {
   assert(core->isReset());
   backjumpTo(0);  // ensures assumptions are reset
   if (firstRun) presolve();
@@ -717,7 +705,7 @@ SolveState Solver::solve(const IntSet& assumptions, ConstrExpArb* core, std::vec
   bool allClear = false;
   while (true) {
     if (asynch_interrupt) return SolveState::INTERRUPTED;
-    ConstrExpSuper* confl = runPropagation(allClear);
+    CeSuper confl = runPropagation(allClear);
     assert(confl->isTautology() || confl->hasNegativeSlack(Level));
     allClear = confl->isTautology();
     if (!allClear) {
@@ -740,14 +728,11 @@ SolveState Solver::solve(const IntSet& assumptions, ConstrExpArb* core, std::vec
         if (logger) {
           confl->logInconsistency(Level, Pos, stats);
         }
-        confl->release();
         return SolveState::UNSAT;
       } else if (decisionLevel() >= (int)assumptions_lim.size()) {
-        std::pair<bool, ConstrExpSuper*> analyze_out = analyze(confl);
-        confl->release();
-        ConstrExpSuper* analyzed = analyze_out.second;
+        std::pair<bool, CeSuper> analyze_out = analyze(confl);
+        CeSuper analyzed = analyze_out.second;
         if (!analyze_out.first) {
-          analyzed->release();
           return SolveState::INTERRUPTED;
         }
         assert(!analyzed->isTautology());
@@ -756,18 +741,14 @@ SolveState Solver::solve(const IntSet& assumptions, ConstrExpArb* core, std::vec
           learnConstraint(analyzed, Origin::LEARNEDFARKAS);  // TODO: ugly hack
         else
           learnConstraint(analyzed, Origin::LEARNED);
-        analyzed->release();
       } else {
-        bool finished = extractCore(confl, assumptions, core);
-        confl->release();
-        if (!finished) {
+        if (!extractCore(confl, assumptions, core)) {
           return SolveState::INTERRUPTED;
         } else {
           return SolveState::INCONSISTENT;
         }
       }
     } else {  // no conflict
-      confl->release();
       if (nconfl_to_restart <= 0) {
         backjumpTo(0);
         if (stats.NCONFL >= (stats.NCLEANUP + 1) * nconfl_to_reduce) {
@@ -791,10 +772,7 @@ SolveState Solver::solve(const IntSet& assumptions, ConstrExpArb* core, std::vec
             if (isUnit(Level, l))
               backjumpTo(0);  // negated assumption is unit
             else {
-              ConstrExpSuper* confl = ca[Reason[toVar(l)]].toExpanded(cePools);
-              bool finished = extractCore(confl, assumptions, core, -l);
-              confl->release();
-              if (!finished) {
+              if (!extractCore(ca[Reason[toVar(l)]].toExpanded(cePools), assumptions, core, -l)) {
                 return SolveState::INTERRUPTED;
               }
             }

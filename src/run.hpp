@@ -51,20 +51,19 @@ inline void printObjBounds(const BigVal& lower, const BigVal& upper) {
   }
 }
 
-ID handleNewSolution(const ConstrExpArb* origObj, ID& lastUpperBound) {
+ID handleNewSolution(const CeArb origObj, ID& lastUpperBound) {
   [[maybe_unused]] BigVal prev_val = upper_bound;
   upper_bound = -origObj->getRhs();
   for (Var v : origObj->vars) upper_bound += origObj->coefs[v] * (int)solution[v];
   assert(upper_bound < prev_val);
 
-  ConstrExpArb* aux = solver.cePools.takeArb();
+  CeArb aux = solver.cePools.takeArb();
   origObj->copyTo(aux);
   aux->invert();
   aux->addRhs(-upper_bound + 1);
   solver.dropExternal(lastUpperBound, true, true);
   std::pair<ID, ID> res = solver.addConstraint(aux, Origin::UPPERBOUND);
   lastUpperBound = res.second;
-  aux->release();
   if (lastUpperBound == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
   return res.first;
 }
@@ -78,7 +77,7 @@ struct LazyVar {
   ConstrSimple32 atLeast;  // X >= k + y1 + ... + yi
   ConstrSimple32 atMost;   // X =< k + y1 + ... + yi-1 + (1+n-k-i)yi
 
-  LazyVar(const ConstrExp32* cardCore, Var startVar, const BigVal& m) : mult(m), n(cardCore->vars.size()) {
+  LazyVar(const Ce32 cardCore, Var startVar, const BigVal& m) : mult(m), n(cardCore->vars.size()) {
     assert(cardCore->isCardinality());
     cardCore->toSimple()->copyTo(atLeast);
     atLeast.toNormalFormLit();
@@ -134,7 +133,7 @@ std::ostream& operator<<(std::ostream& o, const std::shared_ptr<LazyVar> lv) {
   return o;
 }
 
-void checkLazyVariables(ConstrExpArb* reformObj, std::vector<std::shared_ptr<LazyVar>>& lazyVars) {
+void checkLazyVariables(CeArb reformObj, std::vector<std::shared_ptr<LazyVar>>& lazyVars) {
   for (int i = 0; i < (int)lazyVars.size(); ++i) {
     std::shared_ptr<LazyVar> lv = lazyVars[i];
     if (reformObj->getLit(lv->currentVar) == 0) {
@@ -157,19 +156,18 @@ void checkLazyVariables(ConstrExpArb* reformObj, std::vector<std::shared_ptr<Laz
   }
 }
 
-ID addLowerBound(const ConstrExpArb* origObj, const BigVal& lower_bound, ID& lastLowerBound) {
-  ConstrExpArb* aux = solver.cePools.takeArb();
+ID addLowerBound(const CeArb origObj, const BigVal& lower_bound, ID& lastLowerBound) {
+  CeArb aux = solver.cePools.takeArb();
   origObj->copyTo(aux);
   aux->addRhs(lower_bound);
   solver.dropExternal(lastLowerBound, true, true);
   std::pair<ID, ID> res = solver.addConstraint(aux, Origin::LOWERBOUND);
-  aux->release();
   lastLowerBound = res.second;
   if (lastLowerBound == ID_Unsat) quit::exit_UNSAT(solution, upper_bound, solver.logger);
   return res.first;
 }
 
-ID handleInconsistency(const ConstrExpArb* origObj, ConstrExpArb* reformObj, ConstrExpArb* core,
+ID handleInconsistency(const CeArb origObj, CeArb reformObj, CeArb core,
                        std::vector<std::shared_ptr<LazyVar>>& lazyVars, ID& lastLowerBound) {
   // take care of derived unit lits and remove zeroes
   reformObj->removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), false);
@@ -183,7 +181,7 @@ ID handleInconsistency(const ConstrExpArb* origObj, ConstrExpArb* reformObj, Con
   // figure out an appropriate core
   core->simplifyToCardinality(false);
   if (!core->isClause()) ++stats.NCORECARDINALITIES;
-  ConstrExp32* cardCore = solver.cePools.take32();
+  Ce32 cardCore = solver.cePools.take32();
   core->copyTo(cardCore);
 
   // adjust the lower bound
@@ -236,12 +234,11 @@ ID handleInconsistency(const ConstrExpArb* origObj, ConstrExpArb* reformObj, Con
         quit::exit_UNSAT(solution, upper_bound, solver.logger);
     }
   }
-  cardCore->release();
   checkLazyVariables(reformObj, lazyVars);
   return addLowerBound(origObj, lower_bound, lastLowerBound);
 }
 
-void optimize(ConstrExpArb* origObj) {
+void optimize(CeArb origObj) {
   assert(origObj->vars.size() > 0);
   // NOTE: -origObj->getDegree() keeps track of the offset of the reformulated objective (or after removing unit lits)
   origObj->removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), false);
@@ -249,7 +246,7 @@ void optimize(ConstrExpArb* origObj) {
   lower_bound = -origObj->getDegree();
   upper_bound = origObj->absCoeffSum() - origObj->getRhs() + 1;
 
-  ConstrExpArb* reformObj = solver.cePools.takeArb();
+  CeArb reformObj = solver.cePools.takeArb();
   reformObj->stopLogging();
   origObj->copyTo(reformObj);
   ID lastUpperBound = ID_Undef;
@@ -257,7 +254,7 @@ void optimize(ConstrExpArb* origObj) {
   ID lastLowerBound = ID_Undef;
   ID lastLowerBoundUnprocessed = ID_Undef;
 
-  ConstrExpArb* core = solver.cePools.takeArb();
+  CeArb core = solver.cePools.takeArb();
   IntSet assumps;
   std::vector<std::shared_ptr<LazyVar>> lazyVars;
   size_t upper_time = 0, lower_time = 0;
@@ -314,8 +311,8 @@ void optimize(ConstrExpArb* origObj) {
         assert(lastUpperBound != ID_Unsat);
         assert(lastLowerBound != ID_Undef);
         assert(lastLowerBound != ID_Unsat);
-        ConstrExpArb* coreAggregate = solver.cePools.takeArb();
-        ConstrExpArb* aux = solver.cePools.takeArb();
+        CeArb coreAggregate = solver.cePools.takeArb();
+        CeArb aux = solver.cePools.takeArb();
         origObj->copyTo(aux);
         aux->invert();
         aux->addRhs(1 - upper_bound);
@@ -326,22 +323,17 @@ void optimize(ConstrExpArb* origObj) {
         aux->addRhs(lower_bound);
         aux->resetBuffer(lastLowerBoundUnprocessed);
         coreAggregate->addUp(aux);
-        aux->release();
         assert(coreAggregate->hasNegativeSlack(solver.getLevel()));
         assert(solver.decisionLevel() == 0);
         coreAggregate->logInconsistency(solver.getLevel(), solver.getPos(), stats);
-        coreAggregate->release();
       }
       quit::exit_UNSAT(solution, upper_bound, solver.logger);
     }
   }
-  // TODO: unreachable code
-  reformObj->release();
-  core->release();
 }
 
 void decide() {
-  ConstrExpArb* core = solver.cePools.takeArb();
+  CeArb core = solver.cePools.takeArb();
   while (true) {
     SolveState reply = solver.solve(IntSet(), core, solution);
     assert(reply != SolveState::INCONSISTENT);
@@ -351,10 +343,9 @@ void decide() {
     else if (reply == SolveState::UNSAT)
       quit::exit_UNSAT({}, 0, solver.logger);
   }
-  core->release();
 }
 
-void run(ConstrExpArb* objective) {
+void run(CeArb objective) {
   if (options.verbosity > 0)
     std::cout << "c #variables " << solver.getNbOrigVars() << " #constraints " << solver.getNbConstraints()
               << std::endl;
