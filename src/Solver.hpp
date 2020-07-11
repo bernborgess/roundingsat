@@ -157,7 +157,7 @@ class Solver {
   // Conflict analysis
 
   void recomputeLBD(Constr& C);
-  std::pair<bool, CeSuper> analyze(CeSuper confl);
+  CeSuper analyze(CeSuper confl);
   bool extractCore(CeSuper confl, const IntSet& assumptions, CeArb outCore, Lit l_assump = 0);
 
   // ---------------------------------------------------------------------

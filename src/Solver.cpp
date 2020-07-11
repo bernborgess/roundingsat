@@ -72,9 +72,6 @@ void Solver::init() {
 
 void Solver::initLP(const CeArb objective) {
 #if WITHSOPLEX
-#else
-  return;
-#endif  // WITHSOPLEX
   if (options.lpPivotRatio == 0) return;
   bool pureCNF = objective->vars.size() == 0;
   for (CRef cr : constraints) {
@@ -83,6 +80,9 @@ void Solver::initLP(const CeArb objective) {
   }
   if (pureCNF) return;
   lpSolver = std::make_shared<LpSolver>(*this, objective);
+#else
+  return;
+#endif  // WITHSOPLEX
 }
 
 // ---------------------------------------------------------------------
@@ -179,7 +179,7 @@ void Solver::propagate(Lit l, CRef reason) {
  */
 CeSuper Solver::runPropagation(bool onlyUnitPropagation) {
   CeSuper confl = processLearnedStack();
-  if (!confl->isTautology()) {
+  if (confl) {
     return confl;
   }
   while (qhead < (int)trail.size()) {
@@ -211,13 +211,13 @@ CeSuper Solver::runPropagation(bool onlyUnitPropagation) {
       }
     }
   }
-  if (onlyUnitPropagation) return cePools.take32();
+  if (onlyUnitPropagation) return Ce32();
   if (lpSolver) {
     std::pair<LpStatus, CeSuper> lpResult = lpSolver->checkFeasibility();
-    assert((lpResult.first == INFEASIBLE) == lpResult.second->hasNegativeSlack(Level));
+    assert((lpResult.first == INFEASIBLE) == (lpResult.second && lpResult.second->hasNegativeSlack(Level)));
     return lpResult.second;
   }
-  return cePools.take32();
+  return Ce32();
   ;
 }
 
@@ -267,7 +267,7 @@ CeSuper getAnalysisCE(const CeSuper conflict, int bitsOverflow, ConstrExpPools& 
   }
 }
 
-std::pair<bool, CeSuper> Solver::analyze(CeSuper conflict) {
+CeSuper Solver::analyze(CeSuper conflict) {
   if (logger) logger->logComment("Analyze", stats);
   assert(conflict->hasNegativeSlack(Level));
   stats.NADDEDLITERALS += conflict->vars.size();
@@ -283,7 +283,7 @@ std::pair<bool, CeSuper> Solver::analyze(CeSuper conflict) {
   }
   while (decisionLevel() > 0) {
     if (asynch_interrupt) {
-      return {false, confl};
+      return Ce32();
     }
     Lit l = trail.back();
     if (confl->hasLit(-l)) {
@@ -320,7 +320,7 @@ std::pair<bool, CeSuper> Solver::analyze(CeSuper conflict) {
     if (l != 0) vBumpActivity(toVar(l));
   actSet.reset();
 
-  return {true, confl};
+  return confl;
 }
 
 bool Solver::extractCore(CeSuper conflict, const IntSet& assumptions, CeArb outCore, Lit l_assump) {
@@ -478,7 +478,7 @@ CeSuper Solver::processLearnedStack() {
     else
       C.setLBD(C.size());  // the LBD of non-asserting constraints is undefined, so we take a safe upper bound
   }
-  return cePools.take32();
+  return Ce32();
 }
 
 std::pair<ID, ID> Solver::addInputConstraint(CeSuper ce) {
@@ -504,8 +504,8 @@ std::pair<ID, ID> Solver::addInputConstraint(CeSuper ce) {
 
   CRef cr = attachConstraint(ce, true);
   CeSuper confl = runPropagation(true);
-  assert(confl->isTautology() || confl->hasNegativeSlack(Level));
-  if (!confl->isTautology()) {
+  if (confl) {
+    assert(confl->hasNegativeSlack(Level));
     if (options.verbosity > 0) puts("c Input conflict");
     if (logger) confl->logInconsistency(Level, Pos, stats);
     assert(decisionLevel() == 0);
@@ -706,9 +706,9 @@ SolveState Solver::solve(const IntSet& assumptions, CeArb core, std::vector<bool
   while (true) {
     if (asynch_interrupt) return SolveState::INTERRUPTED;
     CeSuper confl = runPropagation(allClear);
-    assert(confl->isTautology() || confl->hasNegativeSlack(Level));
-    allClear = confl->isTautology();
+    allClear = !confl;
     if (!allClear) {
+      assert(confl->hasNegativeSlack(Level));
       vDecayActivity();
       cDecayActivity();
       stats.NCONFL++;
@@ -730,12 +730,11 @@ SolveState Solver::solve(const IntSet& assumptions, CeArb core, std::vector<bool
         }
         return SolveState::UNSAT;
       } else if (decisionLevel() >= (int)assumptions_lim.size()) {
-        std::pair<bool, CeSuper> analyze_out = analyze(confl);
-        CeSuper analyzed = analyze_out.second;
-        if (!analyze_out.first) {
+        CeSuper analyzed = analyze(confl);
+        if (!analyzed) {
           return SolveState::INTERRUPTED;
         }
-        assert(!analyzed->isTautology());
+        assert(analyzed->hasNegativeSlack(getLevel()));
         assert(analyzed->isSaturated());
         if (learnedStack.size() > 0 && learnedStack.back()->orig == Origin::FARKAS)
           learnConstraint(analyzed, Origin::LEARNEDFARKAS);  // TODO: ugly hack

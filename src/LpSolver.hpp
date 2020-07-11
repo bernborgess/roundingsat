@@ -153,8 +153,7 @@ class LpSolver {
 
   std::pair<LpStatus, CeSuper> checkFeasibility([[maybe_unused]] bool inProcessing = false) {
     assert(false);
-    Ce32 result = nullptr;
-    return {LpStatus::UNDETERMINED, *result};
+    return {LpStatus::UNDETERMINED, Ce32()};
   }
   void inProcess() {}
 

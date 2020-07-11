@@ -160,7 +160,7 @@ int LpSolver::getNbRows() const { return lp.numRows(); }
 
 CeSuper LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
   double scale = getScaleFactor(mults, true);
-  if (scale == 0) return solver.cePools.take32();
+  if (scale == 0) return Ce32();
   assert(scale > 0);
 
   CeArb out = solver.cePools.takeArb();
@@ -237,7 +237,7 @@ void LpSolver::constructGomoryCandidates() {
   assert(lpSlackSolution.dim() == getNbRows());
   std::vector<std::pair<double, int>> fracrowvec;
   for (int row = 0; row < getNbRows(); ++row) {
-    if (asynch_interrupt) return;
+    if (asynch_interrupt) return;  // TODO: make this a thrown exception
     double fractionality = 0;
     if (indices[row] >= 0) {  // basic original variable / column
       assert(indices[row] < (int)lpSolution.size());
@@ -271,7 +271,7 @@ void LpSolver::constructGomoryCandidates() {
 
 void LpSolver::constructLearnedCandidates() {
   for (CRef cr : solver.constraints) {
-    if (asynch_interrupt) return;
+    if (asynch_interrupt) return;  // TODO: make this a thrown exception
     const Constr& c = solver.ca[cr];
     if (c.getOrigin() == Origin::LEARNED || c.getOrigin() == Origin::LEARNEDFARKAS || c.getOrigin() == Origin::GOMORY) {
       bool containsNonOriginalVars = false;
@@ -379,7 +379,7 @@ std::pair<LpStatus, CeSuper> LpSolver::_checkFeasibility(bool inProcessing) {
   if (options.lpPivotRatio < 0)
     lp.setIntParam(soplex::SoPlex::ITERLIMIT, -1);  // no pivot limit
   else if (options.lpPivotRatio * stats.NCONFL < (inProcessing ? stats.NLPPIVOTSROOT : stats.NLPPIVOTSINTERNAL))
-    return {PIVOTLIMIT, solver.cePools.take32()};  // pivot ratio exceeded
+    return {PIVOTLIMIT, Ce32()};  // pivot ratio exceeded
   else
     lp.setIntParam(soplex::SoPlex::ITERLIMIT, options.lpPivotBudget * lpPivotMult);
   flushConstraints();
@@ -409,7 +409,7 @@ std::pair<LpStatus, CeSuper> LpSolver::_checkFeasibility(bool inProcessing) {
 
   if (stat == soplex::SPxSolver::Status::ABORT_ITER) {
     lpPivotMult *= 2;  // increase pivot budget when calling the LP solver
-    return {PIVOTLIMIT, solver.cePools.take32()};
+    return {PIVOTLIMIT, Ce32()};
   }
 
   if (stat == soplex::SPxSolver::Status::OPTIMAL) {
@@ -419,23 +419,23 @@ std::pair<LpStatus, CeSuper> LpSolver::_checkFeasibility(bool inProcessing) {
       resetBasis();
     }
     if (lp.numIterations() == 0) ++stats.NLPNOPIVOT;
-    return {OPTIMAL, solver.cePools.take32()};
+    return {OPTIMAL, Ce32()};
   }
 
   if (stat == soplex::SPxSolver::Status::ABORT_CYCLING) {
     ++stats.NLPCYCLING;
     resetBasis();
-    return {UNDETERMINED, solver.cePools.take32()};
+    return {UNDETERMINED, Ce32()};
   }
   if (stat == soplex::SPxSolver::Status::SINGULAR) {
     ++stats.NLPSINGULAR;
     resetBasis();
-    return {UNDETERMINED, solver.cePools.take32()};
+    return {UNDETERMINED, Ce32()};
   }
   if (stat != soplex::SPxSolver::Status::INFEASIBLE) {
     ++stats.NLPOTHER;
     resetBasis();
-    return {UNDETERMINED, solver.cePools.take32()};
+    return {UNDETERMINED, Ce32()};
   }
 
   // Infeasible LP :)
@@ -445,23 +445,23 @@ std::pair<LpStatus, CeSuper> LpSolver::_checkFeasibility(bool inProcessing) {
   if (!lp.getDualFarkas(lpMultipliers)) {
     ++stats.NLPNOFARKAS;
     resetBasis();
-    return {UNDETERMINED, solver.cePools.take32()};
+    return {UNDETERMINED, Ce32()};
   }
 
   CeSuper confl = createLinearCombinationFarkas(lpMultipliers);
+  if (!confl) return {UNDETERMINED, Ce32()};
   solver.learnConstraint(confl, Origin::FARKAS);
   if (confl->hasNegativeSlack(solver.getLevel())) return {INFEASIBLE, confl};
-  confl->reset();
-  return {UNDETERMINED, confl};
+  return {UNDETERMINED, Ce32()};
 }
 
 void LpSolver::_inProcess() {
   assert(solver.decisionLevel() == 0);
   std::pair<LpStatus, CeSuper> lpResult = _checkFeasibility(true);
   LpStatus lpstat = lpResult.first;
-  CeSuper confl = lpResult.second;
-  assert((lpstat == INFEASIBLE) == confl->hasNegativeSlack(solver.getLevel()));
-  // in case of unsatisfiability, it will be triggered via the learned Farkas
+  [[maybe_unused]] CeSuper confl = lpResult.second;
+  assert((lpstat == INFEASIBLE) == (confl && confl->hasNegativeSlack(solver.getLevel())));
+  // NOTE: we don't handle confl here, as it is added as a learned constraint already.
   if (lpstat != OPTIMAL) return;
   if (!lp.hasSol()) return;
   lp.getPrimal(lpSol);

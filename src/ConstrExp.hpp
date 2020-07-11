@@ -50,20 +50,57 @@ const CRef CRef_Unsat = {std::numeric_limits<uint32_t>::max() - 1};  // TODO: ne
 enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
 enum Representation { B32, B64, B96, B128, ARB };
 
+// shared_ptr-like wrapper around ConstrExp, ensuring it gets released back to the pool when no longer needed.
 template <typename CE>
 struct CePtr {
-  CE& ce;  // TODO: ptr
+  CE* ce;
 
-  CePtr(const CePtr& other) : ce{other.ce} { ce.increaseUsage(); }
-  CePtr(CE* c) : ce(*c) { ce.increaseUsage(); }
-  template <typename T, typename = std::enable_if_t<std::is_convertible_v<T&, CE&>>>
-  CePtr(const CePtr<T>& other) : ce{other.ce} {  // needed for inheritance of CePtr<Constr
-    ce.increaseUsage();
+  // default constructor
+  CePtr() : ce(nullptr) {}
+  // regular constructor
+  CePtr(CE* c) : ce(c) {
+    if (ce) ce->increaseUsage();
   }
-  ~CePtr() { ce.decreaseUsage(); }
+  // copy constructor
+  CePtr(const CePtr<CE>& other) : ce{other.ce} {
+    if (ce) ce->increaseUsage();
+  }
+  // copy constructor allowing for polymorphism
+  template <typename T, typename = std::enable_if_t<std::is_convertible_v<T&, CE&>>>
+  CePtr(const CePtr<T>& other) : ce{other.ce} {
+    if (ce) ce->increaseUsage();
+  }
+  // move constructor
+  CePtr(CePtr<CE>&& other) : ce{other.ce} { other.ce = nullptr; }
+  // move constructor allowing for polymorphism
+  template <typename T, typename = std::enable_if_t<std::is_convertible_v<T&, CE&>>>
+  CePtr(CePtr<T>&& other) : ce{other.ce} {
+    other.ce = nullptr;
+  }
+  // destructor
+  ~CePtr() {
+    if (ce) ce->decreaseUsage();
+  }
+  // assignment operator
+  CePtr<CE>& operator=(const CePtr<CE>& other) {
+    if (this == &other) return *this;
+    if (ce) ce->decreaseUsage();
+    ce = other.ce;
+    if (ce) ce->increaseUsage();
+    return *this;
+  }
+  // move assignment operator
+  CePtr<CE>& operator=(CePtr<CE>&& other) {
+    if (this == &other) return *this;
+    if (ce) ce->decreaseUsage();
+    ce = other.ce;
+    other.ce = nullptr;
+    return *this;
+  }
 
-  CE& operator*() const { return ce; }
-  CE* operator->() const { return &ce; }
+  CE& operator*() const { return *ce; }
+  CE* operator->() const { return ce; }
+  explicit operator bool() const { return ce; }
 };
 
 struct ConstraintAllocator;
