@@ -113,18 +113,20 @@ class Solver {
   CeSuper getIthConstraint(int i) { return ca[constraints[i]].toExpanded(cePools); }
 
   /**
-   * @return:
+   * @return 1:
    * 	UNSAT if root inconsistency detected
    * 	SAT if satisfying assignment found
    * 	INCONSISTENT if no solution extending assumptions exists
    * 	INTERRUPTED if interrupted by external signal
    * 	INPROCESSING if solver just finished a cleanup phase
+   * @return 2:
+   *    an implied constraint C if INCONSISTENT
+   *        if C is a tautology, negated assumptions at root level exist
+   *        if C is not a tautology, it is falsified by the assumptions
    * @param assumptions: set of assumptions
-   * @param core: if INCONSISTENT, implied constraint falsified by assumptions, otherwise untouched
-   * 	if core is the empty constraint, at least one assumption is falsified at root
    * @param solution: if SAT, full variable assignment satisfying all constraints, otherwise untouched
    */
-  SolveState solve(const IntSet& assumptions, CeArb core, std::vector<bool>& solution);
+  std::pair<SolveState, CeSuper> solve(const IntSet& assumptions, std::vector<bool>& solution);
 
  private:
   void presolve();
@@ -158,7 +160,7 @@ class Solver {
 
   void recomputeLBD(Constr& C);
   CeSuper analyze(CeSuper confl);
-  bool extractCore(CeSuper confl, const IntSet& assumptions, CeArb outCore, Lit l_assump = 0);
+  CeSuper extractCore(CeSuper confl, const IntSet& assumptions, Lit l_assump = 0);
 
   // ---------------------------------------------------------------------
   // Constraint management

@@ -371,6 +371,11 @@ void ConstrExp<SMALL, LARGE>::weaken(const SMALL& m, Var v) {  // add m*(v>=0) i
   }
 }
 
+template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::weaken(Var v) {  // fully weaken v
+  weaken(-coefs[v], v);
+}
+
 // @post: preserves order of vars
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::removeUnitsAndZeroes(const IntVecIt& level, const std::vector<int>& pos,
@@ -584,7 +589,7 @@ void ConstrExp<SMALL, LARGE>::weakenNonDivisibleNonFalsifieds(const IntVecIt& le
   if (div == 1) return;
   if (fullWeakening) {
     for (Var v : vars)
-      if (coefs[v] % div != 0 && !falsified(level, v) && v != toVar(asserting)) weaken(-coefs[v], v);
+      if (coefs[v] % div != 0 && !falsified(level, v) && v != toVar(asserting)) weaken(v);
   } else {
     for (Var v : vars)
       if (coefs[v] % div != 0 && !falsified(level, v)) weaken(static_cast<SMALL>(-(coefs[v] % div)), v);
@@ -712,7 +717,7 @@ template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::weakenNonImplied(const IntVecIt& level, const LARGE& slack, Stats& sts) {
   for (Var v : vars)
     if (coefs[v] != 0 && rs::abs(coefs[v]) <= slack && !falsified(level, v)) {
-      weaken(-coefs[v], v);
+      weaken(v);
       ++sts.NWEAKENEDNONIMPLIED;
     }
   // TODO: always saturate?
@@ -730,7 +735,7 @@ bool ConstrExp<SMALL, LARGE>::weakenNonImplying(const IntVecIt& level, const SMA
     Var v = vars[i];
     if (falsified(level, v)) {
       slk += rs::abs(coefs[v]);
-      weaken(-coefs[v], v);
+      weaken(v);
       ++sts.NWEAKENEDNONIMPLYING;
     }
   }
@@ -783,7 +788,7 @@ bool ConstrExp<SMALL, LARGE>::simplifyToCardinality(bool equivalencePreserving) 
   }
   assert(largeCoefsNeeded > 0);
   if (largeCoefSum < degree) {
-    for (Var v : vars) weaken(-coefs[v], v);
+    for (Var v : vars) weaken(v);
     return true;  // trivial inconsistency
   }
 
@@ -910,7 +915,7 @@ void ConstrExp<SMALL, LARGE>::logUnit(const IntVecIt& level, const std::vector<i
   removeUnitsAndZeroes(level, pos);
   assert(getLit(v_unit) != 0);
   for (Var v : vars)
-    if (v != v_unit) weaken(-coefs[v], v);
+    if (v != v_unit) weaken(v);
   assert(degree > 0);
   LARGE d = std::max<LARGE>(rs::abs(coefs[v_unit]), degree);
   if (d > 1) proofBuffer << d << " d ";

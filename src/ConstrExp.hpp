@@ -135,6 +135,8 @@ struct ConstrExpSuper {
   virtual Lit getLit(Lit l) const = 0;
   virtual bool hasLit(Lit l) const = 0;
 
+  virtual void weaken(Var v) = 0;
+
   virtual bool hasNegativeSlack(const IntVecIt& level) const = 0;
   virtual bool hasNegativeSlack(const IntSet& assumptions) const = 0;
   virtual bool isTautology() const = 0;
@@ -279,6 +281,7 @@ struct ConstrExp final : public ConstrExpSuper {
   void addRhs(const LARGE& r);
   void addLhs(const SMALL& cf, Lit l);  // TODO: Term?
   void weaken(const SMALL& m, Var v);
+  void weaken(Var v);
 
   LARGE getSlack(const IntVecIt& level) const;
   bool hasNegativeSlack(const IntVecIt& level) const;
@@ -356,7 +359,7 @@ struct ConstrExp final : public ConstrExpSuper {
   template <typename T>
   void weakenSmalls(const T& limit) {
     for (Var v : vars)
-      if (rs::abs(coefs[v]) < limit) weaken(-coefs[v], v);
+      if (rs::abs(coefs[v]) < limit) weaken(v);
     saturate();
   }
 

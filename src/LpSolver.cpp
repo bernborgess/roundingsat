@@ -100,7 +100,7 @@ std::ostream& operator<<(std::ostream& o, const CandidateCut& cc) {
   return o << cc.simpcons << " norm " << cc.norm << " ratSlack " << cc.ratSlack;
 }
 
-LpSolver::LpSolver(Solver& slvr, const CeArb o) : solver(slvr) {
+LpSolver::LpSolver(Solver& slvr, const CeArb obj) : solver(slvr) {
   assert(INFTY == lp.realParam(lp.INFTY));
 
   if (options.verbosity > 1) std::cout << "c Initializing LP" << std::endl;
@@ -129,8 +129,8 @@ LpSolver::LpSolver(Solver& slvr, const CeArb o) : solver(slvr) {
   // NOTE: scaling objective is not needed, as if it does not fit in double (i.e. >1e300), it will still be sound.
   soplex::DVectorReal objective;
   objective.reDim(getNbVariables());  // NOTE: automatically set to zero
-  if (o->vars.size() > 0)
-    for (Var v : o->vars) objective[v] = static_cast<double>(o->coefs[v]);
+  if (obj->vars.size() > 0)
+    for (Var v : obj->vars) objective[v] = static_cast<double>(obj->coefs[v]);
   else
     for (int v = 1; v < getNbVariables(); ++v) objective[v] = 1;  // add default objective function
   lp.changeObjReal(objective);

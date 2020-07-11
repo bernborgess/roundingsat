@@ -167,16 +167,22 @@ ID addLowerBound(const CeArb origObj, const BigVal& lower_bound, ID& lastLowerBo
   return res.first;
 }
 
-ID handleInconsistency(const CeArb origObj, CeArb reformObj, CeArb core,
+ID handleInconsistency(const CeArb origObj, CeArb reformObj, CeSuper core,
                        std::vector<std::shared_ptr<LazyVar>>& lazyVars, ID& lastLowerBound) {
   // take care of derived unit lits and remove zeroes
   reformObj->removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), false);
   [[maybe_unused]] BigVal prev_lower = lower_bound;
   lower_bound = -reformObj->getDegree();
-  if (core->isTautology()) {  // apparently only unit assumptions were derived
+  assert(core);
+  if (core->isTautology()) {  // only violated unit assumptions were derived
     assert(lower_bound > prev_lower);
     checkLazyVariables(reformObj, lazyVars);
     return addLowerBound(origObj, lower_bound, lastLowerBound);
+  }
+  if (core->hasNegativeSlack(solver.getLevel())) {
+    assert(solver.decisionLevel() == 0);
+    if (solver.logger) core->logInconsistency(solver.getLevel(), solver.getPos(), stats);
+    quit::exit_UNSAT(solution, upper_bound, solver.logger);
   }
   // figure out an appropriate core
   core->simplifyToCardinality(false);
@@ -254,7 +260,6 @@ void optimize(CeArb origObj) {
   ID lastLowerBound = ID_Undef;
   ID lastLowerBoundUnprocessed = ID_Undef;
 
-  CeArb core = solver.cePools.takeArb();
   IntSet assumps;
   std::vector<std::shared_ptr<LazyVar>> lazyVars;
   size_t upper_time = 0, lower_time = 0;
@@ -277,8 +282,8 @@ void optimize(CeArb origObj) {
       });
     }
     assert(upper_bound > lower_bound);
-    core->reset();
-    reply = solver.solve(assumps, core, solution);
+    std::pair<SolveState, CeSuper> out = solver.solve(assumps, solution);
+    reply = out.first;
     if (reply == SolveState::INTERRUPTED) quit::exit_INDETERMINATE(solution, solver.logger);
     if (reply == SolveState::RESTARTED) continue;
     if (reply == SolveState::UNSAT) quit::exit_UNSAT(solution, upper_bound, solver.logger);
@@ -295,12 +300,7 @@ void optimize(CeArb origObj) {
              lower_bound == upper_bound);
     } else if (reply == SolveState::INCONSISTENT) {
       ++stats.NCORES;
-      if (core->hasNegativeSlack(solver.getLevel())) {
-        if (solver.logger) core->logInconsistency(solver.getLevel(), solver.getPos(), stats);
-        assert(solver.decisionLevel() == 0);
-        quit::exit_UNSAT(solution, upper_bound, solver.logger);
-      }
-      lastLowerBoundUnprocessed = handleInconsistency(origObj, reformObj, core, lazyVars, lastLowerBound);
+      lastLowerBoundUnprocessed = handleInconsistency(origObj, reformObj, out.second, lazyVars, lastLowerBound);
     } else {
       assert(reply == SolveState::INPROCESSED);  // keep looping
     }
@@ -333,9 +333,8 @@ void optimize(CeArb origObj) {
 }
 
 void decide() {
-  CeArb core = solver.cePools.takeArb();
   while (true) {
-    SolveState reply = solver.solve(IntSet(), core, solution);
+    SolveState reply = solver.solve(IntSet(), solution).first;
     assert(reply != SolveState::INCONSISTENT);
     if (reply == SolveState::INTERRUPTED) quit::exit_INDETERMINATE({}, solver.logger);
     if (reply == SolveState::SAT)
