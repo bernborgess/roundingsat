@@ -1,8 +1,10 @@
 #!/bin/bash
 
 time=$1
-binary=$2
-options=$3
+logfolder="/tmp/roundingsat/$2"
+binary=$3
+options=$4
+
 
 SCRIPTPATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 
@@ -15,6 +17,7 @@ echo "########## START ##########"
 echo "###########################"
 echo ""
 echo "timeout: $time"
+echo "data: $logfolder"
 echo "binary: $binary"
 echo "options: $options"
 echo ""
@@ -59,13 +62,13 @@ echo ""
 
 for j in "${arr_dec[@]}"; do
     formula="$(cut -d'_' -f1 <<<$j)"
-    formula="$SCRIPTPATH/instances/$formula"
-    obj="$(cut -d'_' -f2 <<<$j)"
-    echo "running $formula"
-    logfile=${formula/instances/logs}
+    logfile="$logfolder/$formula"
     mkdir -p `dirname $logfile`
     echo -n "" > $logfile.proof
     echo -n "" > $logfile.formula
+    formula="$SCRIPTPATH/instances/$formula"
+    echo "running $formula"
+    obj="$(cut -d'_' -f2 <<<$j)"
     output=`timeout $time $binary $formula $options --proof-log=$logfile 2>&1 | awk '/^o|SATISFIABLE|.*Assertion.*/ {print $2}'`
     if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
         errors=`expr 1000 + $errors`
@@ -122,13 +125,13 @@ for mode in "${arr_modes[@]}"; do
     echo ""
     for j in "${arr_opt[@]}"; do
         formula="$(cut -d'_' -f1 <<<$j)"
-        formula="$SCRIPTPATH/instances/$formula"
-        obj="$(cut -d'_' -f2 <<<$j)"
-        echo "running $formula"
-        logfile=${formula/instances/logs}
+        logfile="$logfolder/$formula"
         mkdir -p `dirname $logfile`
         echo -n "" > $logfile.proof
         echo -n "" > $logfile.formula
+        formula="$SCRIPTPATH/instances/$formula"
+        echo "running $formula"
+        obj="$(cut -d'_' -f2 <<<$j)"
         output=`timeout $time $binary $formula $options --opt-mode=$mode --proof-log=$logfile 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
         if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
             errors=`expr 1000 + $errors`
@@ -149,13 +152,13 @@ echo "########## no proofs ##########"
 echo ""
 for j in "${arr_opt[@]}"; do
     formula="$(cut -d'_' -f1 <<<$j)"
-    formula="$SCRIPTPATH/instances/$formula"
-    obj="$(cut -d'_' -f2 <<<$j)"
-    echo "running $formula"
-    logfile=${formula/instances/logs}
+    logfile="$logfolder/$formula"
     mkdir -p `dirname $logfile`
     echo -n "" > $logfile.proof
     echo -n "" > $logfile.formula
+    formula="$SCRIPTPATH/instances/$formula"
+    echo "running $formula"
+    obj="$(cut -d'_' -f2 <<<$j)"
     output=`timeout $time $binary $formula $options --opt-mode="lazy-hybrid" 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
     if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
         errors=`expr 1000 + $errors`

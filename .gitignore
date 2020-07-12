@@ -4,12 +4,5 @@
 # editor
 .idea/*
 
-# proof logging
-test/*.formula
-test/*.proof
-test/*.opb
-/massif.out.*
-/test/logs/*
-
 # soplex
 /soplex-5.0.1.tgz
