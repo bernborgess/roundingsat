@@ -39,7 +39,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 class Logger;
 
-enum SolveState { SAT, UNSAT, INCONSISTENT, INTERRUPTED, INPROCESSED, RESTARTED };
+enum SolveState { SAT, UNSAT, INCONSISTENT, INPROCESSED, RESTARTED };
 
 class Solver {
   friend class LpSolver;
@@ -117,7 +117,6 @@ class Solver {
    * 	UNSAT if root inconsistency detected
    * 	SAT if satisfying assignment found
    * 	INCONSISTENT if no solution extending assumptions exists
-   * 	INTERRUPTED if interrupted by external signal
    * 	INPROCESSING if solver just finished a cleanup phase
    * @return 2:
    *    an implied constraint C if INCONSISTENT

@@ -284,7 +284,6 @@ void optimize(CeArb origObj) {
     assert(upper_bound > lower_bound);
     std::pair<SolveState, CeSuper> out = solver.solve(assumps, solution);
     reply = out.first;
-    if (reply == SolveState::INTERRUPTED) quit::exit_INDETERMINATE(solution, solver.logger);
     if (reply == SolveState::RESTARTED) continue;
     if (reply == SolveState::UNSAT) quit::exit_UNSAT(solution, upper_bound, solver.logger);
     assert(solver.decisionLevel() == 0);
@@ -336,7 +335,6 @@ void decide() {
   while (true) {
     SolveState reply = solver.solve(IntSet(), solution).first;
     assert(reply != SolveState::INCONSISTENT);
-    if (reply == SolveState::INTERRUPTED) quit::exit_INDETERMINATE({}, solver.logger);
     if (reply == SolveState::SAT)
       quit::exit_SAT(solution, solver.logger);
     else if (reply == SolveState::UNSAT)
@@ -348,9 +346,15 @@ void run(CeArb objective) {
   if (options.verbosity > 0)
     std::cout << "c #variables " << solver.getNbOrigVars() << " #constraints " << solver.getNbConstraints()
               << std::endl;
-  if (objective->vars.size() > 0)
-    optimize(objective);
-  else
-    decide();
+  try {
+    if (objective->vars.size() > 0) {
+      optimize(objective);
+    } else {
+      decide();
+    }
+  } catch (const AsynchronousInterrupt& ai) {
+    std::cout << "c " << ai.what() << std::endl;
+    quit::exit_INDETERMINATE(solution, solver.logger);
+  }
 }
 }  // namespace run

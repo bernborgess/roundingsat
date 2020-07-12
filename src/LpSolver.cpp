@@ -237,7 +237,7 @@ void LpSolver::constructGomoryCandidates() {
   assert(lpSlackSolution.dim() == getNbRows());
   std::vector<std::pair<double, int>> fracrowvec;
   for (int row = 0; row < getNbRows(); ++row) {
-    if (asynch_interrupt) return;  // TODO: make this a thrown exception
+    if (asynch_interrupt) throw asynchInterrupt;
     double fractionality = 0;
     if (indices[row] >= 0) {  // basic original variable / column
       assert(indices[row] < (int)lpSolution.size());
@@ -271,7 +271,7 @@ void LpSolver::constructGomoryCandidates() {
 
 void LpSolver::constructLearnedCandidates() {
   for (CRef cr : solver.constraints) {
-    if (asynch_interrupt) return;  // TODO: make this a thrown exception
+    if (asynch_interrupt) throw asynchInterrupt;
     const Constr& c = solver.ca[cr];
     if (c.getOrigin() == Origin::LEARNED || c.getOrigin() == Origin::LEARNEDFARKAS || c.getOrigin() == Origin::GOMORY) {
       bool containsNonOriginalVars = false;
@@ -299,7 +299,7 @@ void LpSolver::addFilteredCuts() {
   for (unsigned int i = 0; i < candidateCuts.size(); ++i) {
     bool parallel = false;
     for (unsigned int j = 0; j < keptCuts.size() && !parallel; ++j) {
-      if (asynch_interrupt) return;
+      if (asynch_interrupt) throw asynchInterrupt;
       parallel = candidateCuts[keptCuts[j]].cosOfAngleTo(candidateCuts[i]) > options.maxCutCos;
     }
     if (!parallel) keptCuts.push_back(i);

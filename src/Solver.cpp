@@ -282,9 +282,7 @@ CeSuper Solver::analyze(CeSuper conflict) {
     if (!options.bumpOnlyFalse || isFalse(Level, confl->getLit(v))) actSet.add(v);
   }
   while (decisionLevel() > 0) {
-    if (asynch_interrupt) {
-      return Ce32();
-    }
+    if (asynch_interrupt) throw asynchInterrupt;
     Lit l = trail.back();
     if (confl->hasLit(-l)) {
       assert(confl->hasNegativeSlack(Level));
@@ -363,7 +361,7 @@ CeSuper Solver::extractCore(CeSuper conflict, const IntSet& assumptions, Lit l_a
 
   // analyze conflict
   while (decisionLevel() > 0) {
-    if (asynch_interrupt) return Ce32();
+    if (asynch_interrupt) throw asynchInterrupt;
     Lit l = trail.back();
     if (confl->hasLit(-l)) {
       if (confl->hasNegativeSlack(assumptions)) break;
@@ -683,7 +681,6 @@ void Solver::presolve() {
  * 	UNSAT if root inconsistency detected
  * 	SAT if satisfying assignment found
  * 	INCONSISTENT if no solution extending assumptions exists
- * 	INTERRUPTED if interrupted by external signal
  * 	INPROCESSING if solver just finished a cleanup phase
  * @return 2:
  *    an implied constraint C if INCONSISTENT
@@ -700,7 +697,7 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
   assumptions_lim.reserve((int)assumptions.size() + 1);
   bool runLP = false;
   while (true) {
-    if (asynch_interrupt) return {SolveState::INTERRUPTED, Ce32()};
+    if (asynch_interrupt) throw asynchInterrupt;
     CeSuper confl = runPropagation(runLP);
     runLP = !confl;
     if (confl) {
@@ -727,9 +724,7 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
         return {SolveState::UNSAT, Ce32()};
       } else if (decisionLevel() >= (int)assumptions_lim.size()) {
         CeSuper analyzed = analyze(confl);
-        if (!analyzed) {
-          return {SolveState::INTERRUPTED, Ce32()};
-        }
+        assert(analyzed);
         assert(analyzed->hasNegativeSlack(getLevel()));
         assert(analyzed->isSaturated());
         if (learnedStack.size() > 0 && learnedStack.back()->orig == Origin::FARKAS)
@@ -738,12 +733,9 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
           learnConstraint(analyzed, Origin::LEARNED);
       } else {
         CeSuper result = extractCore(confl, assumptions);
-        if (!result) {
-          return {SolveState::INTERRUPTED, Ce32()};
-        } else {
-          assert(result->hasNegativeSlack(assumptions));
-          return {SolveState::INCONSISTENT, result};
-        }
+        assert(result);
+        assert(result->hasNegativeSlack(assumptions));
+        return {SolveState::INCONSISTENT, result};
       }
     } else {  // no conflict
       if (nconfl_to_restart <= 0) {
@@ -771,12 +763,9 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
               return {SolveState::INCONSISTENT, cePools.take32()};
             } else {
               CeSuper result = extractCore(ca[Reason[toVar(l)]].toExpanded(cePools), assumptions, -l);
-              if (!result) {
-                return {SolveState::INTERRUPTED, Ce32()};
-              } else {
-                assert(result->hasNegativeSlack(assumptions));
-                return {SolveState::INCONSISTENT, result};
-              }
+              assert(result);
+              assert(result->hasNegativeSlack(assumptions));
+              return {SolveState::INCONSISTENT, result};
             }
           }
         }

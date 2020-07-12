@@ -32,6 +32,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include <boost/multiprecision/cpp_int.hpp>  //  Integer types.
 #include <cassert>
+#include <exception>
 #include <iostream>
 #include <limits>
 #include <numeric>
@@ -221,3 +222,8 @@ template <typename CF>
 std::ostream& operator<<(std::ostream& o, const Term<CF>& t) {
   return o << t.c << "x" << t.l;
 }
+
+inline class AsynchronousInterrupt : public std::exception {
+ public:
+  virtual const char* what() const throw() { return "Program interrupted by user."; }
+} asynchInterrupt;
