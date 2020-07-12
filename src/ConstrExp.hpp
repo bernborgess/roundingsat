@@ -32,6 +32,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include <memory>
 #include <sstream>
+#include "ConstrSimple.hpp"
 #include "IntSet.hpp"
 #include "Logger.hpp"
 #include "globals.hpp"
@@ -48,7 +49,6 @@ const CRef CRef_Undef = {std::numeric_limits<uint32_t>::max()};
 const CRef CRef_Unsat = {std::numeric_limits<uint32_t>::max() - 1};  // TODO: needed?
 
 enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
-enum Representation { B32, B64, B96, B128, ARB };
 
 // shared_ptr-like wrapper around ConstrExp, ensuring it gets released back to the pool when no longer needed.
 template <typename CE>
@@ -125,7 +125,6 @@ struct ConstrExpSuper {
   virtual CeSuper reduce(ConstrExpPools& ce) const = 0;
   virtual CRef toConstr(ConstraintAllocator& ca, bool locked, ID id) const = 0;
   virtual std::unique_ptr<ConstrSimpleSuper> toSimple() const = 0;
-  virtual Representation minRepresentation() const = 0;
 
   virtual void resize(size_t s) = 0;
   virtual void resetBuffer(ID proofID = ID_Trivial) = 0;
@@ -235,26 +234,6 @@ struct ConstrExp final : public ConstrExpSuper {
     }
   }
 
-  template <typename S, typename L>
-  void copyTo_(CePtr<ConstrExp<S, L>> out) const {
-    // TODO: assert whether S/L can fit SMALL/LARGE? Not always possible.
-    assert(out->isReset());
-    out->degree = static_cast<L>(degree);
-    out->rhs = static_cast<L>(rhs);
-    out->orig = orig;
-    out->vars = vars;
-    assert(out->coefs.size() == coefs.size());
-    for (Var v : vars) {
-      out->coefs[v] = static_cast<S>(coefs[v]);
-      assert(used[v] == true);
-      assert(out->used[v] == false);
-      out->used[v] = true;
-    }
-    if (plogger) {
-      out->proofBuffer.str(std::string());
-      out->proofBuffer << proofBuffer.str();
-    }
-  }
   void copyTo(Ce32 ce) const { copyTo_(ce); }
   void copyTo(Ce64 ce) const { copyTo_(ce); }
   void copyTo(Ce96 ce) const { copyTo_(ce); }
@@ -264,7 +243,6 @@ struct ConstrExp final : public ConstrExpSuper {
   CeSuper reduce(ConstrExpPools& ce) const;
   CRef toConstr(ConstraintAllocator& ca, bool locked, ID id) const;
   std::unique_ptr<ConstrSimpleSuper> toSimple() const;
-  Representation minRepresentation() const;
 
   void resize(size_t s);
   void resetBuffer(ID proofID = ID_Trivial);
@@ -278,6 +256,7 @@ struct ConstrExp final : public ConstrExpSuper {
   LARGE getDegree() const;
   SMALL getCoef(Lit l) const;
   SMALL getLargestCoef() const;
+  LARGE getCutoffVal() const;
   Lit getLit(Lit l) const;
   bool hasLit(Lit l) const;
 
@@ -304,7 +283,21 @@ struct ConstrExp final : public ConstrExpSuper {
   void saturate(const std::vector<Var>& vs);
   void saturate();
   bool isSaturated() const;
+  /*
+   * Fixes overflow
+   * @post: saturated
+   * @post: nothing else if bitOverflow == 0
+   * @post: the largest coefficient is less than 2^bitOverflow
+   * @post: the degree and rhs are less than 2^bitOverflow * INF
+   * @post: if overflow happened, all division until 2^bitReduce happened
+   * @post: the constraint remains conflicting or propagating on asserting
+   */
   void saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening, int bitOverflow, int bitReduce, Lit asserting);
+  /*
+   * Fixes overflow for rationals
+   * @post: saturated
+   * @post: none of the coefficients, degree, or rhs exceed INFLPINT
+   */
   void saturateAndFixOverflowRational(const std::vector<double>& lpSolution);
   bool fitsInDouble() const;
 
@@ -421,6 +414,39 @@ struct ConstrExp final : public ConstrExpSuper {
     saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced, 0);
     assert(getCoef(-l) == 0);
     assert(hasNegativeSlack(Level));
+  }
+
+  template <typename S, typename L>
+  void copyTo_(CePtr<ConstrExp<S, L>> out) const {
+    // TODO: assert whether S/L can fit SMALL/LARGE? Not always possible.
+    assert(out->isReset());
+    out->degree = static_cast<L>(degree);
+    out->rhs = static_cast<L>(rhs);
+    out->orig = orig;
+    out->vars = vars;
+    assert(out->coefs.size() == coefs.size());
+    for (Var v : vars) {
+      out->coefs[v] = static_cast<S>(coefs[v]);
+      assert(used[v] == true);
+      assert(out->used[v] == false);
+      out->used[v] = true;
+    }
+    if (plogger) {
+      out->proofBuffer.str(std::string());
+      out->proofBuffer << proofBuffer.str();
+    }
+  }
+
+  template <typename S, typename L>
+  std::unique_ptr<ConstrSimple<S, L>> toSimple_() const {
+    std::unique_ptr<ConstrSimple<S, L>> result = std::make_unique<ConstrSimple<S, L>>();
+    result->rhs = static_cast<L>(rhs);
+    result->terms.reserve(vars.size());
+    for (Var v : vars)
+      if (coefs[v] != 0) result->terms.emplace_back(static_cast<S>(coefs[v]), v);
+    if (plogger) result->proofLine = proofBuffer.str();
+    result->orig = orig;
+    return result;
   }
 };
 

@@ -32,7 +32,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <algorithm>
 #include <functional>
 #include "Constr.hpp"
-#include "ConstrSimple.hpp"
 #include "SolverStructs.hpp"
 #include "aux.hpp"
 
@@ -49,25 +48,24 @@ ConstrExp<SMALL, LARGE>::ConstrExp(ConstrExpPool<ConstrExp<SMALL, LARGE>>& cep) 
 
 template <typename SMALL, typename LARGE>
 CeSuper ConstrExp<SMALL, LARGE>::reduce(ConstrExpPools& cePools) const {
-  Representation rep = minRepresentation();
-  if (rep == Representation::B32) {
+  LARGE maxVal = getCutoffVal();
+  if (maxVal <= limit32) {
     Ce32 result = cePools.take32();
     copyTo(result);
     return result;
-  } else if (rep == Representation::B64) {
+  } else if (maxVal <= limit64) {
     Ce64 result = cePools.take64();
     copyTo(result);
     return result;
-  } else if (rep == Representation::B96) {
+  } else if (maxVal <= limit96) {
     Ce96 result = cePools.take96();
     copyTo(result);
     return result;
-  } else if (rep == Representation::B128) {
+  } else if (maxVal <= limit128) {
     Ce128 result = cePools.take128();
     copyTo(result);
     return result;
   } else {
-    assert(rep == Representation::ARB);
     CeArb result = cePools.takeArb();
     copyTo(result);
     return result;
@@ -84,12 +82,12 @@ CRef ConstrExp<SMALL, LARGE>::toConstr(ConstraintAllocator& ca, bool locked, ID 
   assert(!isInconsistency());
 
   CRef result = CRef{ca.at};
+  LARGE maxCoef = rs::abs(coefs[vars[0]]);
   if (options.clauseProp && isClause()) {
     ca.alloc<Clause>(vars.size())->initialize(this, locked, id);
-  } else if (options.cardProp && isCardinality()) {
+  } else if (options.cardProp && maxCoef == 1) {
     ca.alloc<Cardinality>(vars.size())->initialize(this, locked, id);
   } else {
-    LARGE maxCoef = rs::abs(coefs[vars[0]]);
     if (maxCoef > limit96) {
       ca.alloc<Arbitrary>(vars.size())->initialize(this, locked, id);
     } else {
@@ -124,31 +122,19 @@ CRef ConstrExp<SMALL, LARGE>::toConstr(ConstraintAllocator& ca, bool locked, ID 
 
 template <typename SMALL, typename LARGE>
 std::unique_ptr<ConstrSimpleSuper> ConstrExp<SMALL, LARGE>::toSimple() const {
-  std::unique_ptr<ConstrSimple<SMALL, LARGE>> result = std::make_unique<ConstrSimple<SMALL, LARGE>>();
-  result->rhs = rhs;
-  result->terms.reserve(vars.size());
-  for (Var v : vars)
-    if (coefs[v] != 0) result->terms.emplace_back(coefs[v], v);
-  if (plogger) result->proofLine = proofBuffer.str();
-  result->orig = orig;
-  return result;
-};
-
-template <typename SMALL, typename LARGE>
-Representation ConstrExp<SMALL, LARGE>::minRepresentation() const {
-  LARGE maxVal = std::max<LARGE>(getLargestCoef(), std::max(degree, rs::abs(rhs)) / INF);
+  LARGE maxVal = getCutoffVal();
   if (maxVal <= limit32) {
-    return Representation::B32;
+    return toSimple_<int, long long>();
   } else if (maxVal <= limit64) {
-    return Representation::B64;
+    return toSimple_<long long, int128>();
   } else if (maxVal <= limit96) {
-    return Representation::B96;
+    return toSimple_<int128, int128>();
   } else if (maxVal <= limit128) {
-    return Representation::B128;
+    return toSimple_<int128, int256>();
   } else {
-    return Representation::ARB;
+    return toSimple_<bigint, bigint>();
   }
-}
+};
 
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::remove(Var v) {
@@ -263,6 +249,11 @@ SMALL ConstrExp<SMALL, LARGE>::getLargestCoef() const {
   SMALL result = 0;
   for (Var v : vars) result = std::max(result, rs::abs(coefs[v]));
   return result;
+}
+
+template <typename SMALL, typename LARGE>
+LARGE ConstrExp<SMALL, LARGE>::getCutoffVal() const {
+  return std::max<LARGE>(getLargestCoef(), std::max(degree, rs::abs(rhs)) / INF);
 }
 
 template <typename SMALL, typename LARGE>
@@ -477,22 +468,27 @@ void ConstrExp<SMALL, LARGE>::invert() {
   degree = calcDegree();
 }
 
-// also removes zeroes
+/*
+ * Fixes overflow
+ * @post: saturated
+ * @post: nothing else if bitOverflow == 0
+ * @post: the largest coefficient is less than 2^bitOverflow
+ * @post: the degree and rhs are less than 2^bitOverflow * INF
+ * @post: if overflow happened, all division until 2^bitReduce happened
+ * @post: the constraint remains conflicting or propagating on asserting
+ */
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening, int bitOverflow,
                                                      int bitReduce, Lit asserting) {
   removeZeroes();
+  saturate();
   if (bitOverflow == 0) {
-    saturate();
     return;
   }
+  assert(bitOverflow > 0);
   assert(bitReduce > 0);
-  SMALL largest = 0;
-  for (Var v : vars) {
-    largest = std::max(largest, rs::abs(coefs[v]));
-  }
-  largest = static_cast<SMALL>(std::min<LARGE>(largest, degree));  // takes saturated coefficients into account
-  if (largest == 0) return;
+  LARGE largest = getCutoffVal();
+  if (largest <= 0) return;
   if ((int)rs::msb(largest) >= bitOverflow) {
     LARGE cutoff = 2;
     cutoff = rs::pow(cutoff, bitReduce) - 1;
@@ -504,7 +500,11 @@ void ConstrExp<SMALL, LARGE>::saturateAndFixOverflow(const IntVecIt& level, bool
   saturate();
 }
 
-// also removes zeroes
+/*
+ * Fixes overflow for rationals
+ * @post: saturated
+ * @post: none of the coefficients, degree, or rhs exceed INFLPINT
+ */
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::saturateAndFixOverflowRational(const std::vector<double>& lpSolution) {
   removeZeroes();
