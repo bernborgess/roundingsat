@@ -82,7 +82,7 @@ CRef ConstrExp<SMALL, LARGE>::toConstr(ConstraintAllocator& ca, bool locked, ID 
   assert(!isInconsistency());
 
   CRef result = CRef{ca.at};
-  LARGE maxCoef = rs::abs(coefs[vars[0]]);
+  LARGE maxCoef = aux::abs(coefs[vars[0]]);
   if (options.clauseProp && isClause()) {
     ca.alloc<Clause>(vars.size())->initialize(this, locked, id);
   } else if (options.cardProp && maxCoef == 1) {
@@ -93,7 +93,7 @@ CRef ConstrExp<SMALL, LARGE>::toConstr(ConstraintAllocator& ca, bool locked, ID 
     } else {
       LARGE watchSum = -degree;
       unsigned int minWatches = 1;  // sorted per decreasing coefs, so we can skip the first, largest coef
-      for (; minWatches < vars.size() && watchSum < 0; ++minWatches) watchSum += rs::abs(coefs[vars[minWatches]]);
+      for (; minWatches < vars.size() && watchSum < 0; ++minWatches) watchSum += aux::abs(coefs[vars[minWatches]]);
       bool useCounting = options.countingProp == 1 || options.countingProp > (1 - minWatches / (double)vars.size());
       if (maxCoef <= limit32) {
         if (useCounting) {
@@ -247,13 +247,13 @@ SMALL ConstrExp<SMALL, LARGE>::getCoef(Lit l) const {
 template <typename SMALL, typename LARGE>
 SMALL ConstrExp<SMALL, LARGE>::getLargestCoef() const {
   SMALL result = 0;
-  for (Var v : vars) result = std::max(result, rs::abs(coefs[v]));
+  for (Var v : vars) result = std::max(result, aux::abs(coefs[v]));
   return result;
 }
 
 template <typename SMALL, typename LARGE>
 LARGE ConstrExp<SMALL, LARGE>::getCutoffVal() const {
-  return std::max<LARGE>(getLargestCoef(), std::max(degree, rs::abs(rhs)) / INF);
+  return std::max<LARGE>(getLargestCoef(), std::max(degree, aux::abs(rhs)) / INF);
 }
 
 template <typename SMALL, typename LARGE>
@@ -333,7 +333,7 @@ void ConstrExp<SMALL, LARGE>::addLhs(const SMALL& cf, Lit l) {  // add c*(l>=0) 
     coefs[v] = c;
     used[v] = true;
   } else {
-    if ((coefs[v] < 0) != (c < 0)) degree -= std::min(rs::abs(c), rs::abs(coefs[v]));
+    if ((coefs[v] < 0) != (c < 0)) degree -= std::min(aux::abs(c), aux::abs(coefs[v]));
     coefs[v] += c;
   }
 }
@@ -357,7 +357,7 @@ void ConstrExp<SMALL, LARGE>::weaken(const SMALL& m, Var v) {  // add m*(v>=0) i
     coefs[v] = m;
     used[v] = true;
   } else {
-    if ((coefs[v] < 0) != (m < 0)) degree -= std::min(rs::abs(m), rs::abs(coefs[v]));
+    if ((coefs[v] < 0) != (m < 0)) degree -= std::min(aux::abs(m), aux::abs(coefs[v]));
     coefs[v] += m;
   }
 }
@@ -457,7 +457,7 @@ void ConstrExp<SMALL, LARGE>::saturate() {
 template <typename SMALL, typename LARGE>
 bool ConstrExp<SMALL, LARGE>::isSaturated() const {
   for (Var v : vars)
-    if (rs::abs(coefs[v]) > degree) return false;
+    if (aux::abs(coefs[v]) > degree) return false;
   return true;
 }
 
@@ -489,9 +489,9 @@ void ConstrExp<SMALL, LARGE>::saturateAndFixOverflow(const IntVecIt& level, bool
   assert(bitReduce > 0);
   LARGE largest = getCutoffVal();
   if (largest <= 0) return;
-  if ((int)rs::msb(largest) >= bitOverflow) {
+  if ((int)aux::msb(largest) >= bitOverflow) {
     LARGE cutoff = 2;
-    cutoff = rs::pow(cutoff, bitReduce) - 1;
+    cutoff = aux::pow(cutoff, bitReduce) - 1;
     LARGE div = aux::ceildiv<LARGE>(largest, cutoff);
     assert(aux::ceildiv<LARGE>(largest, div) <= cutoff);
     weakenNonDivisibleNonFalsifieds(level, div, fullWeakening, asserting);
@@ -508,14 +508,14 @@ void ConstrExp<SMALL, LARGE>::saturateAndFixOverflow(const IntVecIt& level, bool
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::saturateAndFixOverflowRational(const std::vector<double>& lpSolution) {
   removeZeroes();
-  LARGE maxRhs = std::max(getDegree(), rs::abs(getRhs()));
+  LARGE maxRhs = std::max(getDegree(), aux::abs(getRhs()));
   if (maxRhs >= INFLPINT) {
     LARGE d = aux::ceildiv<LARGE>(maxRhs, INFLPINT - 1);
     assert(d > 1);
     for (Var v : vars) {
       Lit l = getLit(v);
       if ((l < 0 ? 1 - lpSolution[v] : lpSolution[v]) <= 1 - options.intolerance) {
-        SMALL rem = static_cast<SMALL>(rs::abs(coefs[v]) % d);
+        SMALL rem = static_cast<SMALL>(aux::abs(coefs[v]) % d);
         weaken(l < 0 ? rem : -rem, v);
       }
     }
@@ -589,10 +589,11 @@ void ConstrExp<SMALL, LARGE>::weakenNonDivisibleNonFalsifieds(const IntVecIt& le
   if (div == 1) return;
   if (fullWeakening) {
     for (Var v : vars)
-      if (coefs[v] % div != 0 && !falsified(level, v) && !(v == toVar(asserting) && div > rs::abs(coefs[v]))) weaken(v);
+      if (coefs[v] % div != 0 && !falsified(level, v) && !(v == toVar(asserting) && div > aux::abs(coefs[v])))
+        weaken(v);
   } else {
     for (Var v : vars)
-      if (coefs[v] % div != 0 && !falsified(level, v) && !(v == toVar(asserting) && div > rs::abs(coefs[v])))
+      if (coefs[v] % div != 0 && !falsified(level, v) && !(v == toVar(asserting) && div > aux::abs(coefs[v])))
         weaken(static_cast<SMALL>(-(coefs[v] % div)), v);
   }
 }
@@ -621,10 +622,10 @@ template <typename SMALL, typename LARGE>
 bool ConstrExp<SMALL, LARGE>::divideByGCD() {
   assert(isSaturated());
   assert(hasNoZeroes());
-  if (vars.size() == 0 || rs::abs(coefs[vars.back()]) == 1) return false;
-  SMALL _gcd = rs::abs(coefs[vars.back()]);  // smallest if sorted in decreasing order
+  if (vars.size() == 0 || aux::abs(coefs[vars.back()]) == 1) return false;
+  SMALL _gcd = aux::abs(coefs[vars.back()]);  // smallest if sorted in decreasing order
   for (int i = vars.size() - 2; i >= 0; --i) {
-    _gcd = rs::gcd(_gcd, rs::abs(coefs[vars[i]]));
+    _gcd = aux::gcd(_gcd, aux::abs(coefs[vars[i]]));
     if (_gcd == 1) return false;
   }
   assert(_gcd > 1);
@@ -658,7 +659,7 @@ AssertionStatus ConstrExp<SMALL, LARGE>::isAssertingBefore(const IntVecIt& level
     }
     Lit l = coefs[v] < 0 ? -v : v;
     if (level[-l] < lvl) continue;  // falsified lit
-    SMALL c = rs::abs(coefs[v]);
+    SMALL c = aux::abs(coefs[v]);
     if (level[l] >= lvl) largestCoef = std::max(largestCoef, c);  // unknown lit
     slack += c;
     int mid = (vars.size() + i) / 2;  // move non-falsifieds to the back for efficiency in next call
@@ -701,13 +702,13 @@ int ConstrExp<SMALL, LARGE>::getAssertionLevel(const IntVecIt& level, const std:
   int assertionLevel = 0;
   while (true) {
     while (posIt != litsByPos.cend() && level[*posIt] <= assertionLevel) {
-      slack -= rs::abs(coefs[rs::abs(*posIt)]);
+      slack -= aux::abs(coefs[aux::abs(*posIt)]);
       ++posIt;
     }
     if (slack < 0) return assertionLevel - 1;
     while (coefIt != vars.cend() && assertionLevel >= level[getLit(*coefIt)]) ++coefIt;
     if (coefIt == vars.cend()) return INF;  // no assertion level
-    if (slack < rs::abs(coefs[*coefIt])) return assertionLevel;
+    if (slack < aux::abs(coefs[*coefIt])) return assertionLevel;
     if (posIt == litsByPos.cend()) return INF;  // slack will no longer decrease
     assertionLevel = level[*posIt];
   }
@@ -717,7 +718,7 @@ int ConstrExp<SMALL, LARGE>::getAssertionLevel(const IntVecIt& level, const std:
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::weakenNonImplied(const IntVecIt& level, const LARGE& slack, Stats& sts) {
   for (Var v : vars)
-    if (coefs[v] != 0 && rs::abs(coefs[v]) <= slack && !falsified(level, v)) {
+    if (coefs[v] != 0 && aux::abs(coefs[v]) <= slack && !falsified(level, v)) {
       weaken(v);
       ++sts.NWEAKENEDNONIMPLIED;
     }
@@ -732,10 +733,10 @@ bool ConstrExp<SMALL, LARGE>::weakenNonImplying(const IntVecIt& level, const SMA
   assert(hasNoZeroes());
   assert(isSortedInDecreasingCoefOrder());
   long long oldCount = sts.NWEAKENEDNONIMPLYING;
-  for (int i = vars.size() - 1; i >= 0 && slk + rs::abs(coefs[vars[i]]) < propCoef; --i) {
+  for (int i = vars.size() - 1; i >= 0 && slk + aux::abs(coefs[vars[i]]) < propCoef; --i) {
     Var v = vars[i];
     if (falsified(level, v)) {
-      slk += rs::abs(coefs[v]);
+      slk += aux::abs(coefs[v]);
       weaken(v);
       ++sts.NWEAKENEDNONIMPLYING;
     }
@@ -754,21 +755,21 @@ void ConstrExp<SMALL, LARGE>::heuristicWeakening(const IntVecIt& level, const st
   Var v_prop = -1;
   for (int i = vars.size() - 1; i >= 0; --i) {
     Var v = vars[i];
-    if (rs::abs(coefs[v]) > slk && isUnknown(pos, v)) {
+    if (aux::abs(coefs[v]) > slk && isUnknown(pos, v)) {
       v_prop = v;
       break;
     }
   }
   if (v_prop == -1) return;  // no propagation, no idea what to weaken
-  if (weakenNonImplying(level, rs::abs(coefs[v_prop]), slk, sts)) slk = getSlack(level);  // slack changed
-  assert(slk < rs::abs(coefs[v_prop]));
+  if (weakenNonImplying(level, aux::abs(coefs[v_prop]), slk, sts)) slk = getSlack(level);  // slack changed
+  assert(slk < aux::abs(coefs[v_prop]));
   weakenNonImplied(level, slk, sts);
 }
 
 template <typename SMALL, typename LARGE>
 LARGE ConstrExp<SMALL, LARGE>::absCoeffSum() const {
   LARGE result = 0;
-  for (Var v : vars) result += rs::abs(coefs[v]);
+  for (Var v : vars) result += aux::abs(coefs[v]);
   return result;
 }
 
@@ -778,13 +779,13 @@ bool ConstrExp<SMALL, LARGE>::simplifyToCardinality(bool equivalencePreserving) 
   assert(isSaturated());
   assert(isSortedInDecreasingCoefOrder());
   assert(hasNoZeroes());
-  if (vars.size() == 0 || rs::abs(coefs[vars[0]]) == 1) return false;  // already cardinality
+  if (vars.size() == 0 || aux::abs(coefs[vars[0]]) == 1) return false;  // already cardinality
   if (degree <= 0) return false;
 
   int largeCoefsNeeded = 0;
   LARGE largeCoefSum = 0;
   while (largeCoefsNeeded < (int)vars.size() && largeCoefSum < degree) {
-    largeCoefSum += rs::abs(coefs[vars[largeCoefsNeeded]]);
+    largeCoefSum += aux::abs(coefs[vars[largeCoefsNeeded]]);
     ++largeCoefsNeeded;
   }
   assert(largeCoefsNeeded > 0);
@@ -796,21 +797,21 @@ bool ConstrExp<SMALL, LARGE>::simplifyToCardinality(bool equivalencePreserving) 
   int skippable = vars.size();  // counting backwards
   if (equivalencePreserving) {
     LARGE smallCoefSum = 0;
-    for (int i = 1; i <= largeCoefsNeeded; ++i) smallCoefSum += rs::abs(coefs[vars[vars.size() - i]]);
+    for (int i = 1; i <= largeCoefsNeeded; ++i) smallCoefSum += aux::abs(coefs[vars[vars.size() - i]]);
     if (smallCoefSum < degree) return false;
     // else, we have an equivalent cardinality constraint
   } else {
-    LARGE wiggleroom = degree - largeCoefSum + rs::abs(coefs[vars[largeCoefsNeeded - 1]]);
+    LARGE wiggleroom = degree - largeCoefSum + aux::abs(coefs[vars[largeCoefsNeeded - 1]]);
     assert(wiggleroom > 0);
-    while (skippable > 0 && wiggleroom > rs::abs(coefs[vars[skippable - 1]])) {
+    while (skippable > 0 && wiggleroom > aux::abs(coefs[vars[skippable - 1]])) {
       --skippable;
-      wiggleroom -= rs::abs(coefs[vars[skippable]]);
+      wiggleroom -= aux::abs(coefs[vars[skippable]]);
     }
   }
   assert(skippable >= largeCoefsNeeded);
 
   if (plogger) {
-    SMALL div_coef = rs::abs(coefs[vars[largeCoefsNeeded - 1]]);
+    SMALL div_coef = aux::abs(coefs[vars[largeCoefsNeeded - 1]]);
     for (int i = 0; i < largeCoefsNeeded; ++i) {  // partially weaken large vars
       Lit l = getLit(vars[i]);
       SMALL d = getCoef(l) - div_coef;
@@ -841,7 +842,7 @@ bool ConstrExp<SMALL, LARGE>::simplifyToCardinality(bool equivalencePreserving) 
 template <typename SMALL, typename LARGE>
 bool ConstrExp<SMALL, LARGE>::isCardinality() const {
   for (Var v : vars)
-    if (rs::abs(coefs[v]) > 1) return false;
+    if (aux::abs(coefs[v]) > 1) return false;
   return true;
 }
 
@@ -852,13 +853,13 @@ bool ConstrExp<SMALL, LARGE>::isClause() const {
 
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::sortInDecreasingCoefOrder() {
-  std::sort(vars.begin(), vars.end(), [&](Var v1, Var v2) { return rs::abs(coefs[v1]) > rs::abs(coefs[v2]); });
+  std::sort(vars.begin(), vars.end(), [&](Var v1, Var v2) { return aux::abs(coefs[v1]) > aux::abs(coefs[v2]); });
 }
 
 template <typename SMALL, typename LARGE>
 bool ConstrExp<SMALL, LARGE>::isSortedInDecreasingCoefOrder() const {
   for (int i = 1; i < (int)vars.size(); ++i)
-    if (rs::abs(coefs[vars[i - 1]]) < rs::abs(coefs[vars[i]])) return false;
+    if (aux::abs(coefs[vars[i - 1]]) < aux::abs(coefs[vars[i]])) return false;
   return true;
 }
 
@@ -918,7 +919,7 @@ void ConstrExp<SMALL, LARGE>::logUnit(const IntVecIt& level, const std::vector<i
   for (Var v : vars)
     if (v != v_unit) weaken(v);
   assert(degree > 0);
-  LARGE d = std::max<LARGE>(rs::abs(coefs[v_unit]), degree);
+  LARGE d = std::max<LARGE>(aux::abs(coefs[v_unit]), degree);
   if (d > 1) proofBuffer << d << " d ";
   if (coefs[v_unit] > 0) {
     coefs[v_unit] = 1;
@@ -1000,7 +1001,7 @@ void ConstrExp<SMALL, LARGE>::resolveWith(const Clause& c, Lit l, IntSet* actSet
       coefs[v] = cf;
       used[v] = true;
     } else {
-      if ((coefs[v] < 0) != (l < 0)) degree -= std::min(cmult, rs::abs(coefs[v]));
+      if ((coefs[v] < 0) != (l < 0)) degree -= std::min(cmult, aux::abs(coefs[v]));
       coefs[v] += cf;
     }
   }
@@ -1043,7 +1044,7 @@ void ConstrExp<SMALL, LARGE>::resolveWith(const Cardinality& c, Lit l, IntSet* a
       coefs[v] = cf;
       used[v] = true;
     } else {
-      if ((coefs[v] < 0) != (l < 0)) degree -= std::min(cmult, rs::abs(coefs[v]));
+      if ((coefs[v] < 0) != (l < 0)) degree -= std::min(cmult, aux::abs(coefs[v]));
       coefs[v] += cf;
     }
   }

@@ -323,7 +323,7 @@ struct ConstrExp final : public ConstrExpSuper {
         coefs[v] = val;
         used[v] = true;
       } else {
-        if ((coefs[v] < 0) != (val < 0)) degree -= std::min(rs::abs(coefs[v]), rs::abs(val));
+        if ((coefs[v] < 0) != (val < 0)) degree -= std::min(aux::abs(coefs[v]), aux::abs(val));
         coefs[v] += val;
       }
     }
@@ -355,7 +355,7 @@ struct ConstrExp final : public ConstrExpSuper {
   template <typename T>
   void weakenSmalls(const T& limit) {
     for (Var v : vars)
-      if (rs::abs(coefs[v]) < limit) weaken(v);
+      if (aux::abs(coefs[v]) < limit) weaken(v);
     saturate();
   }
 
@@ -409,7 +409,7 @@ struct ConstrExp final : public ConstrExpSuper {
     }
     SMALL reason_coef_l = static_cast<SMALL>(reason->getCoef(l));  // NOTE: SMALL >= CF
     SMALL confl_coef_l = getCoef(-l);
-    SMALL gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
+    SMALL gcd_coef_l = aux::gcd(reason_coef_l, confl_coef_l);
     addUp(reason, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
     saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced, 0);
     assert(getCoef(-l) == 0);

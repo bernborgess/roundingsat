@@ -58,34 +58,35 @@ add_definitions("-DGIT_BRANCH=${GIT_BRANCH}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 
 set(source_files
-    src/aux.cpp
-    src/Solver.cpp
-    src/roundingsat.cpp
-    src/quit.cpp
-    src/LpSolver.cpp
-    src/SolverStructs.cpp
     src/Constr.cpp
     src/ConstrExp.cpp
     src/ConstrSimple.cpp
+    src/LpSolver.cpp
+    src/Solver.cpp
+    src/SolverStructs.cpp
+    src/parsing.cpp
+    src/quit.cpp
+    src/roundingsat.cpp
+    src/run.cpp
 )
 
 set(header_files
+    src/Constr.hpp
+    src/ConstrExp.hpp
+    src/ConstrSimple.hpp
     src/SolverStructs.hpp
-    src/aux.hpp
     src/Logger.hpp
     src/Stats.hpp
     src/LpSolver.hpp
     src/Options.hpp
     src/IntSet.hpp
     src/Solver.hpp
-    src/run.hpp
     src/typedefs.hpp
+    src/aux.hpp
     src/globals.hpp
-    src/ConstrSimple.hpp
     src/parsing.hpp
-    src/ConstrExp.hpp
     src/quit.hpp
-    src/Constr.hpp
+    src/run.hpp
 )
 
 set(all_files ${source_files} ${header_files})

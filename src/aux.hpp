@@ -42,6 +42,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include "typedefs.hpp"
 
 #define _unused(x) ((void)(x))  // marks variables unused in release mode, use [[maybe_unused]] where possible
 
@@ -61,7 +62,11 @@ std::ostream& operator<<(std::ostream& os, const std::vector<T>& m) {
   return os;
 }
 
-std::ostream& operator<<(std::ostream& os, __int128 x);
+inline std::ostream& operator<<(std::ostream& os, __int128 x) {
+  if (x < 0) return os << "-" << -x;
+  if (x < 10) return os << (char)(x + '0');
+  return os << x / 10 << (char)(x % 10 + '0');
+}
 
 namespace aux {
 
@@ -175,6 +180,75 @@ T min(const std::vector<T>& v) {
 template <typename T>
 T max(const std::vector<T>& v) {
   return *std::max_element(v.begin(), v.end());
+}
+
+template <typename T>
+inline T abs(const T& x) {
+  return std::abs(x);
+}
+template <>
+inline bigint abs(const bigint& x) {
+  return boost::multiprecision::abs(x);
+}
+template <>
+inline int256 abs(const int256& x) {
+  return boost::multiprecision::abs(x);
+}
+
+template <typename T>
+inline T gcd(const T& x, const T& y) {
+  return std::gcd(x, y);
+}
+template <>
+inline bigint gcd(const bigint& x, const bigint& y) {
+  return boost::multiprecision::gcd(x, y);
+}
+template <>
+inline int256 gcd(const int256& x, const int256& y) {
+  return boost::multiprecision::gcd(x, y);
+}
+
+template <typename T>
+inline T lcm(const T& x, const T& y) {
+  return std::lcm(x, y);
+}
+template <>
+inline bigint lcm(const bigint& x, const bigint& y) {
+  return boost::multiprecision::lcm(x, y);
+}
+template <>
+inline int256 lcm(const int256& x, const int256& y) {
+  return boost::multiprecision::lcm(x, y);
+}
+
+template <typename T>
+inline unsigned msb(const T& x) {
+  assert(x > 0);
+  // return std::bit_floor(x); // C++20
+  return boost::multiprecision::msb(boost::multiprecision::uint128_t(x));
+}
+template <>
+inline unsigned msb(const bigint& x) {
+  assert(x > 0);
+  return boost::multiprecision::msb(x);
+}
+template <>
+inline unsigned msb(const int256& x) {
+  assert(x > 0);
+  return boost::multiprecision::msb(x);
+}
+
+template <typename T>
+inline T pow(const T& x, unsigned y) {
+  return std::pow(x, y);
+}
+template <>
+inline bigint pow(const bigint& x, unsigned y) {
+  return boost::multiprecision::pow(x, y);
+}
+template <>
+inline int256 pow(const int256& x, unsigned y) {
+  return boost::multiprecision::pow(x, y);
 }
 
 }  // namespace aux

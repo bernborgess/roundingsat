@@ -189,7 +189,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     if (factor == 0) continue;
     Ce64 ce = rowToConstraint(r);
     if (factor < 0) ce->invert();
-    lcc->addUp(ce, rs::abs(factor));
+    lcc->addUp(ce, aux::abs(factor));
     slacks.emplace_back(-factor, r);
   }
 
@@ -213,7 +213,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     if (factor == 0) continue;
     Ce64 ce = rowToConstraint(slacks[i].second);
     if (factor < 0) ce->invert();
-    lcc->addUp(ce, rs::abs(factor));
+    lcc->addUp(ce, aux::abs(factor));
   }
   if (lcc->plogger) lcc->logAsInput();
   // TODO: fix logging for Gomory cuts
@@ -276,7 +276,7 @@ void LpSolver::constructLearnedCandidates() {
     if (c.getOrigin() == Origin::LEARNED || c.getOrigin() == Origin::LEARNEDFARKAS || c.getOrigin() == Origin::GOMORY) {
       bool containsNonOriginalVars = false;
       for (unsigned int i = 0; i < c.size() && !containsNonOriginalVars; ++i) {
-        containsNonOriginalVars = rs::abs(c.lit(i)) > solver.getNbOrigVars();
+        containsNonOriginalVars = aux::abs(c.lit(i)) > solver.getNbOrigVars();
       }
       if (containsNonOriginalVars) continue;
       candidateCuts.emplace_back(c, cr, lpSolution, solver.cePools);
@@ -336,7 +336,7 @@ double LpSolver::getScaleFactor(soplex::DVectorReal& mults, bool removeNegatives
   double largest = 0;
   for (int i = 0; i < mults.dim(); ++i) {
     if (std::isnan(mults[i]) || std::isinf(mults[i]) || (removeNegatives && mults[i] < 0)) mults[i] = 0;
-    largest = std::max(rs::abs(mults[i]), largest);
+    largest = std::max(aux::abs(mults[i]), largest);
   }
   if (largest == 0) return 0;
   return maxMult / largest;
@@ -345,7 +345,7 @@ double LpSolver::getScaleFactor(soplex::DVectorReal& mults, bool removeNegatives
 Ce64 LpSolver::rowToConstraint(int row) {
   Ce64 ce = solver.cePools.take64();
   double rhs = lp.lhsReal(row);
-  assert(rs::abs(rhs) != INFTY);
+  assert(aux::abs(rhs) != INFTY);
   assert(validVal(rhs));
   ce->addRhs(rhs);
 

@@ -143,7 +143,7 @@ struct Cardinality final : public Constr {
   void initialize(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id) {
     assert(_id > ID_Trivial);
     assert(constraint->vars.size() < INF);
-    assert(rs::abs(constraint->coefs[constraint->vars[0]]) == 1);
+    assert(aux::abs(constraint->coefs[constraint->vars[0]]) == 1);
     unsigned int length = constraint->vars.size();
     assert(constraint->getDegree() <= length);
 
@@ -202,7 +202,7 @@ struct Counting final : public Constr {
     for (unsigned int i = 0; i < length; ++i) {
       Var v = constraint->vars[i];
       assert(constraint->getLit(v) != 0);
-      data[i] = {static_cast<CF>(rs::abs(constraint->coefs[v])), constraint->getLit(v)};
+      data[i] = {static_cast<CF>(aux::abs(constraint->coefs[v])), constraint->getLit(v)};
     }
   }
   void initializeWatches(CRef cr, Solver& solver);
@@ -230,7 +230,7 @@ struct Watched final : public Constr {
   size_t getMemSize() const { return getMemSize(size()); }
 
   BigVal degree() const { return degr; }
-  BigCoef coef(unsigned int i) const { return rs::abs(data[i].c); }
+  BigCoef coef(unsigned int i) const { return aux::abs(data[i].c); }
   Lit lit(unsigned int i) const { return data[i].l; }
 
   template <typename SMALL, typename LARGE>
@@ -250,7 +250,7 @@ struct Watched final : public Constr {
     for (unsigned int i = 0; i < length; ++i) {
       Var v = constraint->vars[i];
       assert(constraint->getLit(v) != 0);
-      data[i] = {static_cast<CF>(rs::abs(constraint->coefs[v])), constraint->getLit(v)};
+      data[i] = {static_cast<CF>(aux::abs(constraint->coefs[v])), constraint->getLit(v)};
     }
   }
   void initializeWatches(CRef cr, Solver& solver);
@@ -299,7 +299,7 @@ struct Arbitrary final : public Constr {
     for (unsigned int i = 0; i < length; ++i) {
       Var v = constraint->vars[i];
       assert(constraint->getLit(v) != 0);
-      coefs[i] = rs::abs(constraint->coefs[v]);
+      coefs[i] = aux::abs(constraint->coefs[v]);
       lits[i] = constraint->getLit(v);
     }
   }

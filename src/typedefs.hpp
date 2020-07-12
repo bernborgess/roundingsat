@@ -35,87 +35,15 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <exception>
 #include <iostream>
 #include <limits>
-#include <numeric>
 #include <unordered_map>
 #include <vector>
 
-using int128 =
-    __int128;  // NOTE: boost::multiprecision::int128_t should work too, using a slightly less efficient extra sign bit.
+using int128 = __int128;
+// NOTE: boost::multiprecision::int128_t should work too, using a slightly less efficient extra sign bit.
 using int256 = boost::multiprecision::int256_t;
 using bigint = boost::multiprecision::cpp_int;
 using BigCoef = bigint;
 using BigVal = bigint;
-
-namespace rs {  // RoundingSat namespace
-template <typename T>
-inline T abs(const T& x) {
-  return std::abs(x);
-}
-template <>
-inline bigint abs(const bigint& x) {
-  return boost::multiprecision::abs(x);
-}
-template <>
-inline int256 abs(const int256& x) {
-  return boost::multiprecision::abs(x);
-}
-
-template <typename T>
-inline T gcd(const T& x, const T& y) {
-  return std::gcd(x, y);
-}
-template <>
-inline bigint gcd(const bigint& x, const bigint& y) {
-  return boost::multiprecision::gcd(x, y);
-}
-template <>
-inline int256 gcd(const int256& x, const int256& y) {
-  return boost::multiprecision::gcd(x, y);
-}
-
-template <typename T>
-inline T lcm(const T& x, const T& y) {
-  return std::lcm(x, y);
-}
-template <>
-inline bigint lcm(const bigint& x, const bigint& y) {
-  return boost::multiprecision::lcm(x, y);
-}
-template <>
-inline int256 lcm(const int256& x, const int256& y) {
-  return boost::multiprecision::lcm(x, y);
-}
-
-template <typename T>
-inline unsigned msb(const T& x) {
-  assert(x > 0);
-  // return std::bit_floor(x); // C++20
-  return boost::multiprecision::msb(boost::multiprecision::uint128_t(x));
-}
-template <>
-inline unsigned msb(const bigint& x) {
-  assert(x > 0);
-  return boost::multiprecision::msb(x);
-}
-template <>
-inline unsigned msb(const int256& x) {
-  assert(x > 0);
-  return boost::multiprecision::msb(x);
-}
-
-template <typename T>
-inline T pow(const T& x, unsigned y) {
-  return std::pow(x, y);
-}
-template <>
-inline bigint pow(const bigint& x, unsigned y) {
-  return boost::multiprecision::pow(x, y);
-}
-template <>
-inline int256 pow(const int256& x, unsigned y) {
-  return boost::multiprecision::pow(x, y);
-}
-}  // namespace rs
 
 using ID = uint64_t;
 const ID ID_Undef = std::numeric_limits<ID>::max();
@@ -124,7 +52,7 @@ const ID ID_Trivial = 1;  // represents constraint 0 >= 0
 
 using Var = int;
 using Lit = int;
-inline Var toVar(Lit l) { return rs::abs(l); }
+inline Var toVar(Lit l) { return std::abs(l); }
 
 const int INF = 1e9 + 1;  // 1e9 is the maximum number of variables in the system, anything beyond is infinity
 const long long INFLPINT = 1e15 + 1;  // based on max long range captured by double

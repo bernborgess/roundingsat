@@ -358,7 +358,7 @@ void Watched<CF, DG>::initializeWatches(CRef cr, Solver& solver) {
 
   watchslack = -degr;
   unsigned int length = size();
-  const CF lrgstCf = rs::abs(data[0].c);
+  const CF lrgstCf = aux::abs(data[0].c);
   for (unsigned int i = 0; i < length && watchslack < lrgstCf; ++i) {
     Lit l = data[i].l;
     if (!isFalse(Level, l) || Pos[toVar(l)] >= qhead) {
@@ -387,7 +387,7 @@ void Watched<CF, DG>::initializeWatches(CRef cr, Solver& solver) {
       if (diff <= 0) break;
     }
     // perform initial propagation
-    for (unsigned int i = 0; i < length && rs::abs(data[i].c) > watchslack; ++i)
+    for (unsigned int i = 0; i < length && aux::abs(data[i].c) > watchslack; ++i)
       if (isUnknown(Pos, data[i].l)) {
         //        assert(isCorrectlyPropagating(solver, i));
         solver.propagate(data[i].l, cr);
@@ -405,7 +405,7 @@ WatchStatus Watched<CF, DG>::checkForPropagation(CRef cr, int& idx, Lit p, Solve
   assert(idx >= INF);
   assert(data[idx - INF].l == p);
   const unsigned int length = size();
-  const CF lrgstCf = rs::abs(data[0].c);
+  const CF lrgstCf = aux::abs(data[0].c);
   CF& c = data[idx - INF].c;
 
   if (!options.idxProp || ntrailpops < stats.NTRAILPOPS) {
@@ -447,7 +447,7 @@ WatchStatus Watched<CF, DG>::checkForPropagation(CRef cr, int& idx, Lit p, Solve
   }
   // keep the watch, check for propagation
   stats.NPROPCHECKS -= watchIdx;
-  for (; watchIdx < length && rs::abs(data[watchIdx].c) > watchslack; ++watchIdx) {
+  for (; watchIdx < length && aux::abs(data[watchIdx].c) > watchslack; ++watchIdx) {
     const Lit l = data[watchIdx].l;
     if (isUnknown(Pos, l)) {
       stats.NPROPCLAUSE += (degr == 1);
@@ -479,7 +479,7 @@ CePtr<ConstrExp<CF, DG>> Watched<CF, DG>::expandTo(ConstrExpPools& cePools) cons
   CePtr<ConstrExp<CF, DG>> result = cePools.take<CF, DG>();
   result->addRhs(degr);
   for (size_t i = 0; i < size(); ++i) {
-    result->addLhs(rs::abs(data[i].c), data[i].l);
+    result->addLhs(aux::abs(data[i].c), data[i].l);
   }
   result->orig = getOrigin();
   if (result->plogger) result->resetBuffer(id);

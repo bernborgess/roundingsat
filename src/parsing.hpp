@@ -30,156 +30,17 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include "Solver.hpp"
+#include <string>
+#include "typedefs.hpp"
+
+class Solver;
 
 namespace parsing {
-int read_number(const std::string& s) {  // TODO: should also read larger numbers than int (e.g., capture large degree)
-  long long answer = 0;
-  for (char c : s)
-    if ('0' <= c && c <= '9') {
-      answer *= 10, answer += c - '0';
-      if (answer >= 1e9) quit::exit_ERROR({"Input formula contains absolute value larger than 10^9: ", s});
-    }
-  for (char c : s)
-    if (c == '-') answer = -answer;
-  return answer;
-}
 
-void opb_read(std::istream& in, Solver& solver, CeArb objective) {
-  assert(objective->isReset());
-  CeArb input = solver.cePools.takeArb();
-  [[maybe_unused]] bool first_constraint = true;
-  for (std::string line; getline(in, line);) {
-    if (line.empty() || line[0] == '*') continue;
-    for (char& c : line)
-      if (c == ';') c = ' ';
-    bool opt_line = line.substr(0, 4) == "min:";
-    std::string line0;
-    if (opt_line)
-      line = line.substr(4), assert(first_constraint);
-    else {
-      std::string symbol;
-      if (line.find(">=") != std::string::npos)
-        symbol = ">=";
-      else
-        symbol = "=";
-      assert(line.find(symbol) != std::string::npos);
-      line0 = line;
-      line = line.substr(0, line.find(symbol));
-    }
-    first_constraint = false;
-    std::istringstream is(line);
-    input->reset();
-    std::vector<std::string> tokens;
-    std::string tmp;
-    while (is >> tmp) tokens.push_back(tmp);
-    if (tokens.size() % 2 != 0) quit::exit_ERROR({"No support for non-linear constraints."});
-    for (int i = 0; i < (long long)tokens.size(); i += 2)
-      if (find(tokens[i].begin(), tokens[i].end(), 'x') != tokens[i].end())
-        quit::exit_ERROR({"No support for non-linear constraints."});
-    for (int i = 0; i < (long long)tokens.size(); i += 2) {
-      std::string scoef = tokens[i];
-      std::string var = tokens[i + 1];
-      BigCoef coef = read_number(scoef);
-      bool negated = false;
-      std::string origvar = var;
-      if (!var.empty() && var[0] == '~') {
-        negated = true;
-        var = var.substr(1);
-      }
-      if (var.empty() || var[0] != 'x') quit::exit_ERROR({"Invalid literal token: ", origvar});
-      var = var.substr(1);
-      Lit l = atoi(var.c_str());
-      if (!(1 <= l && l <= solver.getNbVars())) quit::exit_ERROR({"Literal token out of variable range: ", origvar});
-      if (negated) l = -l;
-      input->addLhs(coef, l);
-    }
-    if (opt_line)
-      input->copyTo(objective);
-    else {
-      input->addRhs(read_number(line0.substr(line0.find("=") + 1)));
-      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
-      if (line0.find(" = ") != std::string::npos) {  // Handle equality case with second constraint
-        input->invert();
-        if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
-      }
-    }
-  }
-  solver.setNbOrigVars(solver.getNbVars());
-}
+int read_number(const std::string& s);
+void opb_read(std::istream& in, Solver& solver, CeArb objective);
+void wcnf_read(std::istream& in, long long top, Solver& solver, CeArb objective);
+void cnf_read(std::istream& in, Solver& solver);
+void file_read(std::istream& in, Solver& solver, CeArb objective);
 
-void wcnf_read(std::istream& in, long long top, Solver& solver, CeArb objective) {
-  assert(objective->isReset());
-  CeArb input = solver.cePools.takeArb();
-  for (std::string line; getline(in, line);) {
-    if (line.empty() || line[0] == 'c')
-      continue;
-    else {
-      std::istringstream is(line);
-      long long weight;
-      is >> weight;
-      if (weight == 0) continue;
-      input->reset();
-      input->addRhs(1);
-      Lit l;
-      while (is >> l, l) input->addLhs(1, l);
-      if (weight < top) {  // soft clause
-        if (weight < 0) quit::exit_ERROR({"Negative clause weight: ", std::to_string(weight)});
-        solver.setNbVars(solver.getNbVars() + 1);  // increases n to n+1
-        objective->addLhs(weight, solver.getNbVars());
-        input->addLhs(1, solver.getNbVars());
-      }  // else hard clause
-      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
-    }
-  }
-  solver.setNbOrigVars(solver.getNbVars() - objective->vars.size());
-}
-
-void cnf_read(std::istream& in, Solver& solver) {
-  Ce32 input = solver.cePools.take32();
-  for (std::string line; getline(in, line);) {
-    if (line.empty() || line[0] == 'c')
-      continue;
-    else {
-      std::istringstream is(line);
-      input->reset();
-      input->addRhs(1);
-      Lit l;
-      while (is >> l, l) input->addLhs(1, l);
-      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
-    }
-  }
-  solver.setNbOrigVars(solver.getNbVars());
-}
-
-void file_read(std::istream& in, Solver& solver, CeArb objective) {
-  for (std::string line; getline(in, line);) {
-    if (line.empty() || line[0] == 'c') continue;
-    if (line[0] == 'p') {
-      std::istringstream is(line);
-      is >> line;  // skip 'p'
-      std::string type;
-      is >> type;
-      long long nb;
-      is >> nb;
-      solver.setNbVars(nb);
-      if (type == "cnf") {
-        cnf_read(in, solver);
-      } else if (type == "wcnf") {
-        is >> line;  // skip nbConstraints
-        long long top;
-        is >> top;
-        wcnf_read(in, top, solver, objective);
-      }
-    } else if (line[0] == '*' && line.substr(0, 13) == "* #variable= ") {
-      std::istringstream is(line.substr(13));
-      long long nb;
-      is >> nb;
-      solver.setNbVars(nb);
-      opb_read(in, solver, objective);
-    } else
-      quit::exit_ERROR({"No supported format [opb, cnf, wcnf] detected."});
-  }
-  if (solver.logger) solver.logger->formula_out << "* INPUT FORMULA ABOVE - AUXILIARY AXIOMS BELOW\n";
-}
 }  // namespace parsing

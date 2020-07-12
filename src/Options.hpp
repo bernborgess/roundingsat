@@ -193,13 +193,13 @@ struct Options {
     getOptionNum(
         opt_val, opts[OPTIONS::PRINTSOL], [](double x) -> bool { return x == 0 || x == 1; }, printSol);
     getOptionNum(
-        opt_val, opts[OPTIONS::VERBOSITY], [](double x) -> bool { return rs::abs(x) == x && x >= 0; }, verbosity);
+        opt_val, opts[OPTIONS::VERBOSITY], [](double x) -> bool { return aux::abs(x) == x && x >= 0; }, verbosity);
     getOptionNum(
         opt_val, opts[OPTIONS::VARDECAY], [](double x) -> bool { return x >= 0.5 && x < 1; }, v_vsids_decay);
     getOptionNum(
         opt_val, opts[OPTIONS::RINC], [](double x) -> bool { return x >= 1; }, rinc);
     getOptionNum(
-        opt_val, opts[OPTIONS::RFIRST], [](double x) -> bool { return rs::abs(x) == x && x >= 1; }, rfirst);
+        opt_val, opts[OPTIONS::RFIRST], [](double x) -> bool { return aux::abs(x) == x && x >= 1; }, rfirst);
     getOptionEnum(opt_val, opts[OPTIONS::OPTMODE], optMode, optModeMap);
     getOptionNum(
         opt_val, opts[OPTIONS::PROPCOUNTING], [](double x) -> bool { return x >= 0 || x <= 1; }, countingProp);
@@ -215,7 +215,7 @@ struct Options {
     getOptionNum(
         opt_val, opts[OPTIONS::LP], [](double x) -> bool { return x >= -1; }, lpPivotRatio);
     getOptionNum(
-        opt_val, opts[OPTIONS::LPBUDGET], [](double x) -> bool { return rs::abs(x) == x && x >= 1; }, lpPivotBudget);
+        opt_val, opts[OPTIONS::LPBUDGET], [](double x) -> bool { return aux::abs(x) == x && x >= 1; }, lpPivotBudget);
     getOptionNum(
         opt_val, opts[OPTIONS::LPCUTGOMORY], [](double x) -> bool { return x == 0 || x == 1; }, addGomoryCuts);
     getOptionNum(
