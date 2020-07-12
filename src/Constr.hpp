@@ -53,6 +53,8 @@ struct Constr {  // internal solver constraint optimized for fast propagation
   } header;
   ActValC act;
 
+  virtual ~Constr() {}
+
   unsigned int size() const { return header.size; }
   void setLocked(bool lkd) { header.locked = lkd; }
   bool isLocked() { return header.locked; }

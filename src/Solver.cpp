@@ -272,7 +272,7 @@ CeSuper Solver::analyze(CeSuper conflict) {
   assert(conflict->hasNegativeSlack(Level));
   stats.NADDEDLITERALS += conflict->vars.size();
   conflict->removeUnitsAndZeroes(Level, Pos);
-  conflict->saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
+  conflict->saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced, 0);
 
   CeSuper confl = getAnalysisCE(conflict, options.bitsOverflow, cePools);
   conflict->reset();
@@ -324,8 +324,6 @@ CeSuper Solver::analyze(CeSuper conflict) {
 }
 
 CeSuper Solver::extractCore(CeSuper conflict, const IntSet& assumptions, Lit l_assump) {
-  assert(!conflict->isReset());
-
   if (l_assump != 0) {  // l_assump is an assumption propagated to the opposite value
     assert(assumptions.has(l_assump));
     assert(isFalse(Level, l_assump));
@@ -355,9 +353,10 @@ CeSuper Solver::extractCore(CeSuper conflict, const IntSet& assumptions, Lit l_a
   for (Lit l : decisions) decide(l);
   for (Lit l : props) propagate(l, Reason[toVar(l)]);
 
+  assert(conflict->hasNegativeSlack(Level));
   stats.NADDEDLITERALS += conflict->vars.size();
   conflict->removeUnitsAndZeroes(Level, Pos);
-  conflict->saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced);
+  conflict->saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced, 0);
   assert(conflict->hasNegativeSlack(Level));
   CeSuper confl = getAnalysisCE(conflict, options.bitsOverflow, cePools);
   conflict->reset();
@@ -441,7 +440,7 @@ void Solver::learnConstraint(const CeSuper c, Origin orig) {
   assert(orig == Origin::LEARNED || orig == Origin::FARKAS || orig == Origin::LEARNEDFARKAS || orig == Origin::GOMORY);
   CeSuper learned = c->reduce(cePools);
   learned->orig = orig;
-  learned->saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsLearned, options.bitsLearned);
+  learned->saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsLearned, options.bitsLearned, 0);
   learnedStack.push_back(learned->toSimple());
 }
 

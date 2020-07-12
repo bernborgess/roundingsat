@@ -480,7 +480,7 @@ void ConstrExp<SMALL, LARGE>::invert() {
 // also removes zeroes
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening, int bitOverflow,
-                                                     int bitReduce) {
+                                                     int bitReduce, Lit asserting) {
   removeZeroes();
   if (bitOverflow == 0) {
     saturate();
@@ -498,7 +498,7 @@ void ConstrExp<SMALL, LARGE>::saturateAndFixOverflow(const IntVecIt& level, bool
     cutoff = rs::pow(cutoff, bitReduce) - 1;
     LARGE div = aux::ceildiv<LARGE>(largest, cutoff);
     assert(aux::ceildiv<LARGE>(largest, div) <= cutoff);
-    weakenNonDivisibleNonFalsifieds(level, div, fullWeakening, 0);
+    weakenNonDivisibleNonFalsifieds(level, div, fullWeakening, asserting);
     divideRoundUp(div);
   }
   saturate();
@@ -589,10 +589,11 @@ void ConstrExp<SMALL, LARGE>::weakenNonDivisibleNonFalsifieds(const IntVecIt& le
   if (div == 1) return;
   if (fullWeakening) {
     for (Var v : vars)
-      if (coefs[v] % div != 0 && !falsified(level, v) && v != toVar(asserting)) weaken(v);
+      if (coefs[v] % div != 0 && !falsified(level, v) && !(v == toVar(asserting) && div > rs::abs(coefs[v]))) weaken(v);
   } else {
     for (Var v : vars)
-      if (coefs[v] % div != 0 && !falsified(level, v)) weaken(static_cast<SMALL>(-(coefs[v] % div)), v);
+      if (coefs[v] % div != 0 && !falsified(level, v) && !(v == toVar(asserting) && div > rs::abs(coefs[v])))
+        weaken(static_cast<SMALL>(-(coefs[v] % div)), v);
   }
 }
 
@@ -1005,7 +1006,7 @@ void ConstrExp<SMALL, LARGE>::resolveWith(const Clause& c, Lit l, IntSet* actSet
   }
 
   removeUnitsAndZeroes(level, pos);
-  saturateAndFixOverflow(level, options.weakenFull, options.bitsOverflow, options.bitsReduced);
+  saturateAndFixOverflow(level, options.weakenFull, options.bitsOverflow, options.bitsReduced, 0);
   assert(getCoef(-l) == 0);
   assert(hasNegativeSlack(level));
 }
@@ -1048,7 +1049,7 @@ void ConstrExp<SMALL, LARGE>::resolveWith(const Cardinality& c, Lit l, IntSet* a
   }
 
   removeUnitsAndZeroes(level, pos);
-  saturateAndFixOverflow(level, options.weakenFull, options.bitsOverflow, options.bitsReduced);
+  saturateAndFixOverflow(level, options.weakenFull, options.bitsOverflow, options.bitsReduced, 0);
   assert(getCoef(-l) == 0);
   assert(hasNegativeSlack(level));
 }

@@ -40,6 +40,9 @@ struct ConstrExpPools;
 
 struct ConstrSimpleSuper {
   Origin orig = Origin::UNKNOWN;
+
+  virtual ~ConstrSimpleSuper() {}
+
   virtual CeSuper toExpanded(ConstrExpPools& cePools) const = 0;
   virtual void copyTo(ConstrSimple32& out) const = 0;
   virtual void copyTo(ConstrSimple64& out) const = 0;

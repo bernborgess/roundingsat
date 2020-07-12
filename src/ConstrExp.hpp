@@ -111,6 +111,8 @@ struct ConstrExpSuper {
   std::vector<Var> vars;
   Origin orig = Origin::UNKNOWN;
 
+  virtual ~ConstrExpSuper() {}
+
   virtual void increaseUsage() = 0;
   virtual void decreaseUsage() = 0;
 
@@ -150,7 +152,8 @@ struct ConstrExpSuper {
   virtual void saturate(const std::vector<Var>& vs) = 0;
   virtual void saturate() = 0;
   virtual bool isSaturated() const = 0;
-  virtual void saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening, int bitOverflow, int bitReduce) = 0;
+  virtual void saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening, int bitOverflow, int bitReduce,
+                                      Lit asserting) = 0;
   virtual void saturateAndFixOverflowRational(const std::vector<double>& lpSolution) = 0;
   virtual bool fitsInDouble() const = 0;
 
@@ -301,7 +304,7 @@ struct ConstrExp final : public ConstrExpSuper {
   void saturate(const std::vector<Var>& vs);
   void saturate();
   bool isSaturated() const;
-  void saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening, int bitOverflow, int bitReduce);
+  void saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening, int bitOverflow, int bitReduce, Lit asserting);
   void saturateAndFixOverflowRational(const std::vector<double>& lpSolution);
   bool fitsInDouble() const;
 
@@ -399,7 +402,8 @@ struct ConstrExp final : public ConstrExpSuper {
     stats.NADDEDLITERALS += reason->vars.size();
     reason->removeUnitsAndZeroes(Level, Pos);
     if (options.weakenNonImplying) reason->weakenNonImplying(Level, reason->getCoef(l), reason->getSlack(Level), stats);
-    reason->saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced);
+    reason->saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced, l);
+    assert(reason->getCoef(l) > 0);
     assert(reason->getCoef(l) > reason->getSlack(Level));
     reason->weakenDivideRound(Level, l, options.slackdiv, options.weakenFull);
     assert(reason->getSlack(Level) <= 0);
@@ -414,7 +418,7 @@ struct ConstrExp final : public ConstrExpSuper {
     SMALL confl_coef_l = getCoef(-l);
     SMALL gcd_coef_l = rs::gcd(reason_coef_l, confl_coef_l);
     addUp(reason, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
-    saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced);
+    saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced, 0);
     assert(getCoef(-l) == 0);
     assert(hasNegativeSlack(Level));
   }
