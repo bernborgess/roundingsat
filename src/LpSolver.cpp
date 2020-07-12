@@ -28,11 +28,13 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ***********************************************************************/
 
-#if WITHSOPLEX
-
 #include "LpSolver.hpp"
 #include <queue>
 #include "Solver.hpp"
+
+namespace rs {
+
+#if WITHSOPLEX
 
 CandidateCut::CandidateCut(CeSuper in, const std::vector<double>& sol) {
   assert(in->isSaturated());
@@ -566,3 +568,5 @@ void LpSolver::flushConstraints() {
 }
 
 #endif  // WITHSOPLEX
+
+}  // namespace rs

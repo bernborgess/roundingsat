@@ -35,6 +35,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "SolverStructs.hpp"
 #include "aux.hpp"
 
+namespace rs {
+
 template class ConstrExp<int, long long>;
 template class ConstrExp<long long, int128>;
 template class ConstrExp<int128, int128>;
@@ -1123,3 +1125,5 @@ Ce64 ConstrExpPools::take64() { return take<long long, int128>(); }
 Ce96 ConstrExpPools::take96() { return take<int128, int128>(); }
 Ce128 ConstrExpPools::take128() { return take<int128, int256>(); }
 CeArb ConstrExpPools::takeArb() { return take<bigint, bigint>(); }
+
+}  // namespace rs

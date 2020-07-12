@@ -35,6 +35,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "ConstrExp.hpp"
 #include "typedefs.hpp"
 
+namespace rs {
+
 struct Watch {
   CRef cref;
   int idx;
@@ -95,3 +97,5 @@ struct OrderHeap {  // segment tree (fast implementation of priority queue).
   void insert(Var x);
   Var removeMax();
 };
+
+}  // namespace rs

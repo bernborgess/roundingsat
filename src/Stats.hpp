@@ -33,6 +33,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "aux.hpp"
 #include "typedefs.hpp"
 
+namespace rs {
+
 struct Stats {
   long long NTRAILPOPS = 0, NWATCHLOOKUPS = 0, NWATCHLOOKUPSBJ = 0, NWATCHCHECKS = 0, NPROPCHECKS = 0,
             NADDEDLITERALS = 0;
@@ -140,3 +142,5 @@ struct Stats {
     printf("c LP encountered learned Farkas constraints %lld\n", NLPENCLEARNEDFARKAS);
   }
 };
+
+}  // namespace rs

@@ -31,6 +31,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "run.hpp"
 #include "ConstrExp.hpp"
 
+namespace rs {
+
 std::vector<bool> run::solution;
 BigVal run::upper_bound;
 BigVal run::lower_bound;
@@ -83,6 +85,11 @@ void run::LazyVar::addSymBreakingConstraint(Var prevvar) const {
   // y-- + ~y >= 1 (equivalent to y-- >= y)
   if (solver.addConstraint(ConstrSimple32({{1, prevvar}, {1, -currentVar}}, 1), Origin::COREGUIDED).second == ID_Unsat)
     quit::exit_UNSAT(solution, upper_bound, solver.logger);
+}
+
+std::ostream& run::operator<<(std::ostream& o, const std::shared_ptr<LazyVar> lv) {
+  o << lv->atLeast << "\n" << lv->atMost;
+  return o;
 }
 
 bool run::foundSolution() { return solution.size() > 0; }
@@ -337,3 +344,5 @@ void run::run(CeArb objective) {
     quit::exit_INDETERMINATE(solution, solver.logger);
   }
 }
+
+}  // namespace rs

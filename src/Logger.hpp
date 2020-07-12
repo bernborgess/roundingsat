@@ -34,6 +34,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Stats.hpp"
 #include "typedefs.hpp"
 
+namespace rs {
+
 struct Logger {
   std::ofstream formula_out;
   std::ofstream proof_out;
@@ -70,3 +72,5 @@ struct Logger {
 #endif
   }
 };
+
+}  // namespace rs

@@ -31,6 +31,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "ConstrSimple.hpp"
 #include "ConstrExp.hpp"
 
+namespace rs {
+
 template <typename CF, typename DG>
 CeSuper ConstrSimple<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
   CePtr<ConstrExp<CF, DG>> ce = cePools.take<CF, DG>();
@@ -73,3 +75,5 @@ template class ConstrSimple<long long, int128>;
 template class ConstrSimple<int128, int128>;
 template class ConstrSimple<int128, int256>;
 template class ConstrSimple<bigint, bigint>;
+
+}  // namespace rs

@@ -34,6 +34,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "globals.hpp"
 #include "typedefs.hpp"
 
+namespace rs {
+
 enum WatchStatus { DROPWATCH, KEEPWATCH, CONFLICTING };
 
 class Solver;
@@ -313,3 +315,5 @@ struct Arbitrary final : public Constr {
 
   bool hasCorrectSlack(const Solver& solver);
 };
+
+}  // namespace rs

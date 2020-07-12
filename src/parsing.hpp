@@ -33,6 +33,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <string>
 #include "typedefs.hpp"
 
+namespace rs {
+
 class Solver;
 
 namespace parsing {
@@ -44,3 +46,5 @@ void cnf_read(std::istream& in, Solver& solver);
 void file_read(std::istream& in, Solver& solver, CeArb objective);
 
 }  // namespace parsing
+
+}  // namespace rs

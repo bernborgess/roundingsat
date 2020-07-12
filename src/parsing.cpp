@@ -31,6 +31,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "parsing.hpp"
 #include "Solver.hpp"
 
+namespace rs {
+
 int parsing::read_number(const std::string& s) {
   // TODO: should also read larger numbers than int (e.g., capture large degree)
   long long answer = 0;
@@ -181,3 +183,5 @@ void parsing::file_read(std::istream& in, Solver& solver, CeArb objective) {
   }
   if (solver.logger) solver.logger->formula_out << "* INPUT FORMULA ABOVE - AUXILIARY AXIOMS BELOW\n";
 }
+
+}  // namespace rs

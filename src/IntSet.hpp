@@ -32,6 +32,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "aux.hpp"
 
+namespace rs {
+
 struct IntSet {  // TODO: template to long long, int128, ...?
  private:
   std::vector<bool> _values = {false};
@@ -73,3 +75,5 @@ struct IntSet {  // TODO: template to long long, int128, ...?
     return o;
   }
 };
+
+}  // namespace rs

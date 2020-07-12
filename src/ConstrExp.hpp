@@ -38,6 +38,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "globals.hpp"
 #include "typedefs.hpp"
 
+namespace rs {
+
 struct CRef {
   uint32_t ofs;
   bool operator==(CRef const& o) const { return ofs == o.ofs; }
@@ -528,3 +530,5 @@ class ConstrExpPools {
   Ce128 take128();
   CeArb takeArb();
 };
+
+}  // namespace rs

@@ -34,6 +34,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "aux.hpp"
 #include "globals.hpp"
 
+namespace rs {
+
 // ---------------------------------------------------------------------
 // Initialization
 
@@ -650,6 +652,7 @@ BigVal Solver::lhs(Constr& C, const std::vector<bool>& sol) {
   }
   return result;
 }
+
 bool Solver::checksol(const std::vector<bool>& sol) {
   for (CRef cr : constraints) {
     Constr& C = ca[cr];
@@ -798,3 +801,5 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
     }
   }
 }
+
+}  // namespace rs

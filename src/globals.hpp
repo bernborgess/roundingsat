@@ -33,8 +33,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Options.hpp"
 #include "Stats.hpp"
 
-// ---------------------------------------------------------------------
-// Globals
+namespace rs {
+
 extern bool asynch_interrupt;
 extern Options options;
 extern Stats stats;
+
+}  // namespace rs

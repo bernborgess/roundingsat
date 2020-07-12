@@ -33,6 +33,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Solver.hpp"
 #include "typedefs.hpp"
 
+namespace rs {
+
 namespace run {
 
 extern std::vector<bool> solution;
@@ -59,10 +61,7 @@ struct LazyVar {
   void addSymBreakingConstraint(Var prevvar) const;
 };
 
-inline std::ostream& operator<<(std::ostream& o, const std::shared_ptr<LazyVar> lv) {
-  o << lv->atLeast << "\n" << lv->atMost;
-  return o;
-}
+std::ostream& operator<<(std::ostream& o, const std::shared_ptr<LazyVar> lv);
 
 bool foundSolution();
 void printObjBounds(const BigVal& lower, const BigVal& upper);
@@ -78,3 +77,5 @@ void decide();
 void run(CeArb objective);
 
 }  // namespace run
+
+}  // namespace rs

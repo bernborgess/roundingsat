@@ -36,6 +36,20 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "globals.hpp"
 #include "typedefs.hpp"
 
+#if WITHSOPLEX
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wstrict-overflow"
+#pragma GCC diagnostic ignored "-Wdeprecated-copy"
+#pragma GCC diagnostic ignored "-Wclass-memaccess"
+#include "soplex.h"
+#pragma GCC diagnostic pop
+
+#endif  // WITHSOPLEX
+
+namespace rs {
+
 enum LpStatus { INFEASIBLE, OPTIMAL, PIVOTLIMIT, UNDETERMINED };
 
 struct RowData {
@@ -56,14 +70,6 @@ struct BoundData {
 };
 
 #if WITHSOPLEX
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wstrict-overflow"
-#pragma GCC diagnostic ignored "-Wdeprecated-copy"
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
-#include "soplex.h"
-#pragma GCC diagnostic pop
 
 class LpSolver;
 struct CandidateCut {
@@ -145,6 +151,7 @@ class LpSolver {
 };
 
 #else
+
 // TODO: check correspondence to above
 class LpSolver {
  public:
@@ -164,3 +171,5 @@ class LpSolver {
 };
 
 #endif  // WITHSOPLEX
+
+}  // namespace rs

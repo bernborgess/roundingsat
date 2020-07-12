@@ -32,6 +32,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Options.hpp"
 #include "globals.hpp"
 
+namespace rs {
+
 void ConstraintAllocator::capacity(uint32_t min_cap) {
   if (cap >= min_cap) return;
 
@@ -97,3 +99,5 @@ Var OrderHeap::removeMax() {
   }
   return x;
 }
+
+}  // namespace rs

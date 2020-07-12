@@ -37,6 +37,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "SolverStructs.hpp"
 #include "typedefs.hpp"
 
+namespace rs {
+
 class Logger;
 
 enum SolveState { SAT, UNSAT, INCONSISTENT, INPROCESSED, RESTARTED };
@@ -184,3 +186,5 @@ class Solver {
   bool checksol(const std::vector<bool>& sol);
   Lit pickBranchLit();
 };
+
+}  // namespace rs

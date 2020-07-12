@@ -33,6 +33,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Logger.hpp"
 #include "globals.hpp"
 
+namespace rs {
+
 void quit::printSol(const std::vector<bool>& sol) {
   printf("v");
   for (Var v = 1; v < (Var)sol.size() - stats.NAUXVARS; ++v) printf(sol[v] ? " x%d" : " -x%d", v);
@@ -84,3 +86,5 @@ void quit::exit_ERROR(const std::initializer_list<std::string>& messages) {
   std::cout << std::endl;
   exit(1);
 }
+
+}  // namespace rs

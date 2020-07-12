@@ -35,6 +35,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <vector>
 #include "typedefs.hpp"
 
+namespace rs {
+
 struct ConstrExpSuper;
 struct ConstrExpPools;
 
@@ -94,3 +96,5 @@ inline std::ostream& operator<<(std::ostream& o, const ConstrSimple<CF, DG>& sc)
   for (const Term<CF>& t : sc.terms) o << "+ " << t << " ";
   return o << ">= " << sc.rhs;
 }
+
+}  // namespace rs

@@ -36,26 +36,24 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "parsing.hpp"
 #include "run.hpp"
 
+namespace rs {
+
 bool asynch_interrupt;
 Options options;
 Stats stats;
 
-// ---------------------------------------------------------------------
-// Exit and interrupt
+}  // namespace rs
 
-static void SIGINT_interrupt([[maybe_unused]] int signum) { asynch_interrupt = true; }
+static void SIGINT_interrupt([[maybe_unused]] int signum) { rs::asynch_interrupt = true; }
 
 static void SIGINT_exit([[maybe_unused]] int signum) {
   printf("\n*** INTERRUPTED ***\n");
   exit(1);
 }
 
-// ---------------------------------------------------------------------
-// Main
-
 int main(int argc, char** argv) {
-  stats.STARTTIME = aux::cpuTime();
-  asynch_interrupt = false;
+  rs::stats.STARTTIME = rs::aux::cpuTime();
+  rs::asynch_interrupt = false;
 
   signal(SIGINT, SIGINT_exit);
   signal(SIGTERM, SIGINT_exit);
@@ -68,20 +66,20 @@ int main(int argc, char** argv) {
   std::cout << "c branch " << EXPANDED(GIT_BRANCH) << "\n";
   std::cout << "c commit " << EXPANDED(GIT_COMMIT_HASH) << std::endl;
 
-  options.parseCommandLine(argc, argv);
-  run::solver.init();
-  CeArb objective = run::solver.cePools.takeArb();
+  rs::options.parseCommandLine(argc, argv);
+  rs::run::solver.init();
+  rs::CeArb objective = rs::run::solver.cePools.takeArb();
 
-  if (!options.formulaName.empty()) {
-    std::ifstream fin(options.formulaName);
-    if (!fin) quit::exit_ERROR({"Could not open ", options.formulaName});
-    parsing::file_read(fin, run::solver, objective);
+  if (!rs::options.formulaName.empty()) {
+    std::ifstream fin(rs::options.formulaName);
+    if (!fin) rs::quit::exit_ERROR({"Could not open ", rs::options.formulaName});
+    rs::parsing::file_read(fin, rs::run::solver, objective);
   } else {
-    if (options.verbosity > 0) std::cout << "c No filename given, reading from standard input->" << std::endl;
-    parsing::file_read(std::cin, run::solver, objective);
+    if (rs::options.verbosity > 0) std::cout << "c No filename given, reading from standard input->" << std::endl;
+    rs::parsing::file_read(std::cin, rs::run::solver, objective);
   }
 
-  run::solver.initLP(objective);
+  rs::run::solver.initLP(objective);
 
-  run::run(objective);
+  rs::run::run(objective);
 }

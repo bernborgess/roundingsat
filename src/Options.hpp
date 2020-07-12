@@ -34,6 +34,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "aux.hpp"
 #include "quit.hpp"
 
+namespace rs {
+
 struct Options {
   std::string formulaName;
   std::string proofLogName;
@@ -323,3 +325,5 @@ struct Options {
              "int >= 0", bitsLearned);
   }
 };
+
+}  // namespace rs

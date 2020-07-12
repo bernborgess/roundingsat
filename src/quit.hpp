@@ -34,6 +34,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <vector>
 #include "typedefs.hpp"
 
+namespace rs {
+
 class Logger;
 
 namespace quit {
@@ -44,3 +46,5 @@ void exit_UNSAT(const std::vector<bool>& sol, const BigVal& bestObjVal, const st
 void exit_INDETERMINATE(const std::vector<bool>& sol, const std::shared_ptr<Logger>& logger);
 void exit_ERROR(const std::initializer_list<std::string>& messages);
 }  // namespace quit
+
+}  // namespace rs

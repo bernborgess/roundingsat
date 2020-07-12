@@ -38,6 +38,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <unordered_map>
 #include <vector>
 
+namespace rs {
+
 using int128 = __int128;
 // NOTE: boost::multiprecision::int128_t should work too, using a slightly less efficient extra sign bit.
 using int256 = boost::multiprecision::int256_t;
@@ -155,3 +157,5 @@ inline class AsynchronousInterrupt : public std::exception {
  public:
   virtual const char* what() const throw() { return "Program interrupted by user."; }
 } asynchInterrupt;
+
+}  // namespace rs

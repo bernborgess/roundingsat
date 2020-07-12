@@ -33,6 +33,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define EXPANDED(x) STR(x)
 #define STR(x) #x
 
+#define _unused(x) ((void)(x))  // marks variables unused in release mode, use [[maybe_unused]] where possible
+
 #include <sys/resource.h>
 #include <algorithm>
 #include <cassert>
@@ -44,7 +46,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <vector>
 #include "typedefs.hpp"
 
-#define _unused(x) ((void)(x))  // marks variables unused in release mode, use [[maybe_unused]] where possible
+namespace rs {
 
 template <typename T, typename U>
 std::ostream& operator<<(std::ostream& os, const std::pair<T, U>& p) {
@@ -252,3 +254,5 @@ inline int256 pow(const int256& x, unsigned y) {
 }
 
 }  // namespace aux
+
+}  // namespace rs

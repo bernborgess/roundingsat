@@ -31,6 +31,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Constr.hpp"
 #include "Solver.hpp"
 
+namespace rs {
+
 template class Counting<int, long long>;
 template class Counting<long long, int128>;
 template class Counting<int128, int128>;
@@ -648,3 +650,5 @@ bool Watched<CF, DG>::hasCorrectWatches(const Solver& solver) {
   }
   return true;
 }
+
+}  // namespace rs
