@@ -114,6 +114,6 @@ endif()
 add_custom_target(
     testruns
     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/test
-    COMMAND ./run_tests.sh ${testruns_timeout} ${CMAKE_CURRENT_BINARY_DIR}/roundingsat
+    COMMAND ./run_tests.sh ${testruns_timeout} "testruns" ${CMAKE_CURRENT_BINARY_DIR}/roundingsat
 )
 add_dependencies(testruns roundingsat)
