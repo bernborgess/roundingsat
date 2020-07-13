@@ -1,8 +1,5 @@
-# binaries
-*.cbp
-
 # editor
 .idea/*
 
 # soplex
-/soplex-5.0.1.tgz
+/soplex-5.0.1*
