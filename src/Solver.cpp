@@ -213,13 +213,13 @@ CeSuper Solver::runPropagation(bool onlyUnitPropagation) {
       }
     }
   }
-  if (onlyUnitPropagation) return Ce32();
+  if (onlyUnitPropagation) return CeNull();
   if (lpSolver) {
     std::pair<LpStatus, CeSuper> lpResult = lpSolver->checkFeasibility();
     assert((lpResult.first == INFEASIBLE) == (lpResult.second && lpResult.second->hasNegativeSlack(Level)));
     return lpResult.second;
   }
-  return Ce32();
+  return CeNull();
   ;
 }
 
@@ -474,7 +474,7 @@ CeSuper Solver::processLearnedStack() {
     else
       C.setLBD(C.size());  // the LBD of non-asserting constraints is undefined, so we take a safe upper bound
   }
-  return Ce32();
+  return CeNull();
 }
 
 std::pair<ID, ID> Solver::addInputConstraint(CeSuper ce) {
@@ -724,7 +724,7 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
         if (logger) {
           confl->logInconsistency(Level, Pos, stats);
         }
-        return {SolveState::UNSAT, Ce32()};
+        return {SolveState::UNSAT, CeNull()};
       } else if (decisionLevel() >= (int)assumptions_lim.size()) {
         CeSuper analyzed = analyze(confl);
         assert(analyzed);
@@ -749,11 +749,11 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
           reduceDB();
           while (stats.NCONFL >= stats.NCLEANUP * nconfl_to_reduce) nconfl_to_reduce += options.incReduceDB;
           if (lpSolver) lpSolver->inProcess();
-          return {SolveState::INPROCESSED, Ce32()};
+          return {SolveState::INPROCESSED, CeNull()};
         }
         double rest_base = luby(options.rinc, ++stats.NRESTARTS);
         nconfl_to_restart = (long long)rest_base * options.rfirst;
-        return {SolveState::RESTARTED, Ce32()};
+        return {SolveState::RESTARTED, CeNull()};
       }
       Lit next = 0;
       if ((int)assumptions_lim.size() > decisionLevel() + 1) assumptions_lim.resize(decisionLevel() + 1);
@@ -795,7 +795,7 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
         for (Var v = 1; v <= n; ++v) solution[v] = isTrue(Level, v);
         backjumpTo(0);
         assert(checksol(solution));
-        return {SolveState::SAT, Ce32()};
+        return {SolveState::SAT, CeNull()};
       }
       decide(next);
     }

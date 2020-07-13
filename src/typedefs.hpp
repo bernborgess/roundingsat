@@ -113,6 +113,7 @@ using Ce96 = CePtr<ConstrExp96>;
 using Ce128 = CePtr<ConstrExp128>;
 using CeArb = CePtr<ConstrExpArb>;
 using CeSuper = CePtr<ConstrExpSuper>;
+using CeNull = CePtr<ConstrExp32>;
 
 template <typename CF, typename DG>
 struct ConstrSimple;

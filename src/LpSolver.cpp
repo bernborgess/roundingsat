@@ -162,7 +162,7 @@ int LpSolver::getNbRows() const { return lp.numRows(); }
 
 CeSuper LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
   double scale = getScaleFactor(mults, true);
-  if (scale == 0) return Ce32();
+  if (scale == 0) return CeNull();
   assert(scale > 0);
 
   CeArb out = solver.cePools.takeArb();
@@ -381,7 +381,7 @@ std::pair<LpStatus, CeSuper> LpSolver::_checkFeasibility(bool inProcessing) {
   if (options.lpPivotRatio < 0)
     lp.setIntParam(soplex::SoPlex::ITERLIMIT, -1);  // no pivot limit
   else if (options.lpPivotRatio * stats.NCONFL < (inProcessing ? stats.NLPPIVOTSROOT : stats.NLPPIVOTSINTERNAL))
-    return {PIVOTLIMIT, Ce32()};  // pivot ratio exceeded
+    return {PIVOTLIMIT, CeNull()};  // pivot ratio exceeded
   else
     lp.setIntParam(soplex::SoPlex::ITERLIMIT, options.lpPivotBudget * lpPivotMult);
   flushConstraints();
@@ -411,7 +411,7 @@ std::pair<LpStatus, CeSuper> LpSolver::_checkFeasibility(bool inProcessing) {
 
   if (stat == soplex::SPxSolver::Status::ABORT_ITER) {
     lpPivotMult *= 2;  // increase pivot budget when calling the LP solver
-    return {PIVOTLIMIT, Ce32()};
+    return {PIVOTLIMIT, CeNull()};
   }
 
   if (stat == soplex::SPxSolver::Status::OPTIMAL) {
@@ -421,23 +421,23 @@ std::pair<LpStatus, CeSuper> LpSolver::_checkFeasibility(bool inProcessing) {
       resetBasis();
     }
     if (lp.numIterations() == 0) ++stats.NLPNOPIVOT;
-    return {OPTIMAL, Ce32()};
+    return {OPTIMAL, CeNull()};
   }
 
   if (stat == soplex::SPxSolver::Status::ABORT_CYCLING) {
     ++stats.NLPCYCLING;
     resetBasis();
-    return {UNDETERMINED, Ce32()};
+    return {UNDETERMINED, CeNull()};
   }
   if (stat == soplex::SPxSolver::Status::SINGULAR) {
     ++stats.NLPSINGULAR;
     resetBasis();
-    return {UNDETERMINED, Ce32()};
+    return {UNDETERMINED, CeNull()};
   }
   if (stat != soplex::SPxSolver::Status::INFEASIBLE) {
     ++stats.NLPOTHER;
     resetBasis();
-    return {UNDETERMINED, Ce32()};
+    return {UNDETERMINED, CeNull()};
   }
 
   // Infeasible LP :)
@@ -447,14 +447,14 @@ std::pair<LpStatus, CeSuper> LpSolver::_checkFeasibility(bool inProcessing) {
   if (!lp.getDualFarkas(lpMultipliers)) {
     ++stats.NLPNOFARKAS;
     resetBasis();
-    return {UNDETERMINED, Ce32()};
+    return {UNDETERMINED, CeNull()};
   }
 
   CeSuper confl = createLinearCombinationFarkas(lpMultipliers);
-  if (!confl) return {UNDETERMINED, Ce32()};
+  if (!confl) return {UNDETERMINED, CeNull()};
   solver.learnConstraint(confl, Origin::FARKAS);
   if (confl->hasNegativeSlack(solver.getLevel())) return {INFEASIBLE, confl};
-  return {UNDETERMINED, Ce32()};
+  return {UNDETERMINED, CeNull()};
 }
 
 void LpSolver::_inProcess() {
