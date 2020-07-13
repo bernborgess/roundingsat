@@ -106,7 +106,6 @@ void parsing::opb_read(std::istream& in, Solver& solver, CeArb objective) {
       }
     }
   }
-  solver.setNbOrigVars(solver.getNbVars());
 }
 
 void parsing::wcnf_read(std::istream& in, long long top, Solver& solver, CeArb objective) {
@@ -126,14 +125,13 @@ void parsing::wcnf_read(std::istream& in, long long top, Solver& solver, CeArb o
       while (is >> l, l) input->addLhs(1, l);
       if (weight < top) {  // soft clause
         if (weight < 0) quit::exit_ERROR({"Negative clause weight: ", std::to_string(weight)});
-        solver.setNbVars(solver.getNbVars() + 1);  // increases n to n+1
+        solver.setNbVars(solver.getNbVars() + 1, true);  // increases n to n+1
         objective->addLhs(weight, solver.getNbVars());
         input->addLhs(1, solver.getNbVars());
       }  // else hard clause
       if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
     }
   }
-  solver.setNbOrigVars(solver.getNbVars() - objective->vars.size());
 }
 
 void parsing::cnf_read(std::istream& in, Solver& solver) {
@@ -150,7 +148,6 @@ void parsing::cnf_read(std::istream& in, Solver& solver) {
       if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
     }
   }
-  solver.setNbOrigVars(solver.getNbVars());
 }
 
 void parsing::file_read(std::istream& in, Solver& solver, CeArb objective) {
@@ -163,7 +160,7 @@ void parsing::file_read(std::istream& in, Solver& solver, CeArb objective) {
       is >> type;
       long long nb;
       is >> nb;
-      solver.setNbVars(nb);
+      solver.setNbVars(nb, true);
       if (type == "cnf") {
         cnf_read(in, solver);
       } else if (type == "wcnf") {
@@ -176,7 +173,7 @@ void parsing::file_read(std::istream& in, Solver& solver, CeArb objective) {
       std::istringstream is(line.substr(13));
       long long nb;
       is >> nb;
-      solver.setNbVars(nb);
+      solver.setNbVars(nb, true);
       opb_read(in, solver, objective);
     } else
       quit::exit_ERROR({"No supported format [opb, cnf, wcnf] detected."});

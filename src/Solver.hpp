@@ -100,9 +100,8 @@ class Solver {
   void initLP(const CeArb objective);
 
   int getNbVars() const { return n; }
-  void setNbVars(long long nvars);
+  void setNbVars(long long nvars, bool orig = false);
   int getNbOrigVars() const { return orig_n; }
-  void setNbOrigVars(int o_n);
 
   const IntVecIt& getLevel() const { return Level; }
   const std::vector<int>& getPos() const { return Pos; }

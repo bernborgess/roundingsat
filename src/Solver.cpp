@@ -43,7 +43,7 @@ Solver::Solver() : order_heap(activity) {
   ca.capacity(1024 * 1024);  // 4MB
 }
 
-void Solver::setNbVars(long long nvars) {
+void Solver::setNbVars(long long nvars, bool orig) {
   assert(nvars > 0);
   assert(nvars < INF);
   if (nvars <= n) return;
@@ -58,13 +58,13 @@ void Solver::setNbVars(long long nvars) {
   for (Var v = n + 1; v <= nvars; ++v) phase[v] = -v, order_heap.insert(v);
   if (lpSolver) lpSolver->setNbVariables(nvars + 1);
   n = nvars;
-  stats.NAUXVARS = n - orig_n;
-}
-
-void Solver::setNbOrigVars(int o_n) {
-  orig_n = o_n;
-  stats.NORIGVARS = n;
-  stats.NAUXVARS = n - orig_n;
+  if (orig) {
+    orig_n = n;
+    stats.NORIGVARS = n;
+    stats.NAUXVARS = 0;
+  } else {
+    stats.NAUXVARS = n - orig_n;
+  }
 }
 
 void Solver::init() {
