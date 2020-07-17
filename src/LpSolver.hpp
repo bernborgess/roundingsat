@@ -155,7 +155,12 @@ class LpSolver {
 // TODO: check correspondence to above
 class LpSolver {
  public:
-  LpSolver([[maybe_unused]] Solver& slvr, [[maybe_unused]] const CeArb objective){};
+  // LpSolver([[maybe_unused]] Solver& slvr, [[maybe_unused]] const CeArb objective){
+  // See https://stackoverflow.com/questions/52263141/maybe-unused-and-constructors
+  LpSolver(Solver& slvr, const CeArb objective) {
+    _unused(slvr);
+    _unused(objective);
+  };
   void setNbVariables([[maybe_unused]] int n){};
 
   std::pair<LpStatus, CeSuper> checkFeasibility([[maybe_unused]] bool inProcessing = false) {
