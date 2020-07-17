@@ -38,7 +38,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 namespace rs {
 
 struct ConstrExpSuper;
-struct ConstrExpPools;
+class ConstrExpPools;
 
 struct ConstrSimpleSuper {
   Origin orig = Origin::UNKNOWN;
@@ -90,6 +90,8 @@ struct ConstrSimple final : public ConstrSimpleSuper {
   void copyTo(ConstrSimple128& out) const { copy_(out); }
   void copyTo(ConstrSimpleArb& out) const { copy_(out); }
 };
+
+std::ostream& operator<<(std::ostream& os, const __int128& x);
 
 template <typename CF, typename DG>
 inline std::ostream& operator<<(std::ostream& o, const ConstrSimple<CF, DG>& sc) {

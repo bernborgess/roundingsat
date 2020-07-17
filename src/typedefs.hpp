@@ -106,7 +106,7 @@ using ConstrExpArb = ConstrExp<bigint, bigint>;
 struct ConstrExpSuper;
 
 template <typename CE>
-class CePtr;
+struct CePtr;
 using Ce32 = CePtr<ConstrExp32>;
 using Ce64 = CePtr<ConstrExp64>;
 using Ce96 = CePtr<ConstrExp96>;

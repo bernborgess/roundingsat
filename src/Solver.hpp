@@ -39,20 +39,20 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 namespace rs {
 
-class Logger;
+struct Logger;
 
 enum SolveState { SAT, UNSAT, INCONSISTENT, INPROCESSED, RESTARTED };
 
 class Solver {
   friend class LpSolver;
-  friend class Constr;
-  friend class Clause;
-  friend class Cardinality;
+  friend struct Constr;
+  friend struct Clause;
+  friend struct Cardinality;
   template <typename CF, typename DG>
-  friend class Counting;
+  friend struct Counting;
   template <typename CF, typename DG>
-  friend class Watched;
-  friend class Arbitrary;
+  friend struct Watched;
+  friend struct Arbitrary;
 
   // ---------------------------------------------------------------------
   // Members

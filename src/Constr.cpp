@@ -33,14 +33,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 namespace rs {
 
-template class Counting<int, long long>;
-template class Counting<long long, int128>;
-template class Counting<int128, int128>;
-
-template class Watched<int, long long>;
-template class Watched<long long, int128>;
-template class Watched<int128, int128>;
-
 void Clause::initializeWatches(CRef cr, Solver& solver) {
   auto& Level = solver.Level;
   auto& adj = solver.adj;
@@ -650,5 +642,13 @@ bool Watched<CF, DG>::hasCorrectWatches(const Solver& solver) {
   }
   return true;
 }
+
+template struct Counting<int, long long>;
+template struct Counting<long long, int128>;
+template struct Counting<int128, int128>;
+
+template struct Watched<int, long long>;
+template struct Watched<long long, int128>;
+template struct Watched<int128, int128>;
 
 }  // namespace rs

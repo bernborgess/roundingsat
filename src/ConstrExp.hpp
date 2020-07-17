@@ -106,7 +106,7 @@ struct CePtr {
 };
 
 struct ConstraintAllocator;
-struct ConstrExpPools;
+class ConstrExpPools;
 class Solver;
 
 struct ConstrExpSuper {
@@ -318,7 +318,7 @@ struct ConstrExp final : public ConstrExpSuper {
     for (Var v : c->vars) {
       assert(v < (Var)coefs.size());
       assert(v > 0);
-      SMALL val = cmult * c->coefs[v];
+      SMALL val = static_cast<SMALL>(cmult * c->coefs[v]);
       if (!used[v]) {
         assert(coefs[v] == 0);
         vars.push_back(v);

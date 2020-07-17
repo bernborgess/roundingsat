@@ -37,12 +37,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 namespace rs {
 
-template class ConstrExp<int, long long>;
-template class ConstrExp<long long, int128>;
-template class ConstrExp<int128, int128>;
-template class ConstrExp<int128, int256>;
-template class ConstrExp<bigint, bigint>;
-
 template <typename SMALL, typename LARGE>
 ConstrExp<SMALL, LARGE>::ConstrExp(ConstrExpPool<ConstrExp<SMALL, LARGE>>& cep) : pool(cep) {
   reset();
@@ -1082,6 +1076,12 @@ void ConstrExp<SMALL, LARGE>::resolveWith(CeArb c, Lit l, IntSet* actSet, const 
                                           const std::vector<int>& Pos) {
   genericResolve(c, l, actSet, Level, Pos);
 }
+
+template struct ConstrExp<int, long long>;
+template struct ConstrExp<long long, int128>;
+template struct ConstrExp<int128, int128>;
+template struct ConstrExp<int128, int256>;
+template struct ConstrExp<bigint, bigint>;
 
 void ConstrExpPools::resize(size_t newn) {
   ce32s.resize(newn);

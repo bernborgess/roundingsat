@@ -70,10 +70,10 @@ void ConstrSimple<CF, DG>::toNormalFormVar() {
   }
 }
 
-template class ConstrSimple<int, long long>;
-template class ConstrSimple<long long, int128>;
-template class ConstrSimple<int128, int128>;
-template class ConstrSimple<int128, int256>;
-template class ConstrSimple<bigint, bigint>;
+template struct ConstrSimple<int, long long>;
+template struct ConstrSimple<long long, int128>;
+template struct ConstrSimple<int128, int128>;
+template struct ConstrSimple<int128, int256>;
+template struct ConstrSimple<bigint, bigint>;
 
 }  // namespace rs

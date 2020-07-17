@@ -39,6 +39,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #if WITHSOPLEX
 
 #pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunknown-warning-option"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wstrict-overflow"
 #pragma GCC diagnostic ignored "-Wdeprecated-copy"
@@ -91,7 +92,7 @@ std::ostream& operator<<(std::ostream& o, const CandidateCut& cc);
 class Solver;
 class LpSolver {
   friend class Solver;
-  friend class CandidateCut;
+  friend struct CandidateCut;
 
   soplex::SoPlex lp;
   Solver& solver;

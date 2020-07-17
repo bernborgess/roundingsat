@@ -64,7 +64,7 @@ std::ostream& operator<<(std::ostream& os, const std::vector<T>& m) {
   return os;
 }
 
-inline std::ostream& operator<<(std::ostream& os, __int128 x) {
+inline std::ostream& operator<<(std::ostream& os, const __int128& x) {
   if (x < 0) return os << "-" << -x;
   if (x < 10) return os << (char)(x + '0');
   return os << x / 10 << (char)(x % 10 + '0');
