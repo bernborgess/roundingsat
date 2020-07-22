@@ -281,7 +281,10 @@ CeSuper Solver::analyze(CeSuper conflict) {
 
   assert(actSet.size() == 0);  // will hold the literals that need their activity bumped
   for (Var v : confl->vars) {
-    if (!options.bumpOnlyFalse || isFalse(Level, confl->getLit(v))) actSet.add(v);
+    if (options.bumpLits)
+      actSet.add(confl->getLit(v));
+    else if (!options.bumpOnlyFalse || isFalse(Level, confl->getLit(v)))
+      actSet.add(v);
   }
   while (decisionLevel() > 0) {
     if (asynch_interrupt) throw asynchInterrupt;

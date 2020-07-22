@@ -72,6 +72,7 @@ struct Options {
 
   bool bumpOnlyFalse = false;
   bool bumpCanceling = true;
+  bool bumpLits = true;
 
   int bitsOverflow = 62;
   int bitsReduced = 29;
@@ -103,6 +104,7 @@ struct Options {
     CAWEAKENNONIMPLYING,
     BUMPONLYFALSE,
     BUMPCANCELING,
+    BUMPLITS,
     BITSOVERFLOW,
     BITSREDUCED,
     BITSLEARNED,
@@ -133,6 +135,7 @@ struct Options {
       "ca-weaken-nonimplying",
       "bump-only-false",
       "bump-canceling",
+      "bump-lits",
       "bits-overflow",
       "bits-reduced",
       "bits-learned",
@@ -240,6 +243,8 @@ struct Options {
     getOptionNum(
         opt_val, opts[OPTIONS::BUMPCANCELING], [](double x) -> bool { return x == 0 || x == 1; }, bumpCanceling);
     getOptionNum(
+        opt_val, opts[OPTIONS::BUMPLITS], [](double x) -> bool { return x == 0 || x == 1; }, bumpLits);
+    getOptionNum(
         opt_val, opts[OPTIONS::BITSOVERFLOW], [](double x) -> bool { return x >= 0; }, bitsOverflow);
     getOptionNum(
         opt_val, opts[OPTIONS::BITSREDUCED], [](double x) -> bool { return x >= 0; }, bitsReduced);
@@ -315,6 +320,9 @@ struct Options {
              bumpOnlyFalse);
     usageVal(opts[OPTIONS::BUMPCANCELING],
              "Bump activity of literals encountered during conflict analysis when canceling", "0 or 1", bumpCanceling);
+    usageVal(opts[OPTIONS::BUMPLITS],
+             "Bump activity of literals encountered during conflict analysis, twice when occurring with opposing sign",
+             "0 or 1", bumpLits);
     usageVal(opts[OPTIONS::BITSOVERFLOW], "Bit width of maximum coefficient during conflict analysis calculations",
              "int >= 0", bitsOverflow);
     usageVal(opts[OPTIONS::BITSREDUCED],

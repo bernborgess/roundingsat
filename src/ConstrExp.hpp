@@ -405,8 +405,12 @@ struct ConstrExp final : public ConstrExpSuper {
     if (actSet != nullptr) {
       for (Var v : reason->vars) {
         Lit l = reason->getLit(v);
-        if (!options.bumpOnlyFalse || isFalse(Level, l)) actSet->add(v);
-        if (options.bumpCanceling && getLit(v) == -l) actSet->add(-v);
+        if (options.bumpLits) {
+          actSet->add(l);
+        } else {
+          if (!options.bumpOnlyFalse || isFalse(Level, l)) actSet->add(v);
+          if (options.bumpCanceling && getLit(v) == -l) actSet->add(-v);
+        }
       }
     }
     SMALL reason_coef_l = static_cast<SMALL>(reason->getCoef(l));  // NOTE: SMALL >= CF

@@ -974,9 +974,13 @@ void ConstrExp<SMALL, LARGE>::resolveWith(const Clause& c, Lit l, IntSet* actSet
   if (actSet != nullptr) {
     for (unsigned int i = 0; i < c.size(); ++i) {
       Lit l = c.data[i];
-      Var v = toVar(l);
-      if (!options.bumpOnlyFalse || isFalse(level, l)) actSet->add(v);
-      if (options.bumpCanceling && getLit(v) == -l) actSet->add(-v);
+      if (options.bumpLits) {
+        actSet->add(l);
+      } else {
+        Var v = toVar(l);
+        if (!options.bumpOnlyFalse || isFalse(level, l)) actSet->add(v);
+        if (options.bumpCanceling && getLit(v) == -l) actSet->add(-v);
+      }
     }
   }
 
@@ -1017,9 +1021,13 @@ void ConstrExp<SMALL, LARGE>::resolveWith(const Cardinality& c, Lit l, IntSet* a
   if (actSet != nullptr) {
     for (unsigned int i = 0; i < c.size(); ++i) {
       Lit l = c.data[i];
-      Var v = toVar(l);
-      if (!options.bumpOnlyFalse || isFalse(level, l)) actSet->add(v);
-      if (options.bumpCanceling && getLit(v) == -l) actSet->add(-v);
+      if (options.bumpLits) {
+        actSet->add(l);
+      } else {
+        Var v = toVar(l);
+        if (!options.bumpOnlyFalse || isFalse(level, l)) actSet->add(v);
+        if (options.bumpCanceling && getLit(v) == -l) actSet->add(-v);
+      }
     }
   }
 
