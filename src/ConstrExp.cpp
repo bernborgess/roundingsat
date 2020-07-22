@@ -79,9 +79,9 @@ CRef ConstrExp<SMALL, LARGE>::toConstr(ConstraintAllocator& ca, bool locked, ID 
 
   CRef result = CRef{ca.at};
   LARGE maxCoef = aux::abs(coefs[vars[0]]);
-  if (options.clauseProp && isClause()) {
+  if (options.propClause && isClause()) {
     ca.alloc<Clause>(vars.size())->initialize(this, locked, id);
-  } else if (options.cardProp && maxCoef == 1) {
+  } else if (options.propCard && maxCoef == 1) {
     ca.alloc<Cardinality>(vars.size())->initialize(this, locked, id);
   } else {
     if (maxCoef > limit96) {
@@ -90,7 +90,8 @@ CRef ConstrExp<SMALL, LARGE>::toConstr(ConstraintAllocator& ca, bool locked, ID 
       LARGE watchSum = -degree;
       unsigned int minWatches = 1;  // sorted per decreasing coefs, so we can skip the first, largest coef
       for (; minWatches < vars.size() && watchSum < 0; ++minWatches) watchSum += aux::abs(coefs[vars[minWatches]]);
-      bool useCounting = options.countingProp == 1 || options.countingProp > (1 - minWatches / (double)vars.size());
+      bool useCounting =
+          options.propCounting.get() == 1 || options.propCounting.get() > (1 - minWatches / (double)vars.size());
       if (maxCoef <= limit32) {
         if (useCounting) {
           ca.alloc<Counting32>(vars.size())->initialize(this, locked, id);

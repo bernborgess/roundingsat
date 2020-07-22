@@ -68,7 +68,7 @@ void Solver::setNbVars(long long nvars, bool orig) {
 }
 
 void Solver::init() {
-  if (!options.proofLogName.empty()) logger = std::make_shared<Logger>(options.proofLogName);
+  if (!options.proofLog.get().empty()) logger = std::make_shared<Logger>(options.proofLog.get());
   cePools.initializeLogging(logger);
 }
 
@@ -495,7 +495,7 @@ std::pair<ID, ID> Solver::addInputConstraint(CeSuper ce) {
   }
 
   if (ce->hasNegativeSlack(Level)) {
-    if (options.verbosity > 0) puts("c Inconsistent input constraint");
+    if (options.verbosity.get() > 0) puts("c Inconsistent input constraint");
     if (logger) ce->logInconsistency(Level, Pos, stats);
     assert(decisionLevel() == 0);
     return {input, ID_Unsat};
@@ -505,7 +505,7 @@ std::pair<ID, ID> Solver::addInputConstraint(CeSuper ce) {
   CeSuper confl = runPropagation(true);
   if (confl) {
     assert(confl->hasNegativeSlack(Level));
-    if (options.verbosity > 0) puts("c Input conflict");
+    if (options.verbosity.get() > 0) puts("c Input conflict");
     if (logger) confl->logInconsistency(Level, Pos, stats);
     assert(decisionLevel() == 0);
     return {input, ID_Unsat};
@@ -562,7 +562,7 @@ void Solver::dropExternal(ID id, bool erasable, bool forceDelete) {
 // only place where constraints are deleted.
 void Solver::garbage_collect() {
   assert(decisionLevel() == 0);  // so we don't need to update the pointer of Reason<CRef>
-  if (options.verbosity > 0) puts("c GARBAGE COLLECT");
+  if (options.verbosity.get() > 0) puts("c GARBAGE COLLECT");
   for (Lit l = -n; l <= n; ++l)
     for (int i = 0; i < (int)adj[l].size(); ++i) {
       if (ca[adj[l][i].cref].isMarkedForDelete()) aux::swapErase(adj[l], i--);
@@ -712,9 +712,9 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
       cDecayActivity();
       stats.NCONFL++;
       nconfl_to_restart--;
-      if (stats.NCONFL % 1000 == 0 && options.verbosity > 0) {
+      if (stats.NCONFL % 1000 == 0 && options.verbosity.get() > 0) {
         printf("c #Conflicts: %10lld | #Constraints: %10lld\n", stats.NCONFL, (long long)constraints.size());
-        if (options.verbosity > 2) {
+        if (options.verbosity.get() > 2) {
           // memory usage
           std::cout << "c total constraint space: " << ca.cap * 4 / 1024. / 1024. << "MB" << std::endl;
           std::cout << "c total #watches: ";
@@ -748,14 +748,14 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
         backjumpTo(0);
         if (stats.NCONFL >= (stats.NCLEANUP + 1) * nconfl_to_reduce) {
           ++stats.NCLEANUP;
-          if (options.verbosity > 0) puts("c INPROCESSING");
+          if (options.verbosity.get() > 0) puts("c INPROCESSING");
           reduceDB();
           while (stats.NCONFL >= stats.NCLEANUP * nconfl_to_reduce) nconfl_to_reduce += options.incReduceDB;
           if (lpSolver) lpSolver->inProcess();
           return {SolveState::INPROCESSED, CeNull()};
         }
-        double rest_base = luby(options.rinc, ++stats.NRESTARTS);
-        nconfl_to_restart = (long long)rest_base * options.rfirst;
+        double rest_base = luby(options.rinc.get(), ++stats.NRESTARTS);
+        nconfl_to_restart = (long long)rest_base * options.rfirst.get();
         return {SolveState::RESTARTED, CeNull()};
       }
       Lit next = 0;

@@ -105,14 +105,14 @@ std::ostream& operator<<(std::ostream& o, const CandidateCut& cc) {
 LpSolver::LpSolver(Solver& slvr, const CeArb obj) : solver(slvr) {
   assert(INFTY == lp.realParam(lp.INFTY));
 
-  if (options.verbosity > 1) std::cout << "c Initializing LP" << std::endl;
+  if (options.verbosity.get() > 1) std::cout << "c Initializing LP" << std::endl;
   setNbVariables(solver.getNbVars() + 1);
   lp.setIntParam(soplex::SoPlex::SYNCMODE, soplex::SoPlex::SYNCMODE_ONLYREAL);
   lp.setIntParam(soplex::SoPlex::SOLVEMODE, soplex::SoPlex::SOLVEMODE_REAL);
   lp.setIntParam(soplex::SoPlex::CHECKMODE, soplex::SoPlex::CHECKMODE_REAL);
   lp.setIntParam(soplex::SoPlex::SIMPLIFIER, soplex::SoPlex::SIMPLIFIER_OFF);
   lp.setIntParam(soplex::SoPlex::OBJSENSE, soplex::SoPlex::OBJSENSE_MINIMIZE);
-  lp.setIntParam(soplex::SoPlex::VERBOSITY, options.verbosity);
+  lp.setIntParam(soplex::SoPlex::VERBOSITY, options.verbosity.get());
   lp.setRandomSeed(0);
 
   setNbVariables(slvr.getNbVars());
@@ -137,7 +137,7 @@ LpSolver::LpSolver(Solver& slvr, const CeArb obj) : solver(slvr) {
     for (int v = 1; v < getNbVariables(); ++v) objective[v] = 1;  // add default objective function
   lp.changeObjReal(objective);
 
-  if (options.verbosity > 1) std::cout << "c Finished initializing LP" << std::endl;
+  if (options.verbosity.get() > 1) std::cout << "c Finished initializing LP" << std::endl;
 }
 
 void LpSolver::setNbVariables(int n) {
@@ -403,7 +403,7 @@ std::pair<LpStatus, CeSuper> LpSolver::_checkFeasibility(bool inProcessing) {
     stats.NLPPIVOTSINTERNAL += lp.numIterations();
   stats.LPSOLVETIME += lp.solveTime();
 
-  if (options.verbosity > 1)
+  if (options.verbosity.get() > 1)
     std::cout << "c " << (inProcessing ? "root" : "internal") << " LP status: " << stat << std::endl;
   assert(stat != soplex::SPxSolver::Status::NO_PROBLEM);
   assert(stat <= soplex::SPxSolver::Status::OPTIMAL_UNSCALED_VIOLATIONS);
@@ -472,7 +472,7 @@ void LpSolver::_inProcess() {
   lp.getSlacksReal(lpSlackSolution);
   assert((int)solver.phase.size() == getNbVariables());
   for (Var v = 1; v < getNbVariables(); ++v) solver.phase[v] = (lpSolution[v] <= 0.5) ? -v : v;
-  if (options.verbosity > 0) std::cout << "c rational objective " << lp.objValueReal() << std::endl;
+  if (options.verbosity.get() > 0) std::cout << "c rational objective " << lp.objValueReal() << std::endl;
   candidateCuts.clear();
   if (solver.logger && (options.addGomoryCuts || options.addLearnedCuts)) solver.logger->logComment("cutting", stats);
   if (options.addLearnedCuts) constructLearnedCandidates();  // first to avoid adding gomory cuts twice

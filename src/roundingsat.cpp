@@ -62,11 +62,14 @@ int main(int argc, char** argv) {
   signal(SIGTERM, SIGINT_interrupt);
   signal(SIGXCPU, SIGINT_interrupt);
 
-  std::cout << "c RoundingSat 2\n";
-  std::cout << "c branch " << EXPANDED(GIT_BRANCH) << "\n";
-  std::cout << "c commit " << EXPANDED(GIT_COMMIT_HASH) << std::endl;
-
   rs::options.parseCommandLine(argc, argv);
+
+  if (rs::options.verbosity.get() > 0) {
+    std::cout << "c RoundingSat 2\n";
+    std::cout << "c branch " << EXPANDED(GIT_BRANCH) << "\n";
+    std::cout << "c commit " << EXPANDED(GIT_COMMIT_HASH) << std::endl;
+  }
+
   rs::run::solver.init();
   rs::CeArb objective = rs::run::solver.cePools.takeArb();
 
@@ -75,7 +78,7 @@ int main(int argc, char** argv) {
     if (!fin) rs::quit::exit_ERROR({"Could not open ", rs::options.formulaName});
     rs::parsing::file_read(fin, rs::run::solver, objective);
   } else {
-    if (rs::options.verbosity > 0) std::cout << "c No filename given, reading from standard input->" << std::endl;
+    if (rs::options.verbosity.get() > 0) std::cout << "c No filename given, reading from standard input->" << std::endl;
     rs::parsing::file_read(std::cin, rs::run::solver, objective);
   }
 

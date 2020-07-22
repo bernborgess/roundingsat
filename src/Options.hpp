@@ -36,24 +36,227 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 namespace rs {
 
-struct Options {
-  std::string formulaName;
-  std::string proofLogName;
-  bool printSol = false;
-  enum OPTMODE { LINEAR, COREGUIDED, LAZYCOREGUIDED, HYBRID, LAZYHYBRID };
-  std::vector<std::string> optModeMap = {"linear", "core-guided", "lazy-core-guided", "hybrid", "lazy-hybrid"};
-  OPTMODE optMode = LAZYHYBRID;
+class Option {
+ protected:
+  std::string name = "";
+  std::string description = "";
 
-  int verbosity = 1;
-  bool clauseProp = true;
-  bool cardProp = true;
-  bool idxProp = true;
-  bool supProp = true;
-  float countingProp = 0;
+ public:
+  Option(const std::string& n, const std::string& d) : name(n), description(d) {}
+
+  virtual void printUsage(int colwidth) const = 0;
+  virtual bool parse(const std::unordered_map<std::string, std::string>& optVals) = 0;  // TODO: string argument
+};
+
+class VoidOption : public Option {
+  bool val = false;
+
+ public:
+  VoidOption(const std::string& n, const std::string& d) : Option{n, d} {}
+
+  explicit operator bool() const { return val; }
+
+  void printUsage(int colwidth) const override {
+    std::cout << " --" << name;
+    for (int i = name.size(); i < colwidth + 3; ++i) std::cout << " ";
+    std::cout << description << "\n";
+  }
+
+  bool parse(const std::unordered_map<std::string, std::string>& optVals) override {
+    val = true;
+    return (optVals.count(name));
+  }
+};
+
+class BoolOption : public Option {
+  bool val = false;
+
+ public:
+  BoolOption(const std::string& n, const std::string& d, bool v) : Option{n, d}, val(v) {}
+
+  explicit operator bool() const { return val; }
+
+  void printUsage(int colwidth) const override {
+    std::cout << " --" << name << "=? ";
+    for (int i = name.size(); i < colwidth; ++i) std::cout << " ";
+    std::cout << description << " (0 or 1; default " << val << ")\n";
+  }
+
+  bool parse(const std::unordered_map<std::string, std::string>& optVals) override {
+    if (!optVals.count(name)) return false;
+    const std::string& v = optVals.at(name);
+    try {
+      val = std::stod(v);
+    } catch (const std::invalid_argument& ia) {
+      quit::exit_ERROR({"Invalid value for ", name, ": ", v, ".\nCheck usage with --help option."});
+    }
+    if (val != 0 && val != 1)
+      quit::exit_ERROR({"Invalid value for ", name, ": ", v, ".\nCheck usage with --help option."});
+    return true;
+  }
+};
+
+class NumOption : public Option {
+  double val;
+  std::string checkDescription;
+  std::function<bool(double)> check;
+
+ public:
+  NumOption(const std::string& n, const std::string& d, double v, const std::string& cd,
+            const std::function<bool(double)>& c)
+      : Option{n, d}, val(v), checkDescription(cd), check(c) {}
+
+  double get() const { return val; }
+
+  void printUsage(int colwidth) const override {
+    std::cout << " --" << name << "=? ";
+    for (int i = name.size(); i < colwidth; ++i) std::cout << " ";
+    std::cout << description << " (" << checkDescription << "; default " << val << ")\n";
+  }
+
+  bool parse(const std::unordered_map<std::string, std::string>& optVals) override {
+    if (!optVals.count(name)) return false;
+    const std::string& v = optVals.at(name);
+    try {
+      val = std::stod(v);
+    } catch (const std::invalid_argument& ia) {
+      quit::exit_ERROR({"Invalid value for ", name, ": ", v, ".\nCheck usage with --help option."});
+    }
+    if (!check(val)) quit::exit_ERROR({"Invalid value for ", name, ": ", v, ".\nCheck usage with --help option."});
+    return true;
+  }
+};
+
+class EnumOption : public Option {
+  std::string val;
+  std::vector<std::string> values;
+
+ public:
+  EnumOption(const std::string& n, const std::string& d, const std::string& v, const std::vector<std::string>& vs)
+      : Option{n, d}, val(v), values(vs) {}
+
+  void printUsage(int colwidth) const override {
+    std::cout << " --" << name << "=? ";
+    for (int i = name.size(); i < colwidth; ++i) std::cout << " ";
+    std::cout << description << " (";
+    for (int i = 0; i < (int)values.size(); ++i) {
+      if (i > 0) std::cout << ", ";
+      if (values[i] == val) std::cout << "default=";
+      std::cout << values[i];
+    }
+    std::cout << ")\n";
+  }
+
+  bool parse(const std::unordered_map<std::string, std::string>& optVals) override {
+    if (!optVals.count(name)) return false;
+    const std::string& v = optVals.at(name);
+    if (std::find(std::begin(values), std::end(values), v) == std::end(values))
+      quit::exit_ERROR({"Invalid value for ", name, ": ", v, ".\nCheck usage with --help option."});
+    val = v;
+    return true;
+  }
+
+  bool is(const std::string& v) const {
+    assert(std::find(std::begin(values), std::end(values), v) != std::end(values));
+    return val == v;
+  }
+};
+
+class StringOption : public Option {
+  std::string val;
+  std::string checkDescription;
+  std::function<bool(const std::string&)> check;
+
+ public:
+  StringOption(const std::string& n, const std::string& d, const std::string& v, const std::string& cd,
+               const std::function<bool(const std::string&)>& c)
+      : Option{n, d}, val(v), checkDescription(cd), check(c) {}
+
+  void printUsage(int colwidth) const override {
+    std::cout << " --" << name << "=? ";
+    for (int i = name.size(); i < colwidth; ++i) std::cout << " ";
+    std::cout << description << " (" << checkDescription << "; default " << val << ")\n";
+  }
+
+  bool parse(const std::unordered_map<std::string, std::string>& optVals) override {
+    if (!optVals.count(name)) return false;
+    val = optVals.at(name);
+    if (!check(val)) quit::exit_ERROR({"Invalid value for ", name, ": ", val, ".\nCheck usage with --help option."});
+    return true;
+  }
+
+  const std::string& get() const { return val; }
+};
+
+enum OPTIONS {
+  HELP,
+  PRINTSOL,
+  VERBOSITY,
+  VARDECAY,
+  RINC,
+  RFIRST,
+  OPTMODE,
+  PROPCOUNTING,
+  PROPCLAUSE,
+  PROPCARD,
+  PROPIDX,
+  PROPSUP,
+  PROOFLOG,
+  LP,
+  LPBUDGET,
+  LPCUTGOMORY,
+  LPCUTLEARNED,
+  LPINTOLERANCE,
+  LPMAXCUTCOS,
+  LPGOMCUTLIM,
+  CASLACKDIV,
+  CAWEAKENFULL,
+  CAWEAKENNONIMPLYING,
+  BUMPONLYFALSE,
+  BUMPCANCELING,
+  BUMPLITS,
+  BITSOVERFLOW,
+  BITSREDUCED,
+  BITSLEARNED,
+};
+
+struct Options {
+  VoidOption help{"help", "Print this help message"};
+  BoolOption printSol{"print-sol", "Print the solution if found", 0};
+  NumOption verbosity{"verbosity", "Verbosity of the output", 1, "0 =< int",
+                      [](double x) -> bool { return aux::abs(x) == x && x >= 0; }};
+  NumOption varDecay{"var-decay", "VSIDS variable decay factor", 0.95, "0.5 <= float < 1",
+                     [](double x) -> bool { return 0.5 <= x && x < 1; }};
+  NumOption rinc{"rinc", "Base of the Luby restart sequence", 2, "1 =< float", [](double x) -> bool { return 1 <= x; }};
+  NumOption rfirst{"rfirst", "Interval of the Luby restart sequence", 100, "1 =< int",
+                   [](double x) -> bool { return aux::abs(x) == x && x >= 1; }};
+  EnumOption optMode{"opt-mode",
+                     "Optimization mode",
+                     "lazy-hybrid",
+                     {"linear", "core-guided", "lazy-core-guided", "hybrid", "lazy-hybrid"}};
+  NumOption propCounting{"prop-counting", "Counting propagation instead of watched propagation", 0,
+                         "0 (no counting) =< float =< 1 (always counting)",
+                         [](double x) -> bool { return x >= 0 || x <= 1; }};
+  BoolOption propClause{"prop-clause", "Optimized two-watched propagation for clauses", 1};
+  BoolOption propCard{"prop-card", "Optimized two-watched propagation for clauses", 1};
+  BoolOption propIdx{"prop-idx", "Optimize index of watches during propagation", 1};
+  BoolOption propSup{"prop-sup", "Avoid superfluous watch checks", 1};
+  StringOption proofLog{"proof-log", "Filename for the proof logs", "", "/path/to/file",
+                        [](const std::string&) -> bool { return true; }};
+
+  std::vector<Option*> options;
+
+  Options() {
+    options = {
+        &help,         &printSol,   &verbosity, &varDecay, &rinc,    &rfirst,   &optMode,
+        &propCounting, &propClause, &propCard,  &propIdx,  &propSup, &proofLog,
+    };
+  }
+
+  std::string formulaName;
+
   int resize_factor = 2;
 
-  double rinc = 2;
-  long long rfirst = 100;
   long long incReduceDB = 100;
   float v_vsids_decay = 0.95;
   float c_vsids_decay = 0.999;
@@ -77,38 +280,8 @@ struct Options {
   int bitsOverflow = 62;
   int bitsReduced = 29;
   int bitsLearned = 29;
+  int bitsInput = 0;
 
-  enum OPTIONS {
-    HELP,
-    PRINTSOL,
-    VERBOSITY,
-    VARDECAY,
-    RINC,
-    RFIRST,
-    OPTMODE,
-    PROPCOUNTING,
-    PROPCLAUSE,
-    PROPCARD,
-    PROPIDX,
-    PROPSUP,
-    PROOFLOG,
-    LP,
-    LPBUDGET,
-    LPCUTGOMORY,
-    LPCUTLEARNED,
-    LPINTOLERANCE,
-    LPMAXCUTCOS,
-    LPGOMCUTLIM,
-    CASLACKDIV,
-    CAWEAKENFULL,
-    CAWEAKENNONIMPLYING,
-    BUMPONLYFALSE,
-    BUMPCANCELING,
-    BUMPLITS,
-    BITSOVERFLOW,
-    BITSREDUCED,
-    BITSLEARNED,
-  };
   std::vector<std::string> opts = {
       "help",
       "print-sol",
@@ -195,28 +368,9 @@ struct Options {
         if (!found) quit::exit_ERROR({"Unknown option: ", argv[i], ".\nCheck usage with --help option."});
       }
     }
-    getOptionNum(
-        opt_val, opts[OPTIONS::PRINTSOL], [](double x) -> bool { return x == 0 || x == 1; }, printSol);
-    getOptionNum(
-        opt_val, opts[OPTIONS::VERBOSITY], [](double x) -> bool { return aux::abs(x) == x && x >= 0; }, verbosity);
-    getOptionNum(
-        opt_val, opts[OPTIONS::VARDECAY], [](double x) -> bool { return x >= 0.5 && x < 1; }, v_vsids_decay);
-    getOptionNum(
-        opt_val, opts[OPTIONS::RINC], [](double x) -> bool { return x >= 1; }, rinc);
-    getOptionNum(
-        opt_val, opts[OPTIONS::RFIRST], [](double x) -> bool { return aux::abs(x) == x && x >= 1; }, rfirst);
-    getOptionEnum(opt_val, opts[OPTIONS::OPTMODE], optMode, optModeMap);
-    getOptionNum(
-        opt_val, opts[OPTIONS::PROPCOUNTING], [](double x) -> bool { return x >= 0 || x <= 1; }, countingProp);
-    getOptionNum(
-        opt_val, opts[OPTIONS::PROPCLAUSE], [](double x) -> bool { return x == 0 || x == 1; }, clauseProp);
-    getOptionNum(
-        opt_val, opts[OPTIONS::PROPCARD], [](double x) -> bool { return x == 0 || x == 1; }, cardProp);
-    getOptionNum(
-        opt_val, opts[OPTIONS::PROPIDX], [](double x) -> bool { return x == 0 || x == 1; }, idxProp);
-    getOptionNum(
-        opt_val, opts[OPTIONS::PROPSUP], [](double x) -> bool { return x == 0 || x == 1; }, supProp);
-    getOptionStr(opt_val, opts[OPTIONS::PROOFLOG], proofLogName);
+
+    for (Option* opt : options) opt->parse(opt_val);
+
     getOptionNum(
         opt_val, opts[OPTIONS::LP], [](double x) -> bool { return x >= -1; }, lpPivotRatio);
     getOptionNum(
@@ -282,20 +436,8 @@ struct Options {
     printf("Usage: %s [OPTION] instance.(opb|cnf|wcnf)\n", name);
     printf("\n");
     printf("Options:\n");
-    usageVoid(opts[OPTIONS::HELP], "Print this help message");
-    usageVal(opts[OPTIONS::PRINTSOL], "Print the solution if found", "0 or 1", printSol);
-    usageVal(opts[OPTIONS::VERBOSITY], "Verbosity of the output", "int >= 0", verbosity);
-    usageVal(opts[OPTIONS::VARDECAY], "VSIDS decay factor", "0.5 <= float < 1", v_vsids_decay);
-    usageVal(opts[OPTIONS::RINC], "Base of the Luby restart sequence", "float >= 1", rinc);
-    usageVal(opts[OPTIONS::RFIRST], "Interval of the Luby restart sequence", "int >= 1", rfirst);
-    usageEnum(opts[OPTIONS::OPTMODE], "Optimization mode", optModeMap, optMode);
-    usageVal(opts[OPTIONS::PROPCOUNTING], "Counting propagation instead of watched propagation",
-             "float between 0 (no counting) and 1 (always counting)", countingProp);
-    usageVal(opts[OPTIONS::PROPCLAUSE], "Optimized two-watched propagation for clauses", "0 or 1", clauseProp);
-    usageVal(opts[OPTIONS::PROPCARD], "Optimized watched propagation for cardinalities", "0 or 1", cardProp);
-    usageVal(opts[OPTIONS::PROPIDX], "Optimize index of watches during propagation", "0 or 1", idxProp);
-    usageVal(opts[OPTIONS::PROPSUP], "Avoid superfluous watch checks", "0 or 1", supProp);
-    usageVal(opts[OPTIONS::PROOFLOG], "Filename for the proof logs", "filepath", "off");
+    for (Option* opt : options) opt->printUsage(14);
+
     usageVal(opts[OPTIONS::LP],
              "Ratio of #pivots/#conflicts limiting LP calls (negative means infinite, 0 means no LP solving)",
              "float >= -1", lpPivotRatio);

@@ -95,7 +95,7 @@ std::ostream& run::operator<<(std::ostream& o, const std::shared_ptr<LazyVar> lv
 bool run::foundSolution() { return solution.size() > 0; }
 
 void run::printObjBounds(const BigVal& lower, const BigVal& upper) {
-  if (options.verbosity == 0) return;
+  if (options.verbosity.get() == 0) return;
   if (foundSolution()) {
     std::cout << "c bounds " << upper << " >= " << lower << "\n";
   } else {
@@ -173,7 +173,7 @@ ID run::handleInconsistency(const CeArb origObj, CeArb reformObj, CeSuper core,
   assert(mult > 0);
   lower_bound += cardCore->getDegree() * mult;
 
-  if ((options.optMode == Options::LAZYCOREGUIDED || options.optMode == Options::LAZYHYBRID) &&
+  if ((options.optMode.is("lazy-core-guided") || options.optMode.is("lazy-hybrid")) &&
       cardCore->vars.size() - cardCore->getDegree() > 1) {
     // add auxiliary variable
     long long newN = solver.getNbVars() + 1;
@@ -255,8 +255,8 @@ void run::optimize(CeArb origObj) {
     size_t current_time = stats.getDetTime();
     if (reply != SolveState::INPROCESSED && reply != SolveState::RESTARTED) printObjBounds(lower_bound, upper_bound);
     assumps.reset();
-    if (options.optMode == Options::COREGUIDED || options.optMode == Options::LAZYCOREGUIDED ||
-        ((options.optMode == Options::HYBRID || options.optMode == Options::LAZYHYBRID) &&
+    if (options.optMode.is("core-guided") || options.optMode.is("lazy-core-guided") ||
+        ((options.optMode.is("hybrid") || options.optMode.is("lazy-hybrid")) &&
          lower_time < upper_time)) {  // use core-guided step
       reformObj->removeZeroes();
       for (Var v : reformObj->vars) {
@@ -282,7 +282,7 @@ void run::optimize(CeArb origObj) {
       assert(foundSolution());
       ++stats.NSOLS;
       lastUpperBoundUnprocessed = handleNewSolution(origObj, lastUpperBound);
-      assert((options.optMode != Options::COREGUIDED && options.optMode != Options::LAZYCOREGUIDED) ||
+      assert((!options.optMode.is("core-guided") && !options.optMode.is("lazy-core-guided")) ||
              lower_bound == upper_bound);
     } else if (reply == SolveState::INCONSISTENT) {
       ++stats.NCORES;
@@ -330,7 +330,7 @@ void run::decide() {
 }
 
 void run::run(CeArb objective) {
-  if (options.verbosity > 0)
+  if (options.verbosity.get() > 0)
     std::cout << "c #variables " << solver.getNbOrigVars() << " #constraints " << solver.getNbConstraints()
               << std::endl;
   try {

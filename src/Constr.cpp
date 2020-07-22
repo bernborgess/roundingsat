@@ -194,7 +194,7 @@ WatchStatus Cardinality::checkForPropagation(CRef cr, int& idx, [[maybe_unused]]
   assert(idx < INF);
   assert(data[idx] == p);
   const unsigned int length = size();
-  if (!options.idxProp || ntrailpops < stats.NTRAILPOPS) {
+  if (!options.propIdx || ntrailpops < stats.NTRAILPOPS) {
     ntrailpops = stats.NTRAILPOPS;
     watchIdx = degr + 1;
   }
@@ -294,7 +294,7 @@ WatchStatus Counting<CF, DG>::checkForPropagation(CRef cr, int& idx, Lit p, Solv
     return WatchStatus::CONFLICTING;
   }
   if (slack < lrgstCf) {
-    if (!options.idxProp || ntrailpops < stats.NTRAILPOPS) {
+    if (!options.propIdx || ntrailpops < stats.NTRAILPOPS) {
       ntrailpops = stats.NTRAILPOPS;
       watchIdx = 0;
     }
@@ -402,14 +402,14 @@ WatchStatus Watched<CF, DG>::checkForPropagation(CRef cr, int& idx, Lit p, Solve
   const CF lrgstCf = aux::abs(data[0].c);
   CF& c = data[idx - INF].c;
 
-  if (!options.idxProp || ntrailpops < stats.NTRAILPOPS) {
+  if (!options.propIdx || ntrailpops < stats.NTRAILPOPS) {
     ntrailpops = stats.NTRAILPOPS;
     watchIdx = 0;
   }
 
   assert(c < 0);
   watchslack += c;
-  if (!options.supProp ||
+  if (!options.propSup ||
       watchslack - c >= lrgstCf) {  // look for new watches if previously, slack was at least lrgstCf
     stats.NWATCHCHECKS -= watchIdx;
     for (; watchIdx < length && watchslack < lrgstCf; ++watchIdx) {
@@ -527,7 +527,7 @@ WatchStatus Arbitrary::checkForPropagation(CRef cr, int& idx, [[maybe_unused]] L
     return WatchStatus::CONFLICTING;
   }
   if (slack < lrgstCf) {
-    if (!options.idxProp || ntrailpops < stats.NTRAILPOPS) {
+    if (!options.propIdx || ntrailpops < stats.NTRAILPOPS) {
       ntrailpops = stats.NTRAILPOPS;
       watchIdx = 0;
     }

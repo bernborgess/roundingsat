@@ -52,7 +52,7 @@ void quit::printSolAsOpb(const std::vector<bool>& sol) {
 
 void quit::exit_SAT(const std::vector<bool>& sol, const std::shared_ptr<Logger>& logger) {
   if (logger) logger->flush();
-  if (options.verbosity > 0) stats.print();
+  if (options.verbosity.get() > 0) stats.print();
   puts("s SATISFIABLE");
   if (options.printSol) printSol(sol);
   exit(10);
@@ -60,7 +60,7 @@ void quit::exit_SAT(const std::vector<bool>& sol, const std::shared_ptr<Logger>&
 
 void quit::exit_UNSAT(const std::vector<bool>& sol, const BigVal& bestObjVal, const std::shared_ptr<Logger>& logger) {
   if (logger) logger->flush();
-  if (options.verbosity > 0) stats.print();
+  if (options.verbosity.get() > 0) stats.print();
   if (sol.size() > 0) {
     std::cout << "o " << bestObjVal << std::endl;
     std::cout << "s OPTIMUM FOUND" << std::endl;
@@ -75,7 +75,7 @@ void quit::exit_UNSAT(const std::vector<bool>& sol, const BigVal& bestObjVal, co
 void quit::exit_INDETERMINATE(const std::vector<bool>& sol, const std::shared_ptr<Logger>& logger) {
   if (sol.size() > 0) exit_SAT(sol, logger);
   if (logger) logger->flush();
-  if (options.verbosity > 0) stats.print();
+  if (options.verbosity.get() > 0) stats.print();
   puts("s UNKNOWN");
   exit(0);
 }
