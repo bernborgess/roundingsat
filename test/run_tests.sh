@@ -22,14 +22,8 @@ echo "binary: $binary"
 echo "options: $options"
 echo ""
 
-declare -a arr_default=(
-"maxsat"
-"cnf"
-"opb/dec"
-)
-
 declare -a arr_dec=(
-"cnf/ec_rand4regsplit-v030-n1.cnf_UNSATISFIABLE"
+"cnf/ec-rand4regsplit-v030-n1.cnf_UNSATISFIABLE"
 "opb/dec/air01.0.s.opb_SATISFIABLE"
 "opb/dec/air01.0.u.opb_UNSATISFIABLE"
 "opb/dec/air02.0.s.opb_SATISFIABLE"
@@ -67,6 +61,10 @@ for j in "${arr_dec[@]}"; do
     echo -n "" > $logfile.proof
     echo -n "" > $logfile.formula
     formula="$SCRIPTPATH/instances/$formula"
+    if [ ! -f "$formula" ]; then
+        echo "$formula does not exist."
+        exit 1
+    fi
     echo "running $formula"
     obj="$(cut -d'_' -f2 <<<$j)"
     output=`timeout $time $binary $formula $options --proof-log=$logfile 2>&1 | awk '/^o|SATISFIABLE|.*Assertion.*/ {print $2}'`
@@ -94,7 +92,8 @@ declare -a arr_modes=(
 
 declare -a arr_opt=(
 "maxsat/driverlog01bc.wcsp.dir.wcnf_2245"
-"opb/opt/enigma.opb.opb_0"
+"opb/opt/normalized-single-obj-f47-DC-Side1.seq-B-2-1-EDCBAir.opb_-1593213266"
+"opb/opt/enigma.opb_0"
 "opb/opt/stein9.opb_5"
 "opb/opt/stein15.opb_9"
 "opb/opt/stein27.opb_18"
@@ -130,6 +129,10 @@ for mode in "${arr_modes[@]}"; do
         echo -n "" > $logfile.proof
         echo -n "" > $logfile.formula
         formula="$SCRIPTPATH/instances/$formula"
+        if [ ! -f "$formula" ]; then
+            echo "$formula does not exist."
+            exit 1
+        fi
         echo "running $formula"
         obj="$(cut -d'_' -f2 <<<$j)"
         output=`timeout $time $binary $formula $options --opt-mode=$mode --proof-log=$logfile 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
@@ -157,6 +160,10 @@ for j in "${arr_opt[@]}"; do
     echo -n "" > $logfile.proof
     echo -n "" > $logfile.formula
     formula="$SCRIPTPATH/instances/$formula"
+    if [ ! -f "$formula" ]; then
+        echo "$formula does not exist."
+        exit 1
+    fi
     echo "running $formula"
     obj="$(cut -d'_' -f2 <<<$j)"
     output=`timeout $time $binary $formula $options --opt-mode="lazy-hybrid" 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
