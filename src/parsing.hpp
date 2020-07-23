@@ -39,7 +39,7 @@ class Solver;
 
 namespace parsing {
 
-int read_number(const std::string& s);
+bigint read_number(const std::string& s);
 void opb_read(std::istream& in, Solver& solver, CeArb objective);
 void wcnf_read(std::istream& in, long long top, Solver& solver, CeArb objective);
 void cnf_read(std::istream& in, Solver& solver);

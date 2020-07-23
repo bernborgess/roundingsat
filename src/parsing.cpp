@@ -33,17 +33,17 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 namespace rs {
 
-int parsing::read_number(const std::string& s) {
-  // TODO: should also read larger numbers than int (e.g., capture large degree)
-  long long answer = 0;
-  for (char c : s)
+bigint parsing::read_number(const std::string& s) {
+  bigint answer = 0;
+  bool negate = false;
+  for (char c : s) {
     if ('0' <= c && c <= '9') {
-      answer *= 10, answer += c - '0';
-      if (answer >= 1e9) quit::exit_ERROR({"Input formula contains absolute value larger than 10^9: ", s});
+      answer *= 10;
+      answer += c - '0';
     }
-  for (char c : s)
-    if (c == '-') answer = -answer;
-  return answer;
+    negate = (negate || (c == '-'));
+  }
+  return negate ? -answer : answer;
 }
 
 void parsing::opb_read(std::istream& in, Solver& solver, CeArb objective) {
@@ -91,8 +91,9 @@ void parsing::opb_read(std::istream& in, Solver& solver, CeArb objective) {
       if (var.empty() || var[0] != 'x') quit::exit_ERROR({"Invalid literal token: ", origvar});
       var = var.substr(1);
       Lit l = atoi(var.c_str());
-      if (!(1 <= l && l <= solver.getNbVars())) quit::exit_ERROR({"Literal token out of variable range: ", origvar});
+      if (l < 1) quit::exit_ERROR({"Variable token less than 1: ", origvar});
       if (negated) l = -l;
+      solver.setNbVars(std::abs(l), true);
       input->addLhs(coef, l);
     }
     if (opt_line)
@@ -144,7 +145,10 @@ void parsing::cnf_read(std::istream& in, Solver& solver) {
       input->reset();
       input->addRhs(1);
       Lit l;
-      while (is >> l, l) input->addLhs(1, l);
+      while (is >> l, l) {
+        solver.setNbVars(std::abs(l), true);
+        input->addLhs(1, l);
+      }
       if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
     }
   }
@@ -158,25 +162,21 @@ void parsing::file_read(std::istream& in, Solver& solver, CeArb objective) {
       is >> line;  // skip 'p'
       std::string type;
       is >> type;
-      long long nb;
-      is >> nb;
-      solver.setNbVars(nb, true);
       if (type == "cnf") {
         cnf_read(in, solver);
       } else if (type == "wcnf") {
+        long long val;
+        is >> val;  // variable count
+        solver.setNbVars(val);
         is >> line;  // skip nbConstraints
-        long long top;
-        is >> top;
-        wcnf_read(in, top, solver, objective);
+        is >> val;   // top
+        wcnf_read(in, val, solver, objective);
       }
     } else if (line[0] == '*' && line.substr(0, 13) == "* #variable= ") {
-      std::istringstream is(line.substr(13));
-      long long nb;
-      is >> nb;
-      solver.setNbVars(nb, true);
       opb_read(in, solver, objective);
-    } else
+    } else {
       quit::exit_ERROR({"No supported format [opb, cnf, wcnf] detected."});
+    }
   }
   if (solver.logger) solver.logger->formula_out << "* INPUT FORMULA ABOVE - AUXILIARY AXIOMS BELOW\n";
 }
