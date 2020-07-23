@@ -529,6 +529,11 @@ bool ConstrExp<SMALL, LARGE>::fitsInDouble() const {
 }
 
 template <typename SMALL, typename LARGE>
+bool ConstrExp<SMALL, LARGE>::largestCoefFitsIn(int bits) const {
+  return (int)aux::msb(getLargestCoef()) < bits;
+}
+
+template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::multiply(const SMALL& m) {
   assert(m > 0);
   if (m == 1) return;

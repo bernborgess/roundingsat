@@ -502,7 +502,12 @@ std::pair<ID, ID> Solver::addInputConstraint(CeSuper ce) {
     if (logger) ce->logInconsistency(Level, Pos, stats);
     assert(decisionLevel() == 0);
     return {input, ID_Unsat};
-  }  // TODO: don't check for this here, but just add the constraints to the learned stack?
+  }
+
+  if (options.bitsInput.get() != 0 && !ce->largestCoefFitsIn(options.bitsInput.get())) {
+    ce->toStreamAsOPB(std::cerr);
+    quit::exit_ERROR({"Input constraint coefficient exceeds bit limit."});
+  }
 
   CRef cr = attachConstraint(ce, true);
   CeSuper confl = runPropagation(true);

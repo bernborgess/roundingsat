@@ -220,6 +220,10 @@ struct Options {
       "bits-learned",
       "Bit width of maximum coefficient for learned constraints (0 is unlimited, 1 reduces to cardinalities)", 29,
       "0 =< int", [](const int& x) -> bool { return x >= 0; }};
+  ValOption<int> bitsInput{
+      "bits-input",
+      "Bit width of maximum coefficient for input constraints (0 is unlimited, 1 allows only cardinalities)", 0,
+      "0 =< int", [](const int& x) -> bool { return x >= 0; }};
 
   std::vector<Option*> options = {
       &help,           &printSol,      &verbosity,     &proofLog,      &optMode,
@@ -228,12 +232,12 @@ struct Options {
       &lpPivotRatio,   &lpPivotBudget, &lpIntolerance, &addGomoryCuts, &addLearnedCuts,
       &gomoryCutLimit, &maxCutCos,     &slackdiv,      &weakenFull,    &weakenNonImplying,
       &bumpOnlyFalse,  &bumpCanceling, &bumpLits,      &bitsOverflow,  &bitsReduced,
-      &bitsLearned,
+      &bitsLearned,    &bitsInput,
   };
   std::unordered_map<std::string, Option*> name2opt;
 
   Options() {
-    assert(options.size() == 31);
+    assert(options.size() == 32);
     for (Option* opt : options) name2opt[opt->name] = opt;
   }
 

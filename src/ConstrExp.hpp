@@ -157,6 +157,7 @@ struct ConstrExpSuper {
                                       Lit asserting) = 0;
   virtual void saturateAndFixOverflowRational(const std::vector<double>& lpSolution) = 0;
   virtual bool fitsInDouble() const = 0;
+  virtual bool largestCoefFitsIn(int bits) const = 0;
 
   virtual void weakenDivideRound(const IntVecIt& level, Lit l, bool slackdiv, bool fullWeakening) = 0;
 
@@ -302,6 +303,7 @@ struct ConstrExp final : public ConstrExpSuper {
    */
   void saturateAndFixOverflowRational(const std::vector<double>& lpSolution);
   bool fitsInDouble() const;
+  bool largestCoefFitsIn(int bits) const;
 
   template <typename S, typename L>
   void addUp(CePtr<ConstrExp<S, L>> c, const SMALL& cmult = 1, const SMALL& thismult = 1) {
