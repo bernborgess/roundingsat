@@ -56,6 +56,8 @@ using Var = int;
 using Lit = int;
 inline Var toVar(Lit l) { return std::abs(l); }
 
+const int resize_factor = 2;
+
 const int INF = 1e9 + 1;  // 1e9 is the maximum number of variables in the system, anything beyond is infinity
 const long long INFLPINT = 1e15 + 1;  // based on max long range captured by double
 

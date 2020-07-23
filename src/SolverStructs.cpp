@@ -59,7 +59,7 @@ void OrderHeap::resize(int newsize) {
   std::vector<Var> variables;
   while (!empty()) variables.push_back(removeMax());
   tree.clear();
-  while (cap < newsize) cap = cap * options.resize_factor + 1;
+  while (cap < newsize) cap = cap * resize_factor + 1;
   tree.resize(2 * (cap + 1), -1);
   for (Var x : variables) insert(x);
 }

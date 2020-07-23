@@ -78,7 +78,7 @@ int main(int argc, char** argv) {
     if (!fin) rs::quit::exit_ERROR({"Could not open ", rs::options.formulaName});
     rs::parsing::file_read(fin, rs::run::solver, objective);
   } else {
-    if (rs::options.verbosity.get() > 0) std::cout << "c No filename given, reading from standard input->" << std::endl;
+    if (rs::options.verbosity.get() > 0) std::cout << "c No filename given, reading from standard input" << std::endl;
     rs::parsing::file_read(std::cin, rs::run::solver, objective);
   }
 

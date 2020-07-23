@@ -47,8 +47,8 @@ void Solver::setNbVars(long long nvars, bool orig) {
   assert(nvars > 0);
   assert(nvars < INF);
   if (nvars <= n) return;
-  aux::resizeIntMap(_adj, adj, nvars, options.resize_factor, {});
-  aux::resizeIntMap(_Level, Level, nvars, options.resize_factor, INF);
+  aux::resizeIntMap(_adj, adj, nvars, resize_factor, {});
+  aux::resizeIntMap(_Level, Level, nvars, resize_factor, INF);
   Pos.resize(nvars + 1, INF);
   Reason.resize(nvars + 1, CRef_Undef);
   activity.resize(nvars + 1, 1 / actLimitV);
@@ -74,7 +74,7 @@ void Solver::init() {
 
 void Solver::initLP([[maybe_unused]] const CeArb objective) {
 #if WITHSOPLEX
-  if (options.lpPivotRatio == 0) return;
+  if (options.lpPivotRatio.get() == 0) return;
   bool pureCNF = objective->vars.size() == 0;
   for (CRef cr : constraints) {
     if (!pureCNF) break;
@@ -90,7 +90,7 @@ void Solver::initLP([[maybe_unused]] const CeArb objective) {
 // ---------------------------------------------------------------------
 // VSIDS
 
-void Solver::vDecayActivity() { v_vsids_inc *= (1 / options.v_vsids_decay); }
+void Solver::vDecayActivity() { v_vsids_inc *= (1 / options.varDecay.get()); }
 void Solver::vBumpActivity(Var v) {
   assert(v > 0);
   if ((activity[v] += v_vsids_inc) > actLimitV) {  // Rescale
@@ -105,7 +105,7 @@ void Solver::vBumpActivity(Var v) {
   if (order_heap.inHeap(v)) order_heap.percolateUp(v);
 }
 
-void Solver::cDecayActivity() { c_vsids_inc *= (1 / options.c_vsids_decay); }
+void Solver::cDecayActivity() { c_vsids_inc *= (1 / options.clauseDecay.get()); }
 void Solver::cBumpActivity(Constr& c) {
   c.act += c_vsids_inc;
   if (c.act > actLimitC) {  // Rescale:
@@ -250,15 +250,15 @@ CeSuper getAnalysisCE(const CeSuper& conflict, int bitsOverflow, ConstrExpPools&
     CeArb confl = cePools.takeArb();
     conflict->copyTo(confl);
     return confl;
-  } else if (options.bitsOverflow > conflLimit96) {
+  } else if (options.bitsOverflow.get() > conflLimit96) {
     Ce128 confl = cePools.take128();
     conflict->copyTo(confl);
     return confl;
-  } else if (options.bitsOverflow > conflLimit64) {
+  } else if (options.bitsOverflow.get() > conflLimit64) {
     Ce96 confl = cePools.take96();
     conflict->copyTo(confl);
     return confl;
-  } else if (options.bitsOverflow > conflLimit32) {
+  } else if (options.bitsOverflow.get() > conflLimit32) {
     Ce64 confl = cePools.take64();
     conflict->copyTo(confl);
     return confl;
@@ -274,9 +274,10 @@ CeSuper Solver::analyze(CeSuper conflict) {
   assert(conflict->hasNegativeSlack(Level));
   stats.NADDEDLITERALS += conflict->vars.size();
   conflict->removeUnitsAndZeroes(Level, Pos);
-  conflict->saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced, 0);
+  conflict->saturateAndFixOverflow(getLevel(), (bool)options.weakenFull, options.bitsOverflow.get(),
+                                   options.bitsReduced.get(), 0);
 
-  CeSuper confl = getAnalysisCE(conflict, options.bitsOverflow, cePools);
+  CeSuper confl = getAnalysisCE(conflict, options.bitsOverflow.get(), cePools);
   conflict->reset();
 
   assert(actSet.size() == 0);  // will hold the literals that need their activity bumped
@@ -359,9 +360,10 @@ CeSuper Solver::extractCore(CeSuper conflict, const IntSet& assumptions, Lit l_a
   assert(conflict->hasNegativeSlack(Level));
   stats.NADDEDLITERALS += conflict->vars.size();
   conflict->removeUnitsAndZeroes(Level, Pos);
-  conflict->saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced, 0);
+  conflict->saturateAndFixOverflow(getLevel(), (bool)options.weakenFull, options.bitsOverflow.get(),
+                                   options.bitsReduced.get(), 0);
   assert(conflict->hasNegativeSlack(Level));
-  CeSuper confl = getAnalysisCE(conflict, options.bitsOverflow, cePools);
+  CeSuper confl = getAnalysisCE(conflict, options.bitsOverflow.get(), cePools);
   conflict->reset();
 
   // analyze conflict
@@ -443,7 +445,8 @@ void Solver::learnConstraint(const CeSuper c, Origin orig) {
   assert(orig == Origin::LEARNED || orig == Origin::FARKAS || orig == Origin::LEARNEDFARKAS || orig == Origin::GOMORY);
   CeSuper learned = c->reduce(cePools);
   learned->orig = orig;
-  learned->saturateAndFixOverflow(getLevel(), options.weakenFull, options.bitsLearned, options.bitsLearned, 0);
+  learned->saturateAndFixOverflow(getLevel(), (bool)options.weakenFull, options.bitsLearned.get(),
+                                  options.bitsLearned.get(), 0);
   learnedStack.push_back(learned->toSimple());
 }
 
@@ -613,9 +616,9 @@ void Solver::reduceDB() {
   }
 
   if (promisingLearnts > totalLearnts / 2)
-    nconfl_to_reduce += 10 * options.incReduceDB;
+    nconfl_to_reduce += 10 * options.dbCleanInc.get();
   else
-    nconfl_to_reduce += options.incReduceDB;
+    nconfl_to_reduce += options.dbCleanInc.get();
   std::sort(learnts.begin(), learnts.end(), [&](CRef x, CRef y) {
     return ca[x].lbd() > ca[y].lbd() || (ca[x].lbd() == ca[y].lbd() && ca[x].act < ca[y].act);
   });
@@ -750,12 +753,12 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
           ++stats.NCLEANUP;
           if (options.verbosity.get() > 0) puts("c INPROCESSING");
           reduceDB();
-          while (stats.NCONFL >= stats.NCLEANUP * nconfl_to_reduce) nconfl_to_reduce += options.incReduceDB;
+          while (stats.NCONFL >= stats.NCLEANUP * nconfl_to_reduce) nconfl_to_reduce += options.dbCleanInc.get();
           if (lpSolver) lpSolver->inProcess();
           return {SolveState::INPROCESSED, CeNull()};
         }
-        double rest_base = luby(options.rinc.get(), ++stats.NRESTARTS);
-        nconfl_to_restart = (long long)rest_base * options.rfirst.get();
+        double rest_base = luby(options.lubyBase.get(), ++stats.NRESTARTS);
+        nconfl_to_restart = (long long)rest_base * options.lubyMult.get();
         return {SolveState::RESTARTED, CeNull()};
       }
       Lit next = 0;

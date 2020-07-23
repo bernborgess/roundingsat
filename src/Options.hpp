@@ -30,22 +30,20 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include <cstring>
 #include "aux.hpp"
 #include "quit.hpp"
 
 namespace rs {
 
 class Option {
- protected:
-  std::string name = "";
-  std::string description = "";
-
  public:
+  const std::string name = "";
+  const std::string description = "";
+
   Option(const std::string& n, const std::string& d) : name(n), description(d) {}
 
   virtual void printUsage(int colwidth) const = 0;
-  virtual bool parse(const std::unordered_map<std::string, std::string>& optVals) = 0;  // TODO: string argument
+  virtual void parse(const std::string& v) = 0;
 };
 
 class VoidOption : public Option {
@@ -62,9 +60,9 @@ class VoidOption : public Option {
     std::cout << description << "\n";
   }
 
-  bool parse(const std::unordered_map<std::string, std::string>& optVals) override {
+  void parse([[maybe_unused]] const std::string& v) override {
+    assert(v == "");
     val = true;
-    return (optVals.count(name));
   }
 };
 
@@ -82,9 +80,7 @@ class BoolOption : public Option {
     std::cout << description << " (0 or 1; default " << val << ")\n";
   }
 
-  bool parse(const std::unordered_map<std::string, std::string>& optVals) override {
-    if (!optVals.count(name)) return false;
-    const std::string& v = optVals.at(name);
+  void parse(const std::string& v) override {
     try {
       val = std::stod(v);
     } catch (const std::invalid_argument& ia) {
@@ -92,21 +88,21 @@ class BoolOption : public Option {
     }
     if (val != 0 && val != 1)
       quit::exit_ERROR({"Invalid value for ", name, ": ", v, ".\nCheck usage with --help option."});
-    return true;
   }
 };
 
-class NumOption : public Option {
-  double val;
+template <typename T>
+class ValOption : public Option {
+  T val;
   std::string checkDescription;
-  std::function<bool(double)> check;
+  std::function<bool(const T&)> check;
 
  public:
-  NumOption(const std::string& n, const std::string& d, double v, const std::string& cd,
-            const std::function<bool(double)>& c)
+  ValOption(const std::string& n, const std::string& d, const T& v, const std::string& cd,
+            const std::function<bool(const T&)>& c)
       : Option{n, d}, val(v), checkDescription(cd), check(c) {}
 
-  double get() const { return val; }
+  T& get() { return val; }
 
   void printUsage(int colwidth) const override {
     std::cout << " --" << name << "=? ";
@@ -114,16 +110,13 @@ class NumOption : public Option {
     std::cout << description << " (" << checkDescription << "; default " << val << ")\n";
   }
 
-  bool parse(const std::unordered_map<std::string, std::string>& optVals) override {
-    if (!optVals.count(name)) return false;
-    const std::string& v = optVals.at(name);
+  void parse(const std::string& v) override {
     try {
-      val = std::stod(v);
+      val = aux::sto<T>(v);
     } catch (const std::invalid_argument& ia) {
       quit::exit_ERROR({"Invalid value for ", name, ": ", v, ".\nCheck usage with --help option."});
     }
     if (!check(val)) quit::exit_ERROR({"Invalid value for ", name, ": ", v, ".\nCheck usage with --help option."});
-    return true;
   }
 };
 
@@ -147,13 +140,10 @@ class EnumOption : public Option {
     std::cout << ")\n";
   }
 
-  bool parse(const std::unordered_map<std::string, std::string>& optVals) override {
-    if (!optVals.count(name)) return false;
-    const std::string& v = optVals.at(name);
+  void parse(const std::string& v) override {
     if (std::find(std::begin(values), std::end(values), v) == std::end(values))
       quit::exit_ERROR({"Invalid value for ", name, ": ", v, ".\nCheck usage with --help option."});
     val = v;
-    return true;
   }
 
   bool is(const std::string& v) const {
@@ -162,317 +152,122 @@ class EnumOption : public Option {
   }
 };
 
-class StringOption : public Option {
-  std::string val;
-  std::string checkDescription;
-  std::function<bool(const std::string&)> check;
-
- public:
-  StringOption(const std::string& n, const std::string& d, const std::string& v, const std::string& cd,
-               const std::function<bool(const std::string&)>& c)
-      : Option{n, d}, val(v), checkDescription(cd), check(c) {}
-
-  void printUsage(int colwidth) const override {
-    std::cout << " --" << name << "=? ";
-    for (int i = name.size(); i < colwidth; ++i) std::cout << " ";
-    std::cout << description << " (" << checkDescription << "; default " << val << ")\n";
-  }
-
-  bool parse(const std::unordered_map<std::string, std::string>& optVals) override {
-    if (!optVals.count(name)) return false;
-    val = optVals.at(name);
-    if (!check(val)) quit::exit_ERROR({"Invalid value for ", name, ": ", val, ".\nCheck usage with --help option."});
-    return true;
-  }
-
-  const std::string& get() const { return val; }
-};
-
-enum OPTIONS {
-  HELP,
-  PRINTSOL,
-  VERBOSITY,
-  VARDECAY,
-  RINC,
-  RFIRST,
-  OPTMODE,
-  PROPCOUNTING,
-  PROPCLAUSE,
-  PROPCARD,
-  PROPIDX,
-  PROPSUP,
-  PROOFLOG,
-  LP,
-  LPBUDGET,
-  LPCUTGOMORY,
-  LPCUTLEARNED,
-  LPINTOLERANCE,
-  LPMAXCUTCOS,
-  LPGOMCUTLIM,
-  CASLACKDIV,
-  CAWEAKENFULL,
-  CAWEAKENNONIMPLYING,
-  BUMPONLYFALSE,
-  BUMPCANCELING,
-  BUMPLITS,
-  BITSOVERFLOW,
-  BITSREDUCED,
-  BITSLEARNED,
-};
-
 struct Options {
   VoidOption help{"help", "Print this help message"};
   BoolOption printSol{"print-sol", "Print the solution if found", 0};
-  NumOption verbosity{"verbosity", "Verbosity of the output", 1, "0 =< int",
-                      [](double x) -> bool { return aux::abs(x) == x && x >= 0; }};
-  NumOption varDecay{"var-decay", "VSIDS variable decay factor", 0.95, "0.5 <= float < 1",
-                     [](double x) -> bool { return 0.5 <= x && x < 1; }};
-  NumOption rinc{"rinc", "Base of the Luby restart sequence", 2, "1 =< float", [](double x) -> bool { return 1 <= x; }};
-  NumOption rfirst{"rfirst", "Interval of the Luby restart sequence", 100, "1 =< int",
-                   [](double x) -> bool { return aux::abs(x) == x && x >= 1; }};
+  ValOption<int> verbosity{"verbosity", "Verbosity of the output", 1, "0 =< int",
+                           [](const int& x) -> bool { return x >= 0; }};
+  ValOption<std::string> proofLog{"proof-log", "Filename for the proof logs, left unspecified disables proof logging",
+                                  "", "/path/to/file", [](const std::string&) -> bool { return true; }};
   EnumOption optMode{"opt-mode",
                      "Optimization mode",
                      "lazy-hybrid",
                      {"linear", "core-guided", "lazy-core-guided", "hybrid", "lazy-hybrid"}};
-  NumOption propCounting{"prop-counting", "Counting propagation instead of watched propagation", 0,
-                         "0 (no counting) =< float =< 1 (always counting)",
-                         [](double x) -> bool { return x >= 0 || x <= 1; }};
+  ValOption<double> lubyBase{"luby-base", "Base of the Luby restart sequence", 2, "1 =< float",
+                             [](double x) -> bool { return 1 <= x; }};
+  ValOption<int> lubyMult{"luby-mult", "Multiplier of the Luby restart sequence", 100, "1 =< int",
+                          [](const int& x) -> bool { return x >= 1; }};
+  ValOption<double> varDecay{"vsids-var", "VSIDS variable decay factor", 0.95, "0.5 =< float < 1",
+                             [](const double& x) -> bool { return 0.5 <= x && x < 1; }};
+  ValOption<double> clauseDecay{"vsids-clause", "VSIDS clause decay factor", 0.999, "0.5 =< float < 1",
+                                [](const double& x) -> bool { return 0.5 <= x && x < 1; }};
+  ValOption<int> dbCleanInc{"db-inc", "Database cleanup interval increment", 100, "1 =< int",
+                            [](const int& x) -> bool { return 1 <= x; }};
+  ValOption<double> propCounting{"prop-counting", "Counting propagation instead of watched propagation", 0,
+                                 "0 (no counting) =< float =< 1 (always counting)",
+                                 [](const double& x) -> bool { return 0 <= x && x <= 1; }};
   BoolOption propClause{"prop-clause", "Optimized two-watched propagation for clauses", 1};
   BoolOption propCard{"prop-card", "Optimized two-watched propagation for clauses", 1};
   BoolOption propIdx{"prop-idx", "Optimize index of watches during propagation", 1};
   BoolOption propSup{"prop-sup", "Avoid superfluous watch checks", 1};
-  StringOption proofLog{"proof-log", "Filename for the proof logs", "", "/path/to/file",
-                        [](const std::string&) -> bool { return true; }};
+  ValOption<double> lpPivotRatio{
+      "lp", "Ratio of #pivots/#conflicts limiting LP calls (negative means infinite, 0 means no LP solving)", 1,
+      "-1 =< float", [](const double& x) -> bool { return x >= -1; }};
+  ValOption<int> lpPivotBudget{"lp-budget", "Base LP call pivot budget", 1000, "1 =< int",
+                               [](const int& x) -> bool { return x >= 1; }};
+  ValOption<double> lpIntolerance{"lp-intolerance", "Intolerance for floating point artifacts", 1e-6, "0 < float",
+                                  [](const double& x) -> bool { return x > 1; }};
+  BoolOption addGomoryCuts{"lp-cut-gomory", "Generate Gomory cuts", 1};
+  BoolOption addLearnedCuts{"lp-cut-learned", "Use learned constraints as cuts", 1};
+  ValOption<int> gomoryCutLimit{"lp-cut-gomlim",
+                                "Max number of tableau rows considered for Gomory cuts in a single round", 100,
+                                "1 =< int", [](const int& x) -> bool { return 1 <= x; }};
+  ValOption<double> maxCutCos{
+      "lp-cut-maxcos",
+      "Upper bound on cosine of angle between cuts added in one round, higher means cuts can be more parallel", 0.1,
+      "0 =< float =< 1", [](const double& x) -> bool { return 0 <= x && x <= 1; }};
+  BoolOption slackdiv{"ca-slackdiv",
+                      "Use slack+1 as divisor for reason constraints (instead of the asserting coefficient)", 0};
+  BoolOption weakenFull{"ca-weaken-full",
+                        "Weaken non-divisible non-falsified literals in reason constraints completely", 0};
+  BoolOption weakenNonImplying{"ca-weaken-nonimplying",
+                               "Weaken non-implying falsified literals from reason constraints", 0};
+  BoolOption bumpOnlyFalse{"bump-onlyfalse",
+                           "Bump activity of literals encountered during conflict analysis only when falsified", 0};
+  BoolOption bumpCanceling{"bump-canceling",
+                           "Bump activity of literals encountered during conflict analysis when canceling", 1};
+  BoolOption bumpLits{
+      "bump-lits",
+      "Bump activity of literals encountered during conflict analysis, twice when occurring with opposing sign", 1};
+  ValOption<int> bitsOverflow{"bits-overflow",
+                              "Bit width of maximum coefficient during conflict analysis calculations (greater than 62 "
+                              "may use slower arbitrary precision implementations)",
+                              62, "0 =< int", [](const int& x) -> bool { return x >= 0; }};
+  ValOption<int> bitsReduced{"bits-reduced",
+                             "Bit width of maximum coefficient after reduction when exceeding bits-overflow", 29,
+                             "0 =< int", [](const int& x) -> bool { return x >= 0; }};
+  ValOption<int> bitsLearned{
+      "bits-learned",
+      "Bit width of maximum coefficient for learned constraints (0 is unlimited, 1 reduces to cardinalities)", 29,
+      "0 =< int", [](const int& x) -> bool { return x >= 0; }};
 
-  std::vector<Option*> options;
+  std::vector<Option*> options = {
+      &help,           &printSol,      &verbosity,     &proofLog,      &optMode,
+      &lubyBase,       &lubyMult,      &varDecay,      &clauseDecay,   &dbCleanInc,
+      &propCounting,   &propClause,    &propCard,      &propIdx,       &propSup,
+      &lpPivotRatio,   &lpPivotBudget, &lpIntolerance, &addGomoryCuts, &addLearnedCuts,
+      &gomoryCutLimit, &maxCutCos,     &slackdiv,      &weakenFull,    &weakenNonImplying,
+      &bumpOnlyFalse,  &bumpCanceling, &bumpLits,      &bitsOverflow,  &bitsReduced,
+      &bitsLearned,
+  };
+  std::unordered_map<std::string, Option*> name2opt;
 
   Options() {
-    options = {
-        &help,         &printSol,   &verbosity, &varDecay, &rinc,    &rfirst,   &optMode,
-        &propCounting, &propClause, &propCard,  &propIdx,  &propSup, &proofLog,
-    };
+    assert(options.size() == 31);
+    for (Option* opt : options) name2opt[opt->name] = opt;
   }
 
   std::string formulaName;
 
-  int resize_factor = 2;
-
-  long long incReduceDB = 100;
-  float v_vsids_decay = 0.95;
-  float c_vsids_decay = 0.999;
-
-  float lpPivotRatio = 1;
-  long long lpPivotBudget = 1000;
-  bool addGomoryCuts = true;
-  bool addLearnedCuts = true;
-  double intolerance = 1e-6;
-  double maxCutCos = 0.1;
-  int gomoryCutLimit = 100;
-
-  bool slackdiv = false;
-  bool weakenFull = false;
-  bool weakenNonImplying = false;
-
-  bool bumpOnlyFalse = false;
-  bool bumpCanceling = true;
-  bool bumpLits = true;
-
-  int bitsOverflow = 62;
-  int bitsReduced = 29;
-  int bitsLearned = 29;
-  int bitsInput = 0;
-
-  std::vector<std::string> opts = {
-      "help",
-      "print-sol",
-      "verbosity",
-      "var-decay",
-      "rinc",
-      "rfirst",
-      "opt-mode",
-      "prop-counting",
-      "prop-clause",
-      "prop-card",
-      "prop-idx",
-      "prop-sup",
-      "proof-log",
-      "lp",
-      "lp-budget",
-      "lp-cut-gomory",
-      "lp-cut-learned",
-      "lp-intolerance",
-      "lp-maxcutcos",
-      "lp-gomcutlim",
-      "ca-slackdiv",
-      "ca-weaken-full",
-      "ca-weaken-nonimplying",
-      "bump-only-false",
-      "bump-canceling",
-      "bump-lits",
-      "bits-overflow",
-      "bits-reduced",
-      "bits-learned",
-  };
-
-  typedef bool (*func)(double);
-  template <typename T>
-  void getOptionNum(const std::unordered_map<std::string, std::string>& opt_val, const std::string& option, func test,
-                    T& val) {
-    if (!opt_val.count(option)) return;
-    double v = atof(opt_val.at(option).c_str());
-    if (test(v))
-      val = v;
-    else
-      quit::exit_ERROR({"Invalid value for ", option, ": ", opt_val.at(option), ".\nCheck usage with --help option."});
-  }
-
-  void getOptionStr(const std::unordered_map<std::string, std::string>& opt_val, const std::string& option,
-                    std::string& val) {
-    if (!opt_val.count(option)) return;
-    val = opt_val.at(option);
-  }
-
-  template <typename ENUM>
-  void getOptionEnum(const std::unordered_map<std::string, std::string>& opt_val, const std::string& option, ENUM& val,
-                     const std::vector<std::string>& map) {
-    if (!opt_val.count(option)) return;
-    std::string s = opt_val.at(option);
-    for (unsigned int i = 0; i < map.size(); ++i)
-      if (map[i] == s) {
-        val = static_cast<ENUM>(i);
-        return;
-      }
-    quit::exit_ERROR({"Invalid value for ", option, ": ", opt_val.at(option), ".\nCheck usage with --help option."});
-  }
-
   void parseCommandLine(int argc, char** argv) {
-    for (int i = 1; i < argc; i++) {
-      if (!strcmp(argv[i], "--help")) {
-        usage(argv[0]);
-        exit(0);
-      }
-    }
-
     std::unordered_map<std::string, std::string> opt_val;
     for (int i = 1; i < argc; i++) {
-      if (std::string(argv[i]).substr(0, 2) != "--")
-        formulaName = argv[i];
-      else {
-        bool found = false;
-        for (std::string& key : opts) {
-          if (std::string(argv[i]).substr(0, key.size() + 3) == "--" + key + "=") {
-            found = true;
-            opt_val[key] = std::string(argv[i]).substr(key.size() + 3);
-          }
+      std::string arg = argv[i];
+      if (arg.substr(0, 2) != "--") {
+        formulaName = arg;
+      } else {
+        size_t eqindex = std::min(arg.size(), arg.find('='));
+        std::string inputopt = arg.substr(2, eqindex - 2);
+        if (name2opt.count(inputopt) == 0) {
+          quit::exit_ERROR({"Unknown option: ", inputopt, ".\nCheck usage with ", argv[0], " --help"});
+        } else {
+          name2opt[inputopt]->parse(arg.substr(std::min(arg.size(), eqindex + 1)));
         }
-        if (!found) quit::exit_ERROR({"Unknown option: ", argv[i], ".\nCheck usage with --help option."});
       }
     }
 
-    for (Option* opt : options) opt->parse(opt_val);
-
-    getOptionNum(
-        opt_val, opts[OPTIONS::LP], [](double x) -> bool { return x >= -1; }, lpPivotRatio);
-    getOptionNum(
-        opt_val, opts[OPTIONS::LPBUDGET], [](double x) -> bool { return aux::abs(x) == x && x >= 1; }, lpPivotBudget);
-    getOptionNum(
-        opt_val, opts[OPTIONS::LPCUTGOMORY], [](double x) -> bool { return x == 0 || x == 1; }, addGomoryCuts);
-    getOptionNum(
-        opt_val, opts[OPTIONS::LPCUTLEARNED], [](double x) -> bool { return x == 0 || x == 1; }, addLearnedCuts);
-    getOptionNum(
-        opt_val, opts[OPTIONS::LPINTOLERANCE], [](double x) -> bool { return x > 0; }, intolerance);
-    getOptionNum(
-        opt_val, opts[OPTIONS::LPMAXCUTCOS], [](double x) -> bool { return 1 >= x && x >= 0; }, maxCutCos);
-    getOptionNum(
-        opt_val, opts[OPTIONS::LPGOMCUTLIM], [](double x) -> bool { return x >= 1; }, gomoryCutLimit);
-    getOptionNum(
-        opt_val, opts[OPTIONS::CASLACKDIV], [](double x) -> bool { return x == 0 || x == 1; }, slackdiv);
-    getOptionNum(
-        opt_val, opts[OPTIONS::CAWEAKENFULL], [](double x) -> bool { return x == 0 || x == 1; }, weakenFull);
-    getOptionNum(
-        opt_val, opts[OPTIONS::CAWEAKENNONIMPLYING], [](double x) -> bool { return x == 0 || x == 1; },
-        weakenNonImplying);
-    getOptionNum(
-        opt_val, opts[OPTIONS::BUMPONLYFALSE], [](double x) -> bool { return x == 0 || x == 1; }, bumpOnlyFalse);
-    getOptionNum(
-        opt_val, opts[OPTIONS::BUMPCANCELING], [](double x) -> bool { return x == 0 || x == 1; }, bumpCanceling);
-    getOptionNum(
-        opt_val, opts[OPTIONS::BUMPLITS], [](double x) -> bool { return x == 0 || x == 1; }, bumpLits);
-    getOptionNum(
-        opt_val, opts[OPTIONS::BITSOVERFLOW], [](double x) -> bool { return x >= 0; }, bitsOverflow);
-    getOptionNum(
-        opt_val, opts[OPTIONS::BITSREDUCED], [](double x) -> bool { return x >= 0; }, bitsReduced);
-    getOptionNum(
-        opt_val, opts[OPTIONS::BITSLEARNED], [](double x) -> bool { return x >= 0; }, bitsLearned);
-  }
-
-  constexpr static int colwidth = 14;
-
-  void usageEnum(const std::string& option, const std::string& explanation, const std::vector<std::string>& optMap,
-                 int def) {
-    std::cout << " --" << option << "=? ";
-    for (unsigned int i = option.size(); i < colwidth; ++i) std::cout << " ";
-    std::cout << explanation << " (";
-    for (std::string s : optMap)
-      std::cout << (s == optMap[def].c_str() ? "default=" : "") << s << (s == optMap.back() ? "" : ", ");
-    std::cout << ")\n";
-  }
-
-  template <typename T>
-  void usageVal(const std::string& option, const std::string& explanation, const std::string& bounds,
-                const T& variable) {
-    std::cout << " --" << option << "=? ";
-    for (unsigned int i = option.size(); i < colwidth; ++i) std::cout << " ";
-    std::cout << explanation << " (" << bounds << "; default " << variable << ")\n";
-  }
-
-  void usageVoid(const std::string& option, const std::string& explanation) {
-    std::cout << " --" << option << " ";
-    for (unsigned int i = option.size(); i < colwidth + 2; ++i) std::cout << " ";
-    std::cout << explanation << "\n";
+    if (help) {
+      usage(argv[0]);
+      exit(0);
+    }
   }
 
   void usage(char* name) {
-    printf("Usage: %s [OPTION] instance.(opb|cnf|wcnf)\n", name);
+    printf("Usage: %s [OPTIONS] instance.(opb|cnf|wcnf)\n", name);
+    printf("or     cat instance.(opb|cnf|wcnf) | %s [OPTIONS]\n", name);
     printf("\n");
     printf("Options:\n");
     for (Option* opt : options) opt->printUsage(14);
-
-    usageVal(opts[OPTIONS::LP],
-             "Ratio of #pivots/#conflicts limiting LP calls (negative means infinite, 0 means no LP solving)",
-             "float >= -1", lpPivotRatio);
-    usageVal(opts[OPTIONS::LPBUDGET], "Base LP call pivot budget", "int >= 1", lpPivotBudget);
-    usageVal(opts[OPTIONS::LPCUTGOMORY], "Generate Gomory cuts", "0 or 1", addGomoryCuts);
-    usageVal(opts[OPTIONS::LPCUTLEARNED], "Use learned constraints as cuts", "0 or 1", addLearnedCuts);
-    usageVal(opts[OPTIONS::LPINTOLERANCE], "Intolerance for floating point artifacts", "float > 0", intolerance);
-    usageVal(opts[OPTIONS::LPMAXCUTCOS],
-             "Upper bound on cosine of angle between cuts added in one round, higher means cuts can be more parallel",
-             "float between 0 and 1", maxCutCos);
-    usageVal(opts[OPTIONS::LPGOMCUTLIM], "Max number of rows considered for Gomory cuts in one round", "int >= 1",
-             gomoryCutLimit);
-    usageVal(opts[OPTIONS::CASLACKDIV],
-             "Use slack+1 as divisor for reason constraints (instead of the asserting coefficient)", "0 or 1",
-             slackdiv);
-    usageVal(opts[OPTIONS::CAWEAKENFULL],
-             "Weaken non-divisible non-falsified literals in reason constraints completely", "0 or 1", weakenFull);
-    usageVal(opts[OPTIONS::CAWEAKENNONIMPLYING], "Weaken non-implying falsified literals from reason constraints",
-             "0 or 1", weakenNonImplying);
-    usageVal(opts[OPTIONS::BUMPONLYFALSE],
-             "Bump activity of literals encountered during conflict analysis only when falsified", "0 or 1",
-             bumpOnlyFalse);
-    usageVal(opts[OPTIONS::BUMPCANCELING],
-             "Bump activity of literals encountered during conflict analysis when canceling", "0 or 1", bumpCanceling);
-    usageVal(opts[OPTIONS::BUMPLITS],
-             "Bump activity of literals encountered during conflict analysis, twice when occurring with opposing sign",
-             "0 or 1", bumpLits);
-    usageVal(opts[OPTIONS::BITSOVERFLOW], "Bit width of maximum coefficient during conflict analysis calculations",
-             "int >= 0", bitsOverflow);
-    usageVal(opts[OPTIONS::BITSREDUCED],
-             "Bit width of maximum coefficient after reduction when exceeding " + opts[OPTIONS::BITSOVERFLOW],
-             "int >= 0", bitsReduced);
-    usageVal(opts[OPTIONS::BITSLEARNED],
-             "Bit width of maximum coefficient for learned constraints (0 is unlimited, 1 reduces to cardinalities)",
-             "int >= 0", bitsLearned);
   }
 };
 

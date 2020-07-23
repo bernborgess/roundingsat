@@ -73,27 +73,25 @@ inline std::ostream& operator<<(std::ostream& os, const __int128& x) {
 namespace aux {
 
 template <typename T>
-T str2num(const std::string&& description) {
-  T result = 0;
-  for (unsigned int i = 0; i < description.size(); ++i) {
-    result *= 10;
-    result += (int)(description[i] - '0');
-  }
-  return result;
+T sto(const std::string& s) {
+  return std::stold(s);
+}
+template <>
+inline double sto(const std::string& s) {
+  return std::stod(s);
+}
+template <>
+inline std::string sto(const std::string& s) {
+  return s;
 }
 
 template <typename T>
-std::string num2str(T x) {
-  if (x < 0) return "-" + num2str(-x);
-  if (x == 0) return "0";
-  std::string result = "";
-  result.reserve(10);
-  while (x > 0) {
-    result.push_back(((int)(x % 10)) + '0');
-    x /= 10;
-  }
-  reverse(result.begin(), result.end());
-  return result;
+std::string tos(const T& t) {
+  return std::to_string(t);
+}
+template <>
+inline std::string tos(const std::string& s) {
+  return s;
 }
 
 template <typename T>

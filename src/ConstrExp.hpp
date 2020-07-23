@@ -397,10 +397,11 @@ struct ConstrExp final : public ConstrExpSuper {
     stats.NADDEDLITERALS += reason->vars.size();
     reason->removeUnitsAndZeroes(Level, Pos);
     if (options.weakenNonImplying) reason->weakenNonImplying(Level, reason->getCoef(l), reason->getSlack(Level), stats);
-    reason->saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced, l);
+    reason->saturateAndFixOverflow(Level, (bool)options.weakenFull, options.bitsOverflow.get(),
+                                   options.bitsReduced.get(), l);
     assert(reason->getCoef(l) > 0);
     assert(reason->getCoef(l) > reason->getSlack(Level));
-    reason->weakenDivideRound(Level, l, options.slackdiv, options.weakenFull);
+    reason->weakenDivideRound(Level, l, (bool)options.slackdiv, (bool)options.weakenFull);
     assert(reason->getSlack(Level) <= 0);
     if (actSet != nullptr) {
       for (Var v : reason->vars) {
@@ -417,7 +418,7 @@ struct ConstrExp final : public ConstrExpSuper {
     SMALL confl_coef_l = getCoef(-l);
     SMALL gcd_coef_l = aux::gcd(reason_coef_l, confl_coef_l);
     addUp(reason, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
-    saturateAndFixOverflow(Level, options.weakenFull, options.bitsOverflow, options.bitsReduced, 0);
+    saturateAndFixOverflow(Level, (bool)options.weakenFull, options.bitsOverflow.get(), options.bitsReduced.get(), 0);
     assert(getCoef(-l) == 0);
     assert(hasNegativeSlack(Level));
   }

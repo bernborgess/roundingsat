@@ -511,7 +511,7 @@ void ConstrExp<SMALL, LARGE>::saturateAndFixOverflowRational(const std::vector<d
     assert(d > 1);
     for (Var v : vars) {
       Lit l = getLit(v);
-      if ((l < 0 ? 1 - lpSolution[v] : lpSolution[v]) <= 1 - options.intolerance) {
+      if ((l < 0 ? 1 - lpSolution[v] : lpSolution[v]) <= 1 - options.lpIntolerance.get()) {
         SMALL rem = static_cast<SMALL>(aux::abs(coefs[v]) % d);
         weaken(l < 0 ? rem : -rem, v);
       }
@@ -1008,7 +1008,7 @@ void ConstrExp<SMALL, LARGE>::resolveWith(const Clause& c, Lit l, IntSet* actSet
   }
 
   removeUnitsAndZeroes(level, pos);
-  saturateAndFixOverflow(level, options.weakenFull, options.bitsOverflow, options.bitsReduced, 0);
+  saturateAndFixOverflow(level, (bool)options.weakenFull, options.bitsOverflow.get(), options.bitsReduced.get(), 0);
   assert(getCoef(-l) == 0);
   assert(hasNegativeSlack(level));
 }
@@ -1055,7 +1055,7 @@ void ConstrExp<SMALL, LARGE>::resolveWith(const Cardinality& c, Lit l, IntSet* a
   }
 
   removeUnitsAndZeroes(level, pos);
-  saturateAndFixOverflow(level, options.weakenFull, options.bitsOverflow, options.bitsReduced, 0);
+  saturateAndFixOverflow(level, (bool)options.weakenFull, options.bitsOverflow.get(), options.bitsReduced.get(), 0);
   assert(getCoef(-l) == 0);
   assert(hasNegativeSlack(level));
 }

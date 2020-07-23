@@ -174,8 +174,9 @@ CeSuper LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
   }
   out->removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
   assert(out->hasNoZeroes());
-  out->weakenSmalls(out->absCoeffSum() / static_cast<bigint>((double)out->vars.size() / options.intolerance));
-  out->saturateAndFixOverflow(solver.getLevel(), options.weakenFull, options.bitsOverflow, options.bitsReduced, 0);
+  out->weakenSmalls(out->absCoeffSum() / static_cast<bigint>((double)out->vars.size() / options.lpIntolerance.get()));
+  out->saturateAndFixOverflow(solver.getLevel(), (bool)options.weakenFull, options.bitsOverflow.get(),
+                              options.bitsReduced.get(), 0);
   return out;
 }
 
@@ -225,7 +226,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
     lcc->reset();
   else {
     assert(lcc->hasNoZeroes());
-    lcc->weakenSmalls(lcc->absCoeffSum() / static_cast<bigint>((double)lcc->vars.size() / options.intolerance));
+    lcc->weakenSmalls(lcc->absCoeffSum() / static_cast<bigint>((double)lcc->vars.size() / options.lpIntolerance.get()));
   }
   CandidateCut result(lcc, lpSolution);
   return result;
@@ -254,7 +255,7 @@ void LpSolver::constructGomoryCandidates() {
   std::priority_queue<std::pair<double, int>> fracrows(std::less<std::pair<double, int>>(), fracrowvec);
 
   [[maybe_unused]] double last = 0.5;
-  for (int i = 0; i < options.gomoryCutLimit && !fracrows.empty(); ++i) {
+  for (int i = 0; i < options.gomoryCutLimit.get() && !fracrows.empty(); ++i) {
     assert(last >= fracrows.top().first);
     last = fracrows.top().first;
     int row = fracrows.top().second;
@@ -264,10 +265,10 @@ void LpSolver::constructGomoryCandidates() {
     lpMultipliers.clear();
     lp.getBasisInverseRowReal(row, lpMultipliers.get_ptr());
     candidateCuts.push_back(createLinearCombinationGomory(lpMultipliers));
-    if (candidateCuts.back().ratSlack >= -options.intolerance) candidateCuts.pop_back();
+    if (candidateCuts.back().ratSlack >= -options.lpIntolerance.get()) candidateCuts.pop_back();
     for (int i = 0; i < lpMultipliers.dim(); ++i) lpMultipliers[i] = -lpMultipliers[i];
     candidateCuts.push_back(createLinearCombinationGomory(lpMultipliers));
-    if (candidateCuts.back().ratSlack >= -options.intolerance) candidateCuts.pop_back();
+    if (candidateCuts.back().ratSlack >= -options.lpIntolerance.get()) candidateCuts.pop_back();
   }
 }
 
@@ -282,7 +283,7 @@ void LpSolver::constructLearnedCandidates() {
       }
       if (containsNonOriginalVars) continue;
       candidateCuts.emplace_back(c, cr, lpSolution, solver.cePools);
-      if (candidateCuts.back().ratSlack >= -options.intolerance) candidateCuts.pop_back();
+      if (candidateCuts.back().ratSlack >= -options.lpIntolerance.get()) candidateCuts.pop_back();
     }
   }
 }
@@ -302,7 +303,7 @@ void LpSolver::addFilteredCuts() {
     bool parallel = false;
     for (unsigned int j = 0; j < keptCuts.size() && !parallel; ++j) {
       if (asynch_interrupt) throw asynchInterrupt;
-      parallel = candidateCuts[keptCuts[j]].cosOfAngleTo(candidateCuts[i]) > options.maxCutCos;
+      parallel = candidateCuts[keptCuts[j]].cosOfAngleTo(candidateCuts[i]) > options.maxCutCos.get();
     }
     if (!parallel) keptCuts.push_back(i);
   }
@@ -378,12 +379,12 @@ void LpSolver::inProcess() {
 
 std::pair<LpStatus, CeSuper> LpSolver::_checkFeasibility(bool inProcessing) {
   if (solver.logger) solver.logger->logComment("Checking LP", stats);
-  if (options.lpPivotRatio < 0)
+  if (options.lpPivotRatio.get() < 0)
     lp.setIntParam(soplex::SoPlex::ITERLIMIT, -1);  // no pivot limit
-  else if (options.lpPivotRatio * stats.NCONFL < (inProcessing ? stats.NLPPIVOTSROOT : stats.NLPPIVOTSINTERNAL))
+  else if (options.lpPivotRatio.get() * stats.NCONFL < (inProcessing ? stats.NLPPIVOTSROOT : stats.NLPPIVOTSINTERNAL))
     return {PIVOTLIMIT, CeNull()};  // pivot ratio exceeded
   else
-    lp.setIntParam(soplex::SoPlex::ITERLIMIT, options.lpPivotBudget * lpPivotMult);
+    lp.setIntParam(soplex::SoPlex::ITERLIMIT, options.lpPivotBudget.get() * lpPivotMult);
   flushConstraints();
 
   // Set the  LP's bounds based on the current trail
