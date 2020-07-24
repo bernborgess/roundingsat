@@ -168,6 +168,8 @@ ID run::handleInconsistency(const CeArb origObj, CeArb reformObj, CeSuper core,
     assert(reformObj->getLit(v) != 0);
     if (mult == 0) {
       mult = aux::abs(reformObj->coefs[v]);
+    } else if(mult == 1){
+      break;
     } else {
       mult = std::min(mult, aux::abs(reformObj->coefs[v]));
     }
@@ -261,14 +263,16 @@ void run::optimize(CeArb origObj) {
         ((options.optMode.is("hybrid") || options.optMode.is("lazy-hybrid")) &&
          lower_time < upper_time)) {  // use core-guided step
       reformObj->removeZeroes();
+      std::vector<Term<double>> litcoefs; // using double will lead to faster sort than arbitrary
+      litcoefs.reserve(reformObj->vars.size());
       for (Var v : reformObj->vars) {
         assert(reformObj->getLit(v) != 0);
-        assumps.add(-reformObj->getLit(v));
+        litcoefs.emplace_back(static_cast<double>(aux::abs(reformObj->coefs[v])),v);
       }
-      std::sort(assumps.keys.begin(), assumps.keys.end(), [&](Lit l1, Lit l2) {
-        return reformObj->getCoef(-l1) > reformObj->getCoef(-l2) ||
-               (reformObj->getCoef(-l1) == reformObj->getCoef(-l2) && toVar(l1) < toVar(l2));
+      std::sort(litcoefs.begin(),litcoefs.end(), [](const Term<double>& t1, const Term<double>& t2){
+        return t1.c > t2.c || (t1.l < t2.l && t1.c == t2.c);
       });
+      for(const Term<double>& t: litcoefs) assumps.add(-reformObj->getLit(t.l));
     }
     assert(upper_bound > lower_bound);
     std::pair<SolveState, CeSuper> out =

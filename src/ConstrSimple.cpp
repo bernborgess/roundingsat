@@ -35,6 +35,7 @@ namespace rs {
 
 template <typename CF, typename DG>
 CeSuper ConstrSimple<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
+  // TODO: make this the minimal bitwidth expanded constraint?
   CePtr<ConstrExp<CF, DG>> ce = cePools.take<CF, DG>();
   ce->addRhs(rhs);
   for (const Term<CF>& t : terms) {
