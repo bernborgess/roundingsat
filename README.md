@@ -21,7 +21,7 @@ For more builds, similar build directories can be created.
 ## SoPlex
 
 RoundingSat supports an integration with the LP solver SoPlex to improve its search routine.
-For this, first download SoPlex at https://soplex.zib.de/download.php?fname=soplex-5.0.0.tgz and place the downloaded file in the root directory of RoundingSat.
+For this, first download SoPlex at https://soplex.zib.de/download.php?fname=soplex-5.0.1.tgz and place the downloaded file in the root directory of RoundingSat.
 Next, follow the above build process, but configure with the cmake option `-Dsoplex=ON`:
 
     cd build
