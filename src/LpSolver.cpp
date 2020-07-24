@@ -365,19 +365,6 @@ Ce64 LpSolver::rowToConstraint(int row) {
 }
 
 std::pair<LpStatus, CeSuper> LpSolver::checkFeasibility(bool inProcessing) {
-  double startTime = aux::cpuTime();
-  std::pair<LpStatus, CeSuper> result = _checkFeasibility(inProcessing);
-  stats.LPTOTALTIME += aux::cpuTime() - startTime;
-  return result;
-}
-
-void LpSolver::inProcess() {
-  double startTime = aux::cpuTime();
-  _inProcess();
-  stats.LPTOTALTIME += aux::cpuTime() - startTime;
-}
-
-std::pair<LpStatus, CeSuper> LpSolver::_checkFeasibility(bool inProcessing) {
   if (solver.logger) solver.logger->logComment("Checking LP", stats);
   if (options.lpPivotRatio.get() < 0)
     lp.setIntParam(soplex::SoPlex::ITERLIMIT, -1);  // no pivot limit
@@ -458,9 +445,9 @@ std::pair<LpStatus, CeSuper> LpSolver::_checkFeasibility(bool inProcessing) {
   return {UNDETERMINED, CeNull()};
 }
 
-void LpSolver::_inProcess() {
+void LpSolver::inProcess() {
   assert(solver.decisionLevel() == 0);
-  std::pair<LpStatus, CeSuper> lpResult = _checkFeasibility(true);
+  std::pair<LpStatus, CeSuper> lpResult = checkFeasibility(true);
   LpStatus lpstat = lpResult.first;
   [[maybe_unused]] CeSuper confl = lpResult.second;
   assert((lpstat == INFEASIBLE) == (confl && confl->hasNegativeSlack(solver.getLevel())));

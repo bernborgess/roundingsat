@@ -224,7 +224,8 @@ CeSuper Solver::runPropagation(bool onlyUnitPropagation) {
   }
   if (onlyUnitPropagation) return CeNull();
   if (lpSolver) {
-    std::pair<LpStatus, CeSuper> lpResult = lpSolver->checkFeasibility();
+    std::pair<LpStatus, CeSuper> lpResult =
+        aux::timeCall<std::pair<LpStatus, CeSuper>>([&] { return lpSolver->checkFeasibility(); }, stats.LPTOTALTIME);
     assert((lpResult.first == INFEASIBLE) == (lpResult.second && lpResult.second->hasNegativeSlack(Level)));
     return lpResult.second;
   }
@@ -398,6 +399,7 @@ CeSuper Solver::extractCore(CeSuper conflict, const IntSet& assumptions, Lit l_a
   confl->postProcess(Level, Pos, true, stats);
   assert(confl->hasNegativeSlack(assumptions));
   backjumpTo(0);
+
   return confl;
 }
 
@@ -519,7 +521,7 @@ std::pair<ID, ID> Solver::addInputConstraint(CeSuper ce) {
   }
 
   CRef cr = attachConstraint(ce, true);
-  CeSuper confl = runPropagation(true);
+  CeSuper confl = aux::timeCall<CeSuper>([&] { return runPropagation(true); }, stats.PROPTIME);
   if (confl) {
     assert(confl->hasNegativeSlack(Level));
     if (options.verbosity.get() > 0) puts("c Input conflict");
@@ -696,7 +698,7 @@ Lit Solver::pickBranchLit() {
 
 void Solver::presolve() {
   firstRun = false;
-  if (lpSolver) lpSolver->inProcess();
+  if (lpSolver) aux::timeCall<void>([&] { lpSolver->inProcess(); }, stats.LPTOTALTIME);
 }
 
 /**
@@ -721,7 +723,7 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
   bool runLP = false;
   while (true) {
     if (asynch_interrupt) throw asynchInterrupt;
-    CeSuper confl = runPropagation(runLP);
+    CeSuper confl = aux::timeCall<CeSuper>([&] { return runPropagation(runLP); }, stats.PROPTIME);
     runLP = !confl;
     if (confl) {
       assert(confl->hasNegativeSlack(Level));
@@ -746,7 +748,7 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
         }
         return {SolveState::UNSAT, CeNull()};
       } else if (decisionLevel() >= (int)assumptions_lim.size()) {
-        CeSuper analyzed = analyze(confl);
+        CeSuper analyzed = aux::timeCall<CeSuper>([&] { return analyze(confl); }, stats.CATIME);
         assert(analyzed);
         assert(analyzed->hasNegativeSlack(getLevel()));
         assert(analyzed->isSaturated());
@@ -755,7 +757,7 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
         else
           learnConstraint(analyzed, Origin::LEARNED);
       } else {
-        CeSuper result = extractCore(confl, assumptions);
+        CeSuper result = aux::timeCall<CeSuper>([&] { return extractCore(confl, assumptions); }, stats.CATIME);
         assert(result);
         assert(result->hasNegativeSlack(assumptions));
         return {SolveState::INCONSISTENT, result};
@@ -768,7 +770,7 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
           if (options.verbosity.get() > 0) puts("c INPROCESSING");
           reduceDB();
           while (stats.NCONFL >= stats.NCLEANUP * nconfl_to_reduce) nconfl_to_reduce += options.dbCleanInc.get();
-          if (lpSolver) lpSolver->inProcess();
+          if (lpSolver) aux::timeCall<void>([&] { lpSolver->inProcess(); }, stats.LPTOTALTIME);
           return {SolveState::INPROCESSED, CeNull()};
         }
         double rest_base = luby(options.lubyBase.get(), ++stats.NRESTARTS);

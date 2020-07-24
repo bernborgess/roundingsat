@@ -61,14 +61,23 @@ struct Stats {
   long long NLPGOMORYCUTS = 0, NLPLEARNEDCUTS = 0, NLPLEARNEDFARKAS = 0, NLPDELETEDCUTS = 0;
   long long NLPENCGOMORY = 0, NLPENCFARKAS = 0, NLPENCLEARNEDFARKAS = 0;
 
+  double SOLVETIME = 0, CATIME = 0, PROPTIME = 0;
+  double RUNSTARTTIME = 0;
+
+  inline double getTime() const { return aux::cpuTime() - STARTTIME; }
+
   inline long long getDetTime() const {
     return 1 + NADDEDLITERALS + NWATCHLOOKUPS + NWATCHLOOKUPSBJ + NWATCHCHECKS + NPROPCHECKS + NPROP + NTRAILPOPS +
            NDECIDE + NLPPIVOTSROOT + NLPPIVOTSINTERNAL;
   }
 
   void print() const {
-    printf("c cpu time %g s\n", aux::cpuTime() - STARTTIME);
+    printf("c cpu time %g s\n", getTime());
     printf("c deterministic time %lld %.2e\n", getDetTime(), (double)getDetTime());
+    printf("c optimization time %g s\n", aux::cpuTime() - RUNSTARTTIME - SOLVETIME);
+    printf("c solve time %g s\n", SOLVETIME);
+    printf("c propagation time %g s\n", PROPTIME);
+    printf("c conflict analysis time %g s\n", CATIME);
     printf("c propagations %lld\n", NPROP);
     printf("c resolve steps %lld\n", NRESOLVESTEPS);
     printf("c decisions %lld\n", NDECIDE);

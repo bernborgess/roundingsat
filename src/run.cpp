@@ -96,11 +96,13 @@ bool run::foundSolution() { return solution.size() > 0; }
 
 void run::printObjBounds(const BigVal& lower, const BigVal& upper) {
   if (options.verbosity.get() == 0) return;
+  std::cout << "c bounds ";
   if (foundSolution()) {
-    std::cout << "c bounds " << upper << " >= " << lower << "\n";
+    std::cout << upper;
   } else {
-    std::cout << "c bounds - >= " << lower << "\n";
+    std::cout << "-";
   }
+  std::cout << " >= " << lower << " @ " << stats.getTime() << "\n";
 }
 
 void run::checkLazyVariables(CeArb reformObj, std::vector<std::shared_ptr<LazyVar>>& lazyVars) {
@@ -269,7 +271,8 @@ void run::optimize(CeArb origObj) {
       });
     }
     assert(upper_bound > lower_bound);
-    std::pair<SolveState, CeSuper> out = solver.solve(assumps, solution);
+    std::pair<SolveState, CeSuper> out =
+        aux::timeCall<std::pair<SolveState, CeSuper>>([&] { return solver.solve(assumps, solution); }, stats.SOLVETIME);
     reply = out.first;
     if (reply == SolveState::RESTARTED) continue;
     if (reply == SolveState::UNSAT) quit::exit_UNSAT(solution, upper_bound, solver.logger);
@@ -320,7 +323,8 @@ void run::optimize(CeArb origObj) {
 
 void run::decide() {
   while (true) {
-    SolveState reply = solver.solve(IntSet(), solution).first;
+    SolveState reply =
+        aux::timeCall<SolveState>([&] { return solver.solve(IntSet(), solution).first; }, stats.SOLVETIME);
     assert(reply != SolveState::INCONSISTENT);
     if (reply == SolveState::SAT)
       quit::exit_SAT(solution, solver.logger);
@@ -330,6 +334,7 @@ void run::decide() {
 }
 
 void run::run(CeArb objective) {
+  stats.RUNSTARTTIME = aux::cpuTime();
   if (options.verbosity.get() > 0)
     std::cout << "c #variables " << solver.getNbOrigVars() << " #constraints " << solver.getNbConstraints()
               << std::endl;

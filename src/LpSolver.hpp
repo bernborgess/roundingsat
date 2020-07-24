@@ -133,9 +133,6 @@ class LpSolver {
 
   void flushConstraints();
 
-  std::pair<LpStatus, CeSuper> _checkFeasibility(bool inProcessing);
-  void _inProcess();
-
   void convertConstraint(const ConstrSimple64& c, soplex::DSVectorReal& row, double& rhs);
   void resetBasis();
   CeSuper createLinearCombinationFarkas(soplex::DVectorReal& mults);

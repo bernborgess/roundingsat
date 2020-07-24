@@ -251,6 +251,20 @@ inline int256 pow(const int256& x, unsigned y) {
   return boost::multiprecision::pow(x, y);
 }
 
+template <typename T>
+inline T timeCall(const std::function<T(void)>& f, double& to) {
+  double start = cpuTime();
+  T result = f();
+  to += cpuTime() - start;
+  return result;
+}
+template <>
+inline void timeCall(const std::function<void(void)>& f, double& to) {
+  double start = cpuTime();
+  f();
+  to += cpuTime() - start;
+}
+
 }  // namespace aux
 
 }  // namespace rs
