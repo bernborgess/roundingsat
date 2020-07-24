@@ -210,20 +210,19 @@ struct Options {
       "bump-lits",
       "Bump activity of literals encountered during conflict analysis, twice when occurring with opposing sign", 1};
   ValOption<int> bitsOverflow{"bits-overflow",
-                              "Bit width of maximum coefficient during conflict analysis calculations (greater than 62 "
-                              "may use slower arbitrary precision implementations)",
+                              "Bit width of maximum coefficient during conflict analysis calculations (0 is unlimited, "
+                              "unlimited or greater than 62 may use slower arbitrary precision implementations)",
                               62, "0 =< int", [](const int& x) -> bool { return x >= 0; }};
   ValOption<int> bitsReduced{"bits-reduced",
-                             "Bit width of maximum coefficient after reduction when exceeding bits-overflow", 29,
-                             "0 =< int", [](const int& x) -> bool { return x >= 0; }};
+                             "Bit width of maximum coefficient after reduction when exceeding bits-overflow (0 is "
+                             "unlimited, 1 reduces to cardinalities)",
+                             29, "0 =< int", [](const int& x) -> bool { return x >= 0; }};
   ValOption<int> bitsLearned{
       "bits-learned",
       "Bit width of maximum coefficient for learned constraints (0 is unlimited, 1 reduces to cardinalities)", 29,
       "0 =< int", [](const int& x) -> bool { return x >= 0; }};
-  ValOption<int> bitsInput{
-      "bits-input",
-      "Bit width of maximum coefficient for input constraints (0 is unlimited, 1 allows only cardinalities)", 0,
-      "0 =< int", [](const int& x) -> bool { return x >= 0; }};
+  ValOption<int> bitsInput{"bits-input", "Bit width of maximum coefficient for input constraints (0 is unlimited)", 0,
+                           "0 =< int", [](const int& x) -> bool { return x >= 0; }};
 
   std::vector<Option*> options = {
       &help,           &printSol,      &verbosity,     &proofLog,      &optMode,
