@@ -460,9 +460,7 @@ void ConstrExp<SMALL, LARGE>::saturate(bool check) {
 
 template <typename SMALL, typename LARGE>
 bool ConstrExp<SMALL, LARGE>::isSaturated() const {
-  for (Var v : vars)
-    if (aux::abs(coefs[v]) > degree) return false;
-  return true;
+  return getLargestCoef() <= degree;
 }
 
 template <typename SMALL, typename LARGE>
@@ -658,28 +656,19 @@ void ConstrExp<SMALL, LARGE>::postProcess(const IntVecIt& level, const std::vect
   if (simplifyToCardinality(true)) ++sts.NCARDDETECT;
 }
 
-// NOTE: also removes encountered zeroes and changes variable order
 template <typename SMALL, typename LARGE>
-AssertionStatus ConstrExp<SMALL, LARGE>::isAssertingBefore(const IntVecIt& level, int lvl) {
+AssertionStatus ConstrExp<SMALL, LARGE>::isAssertingBefore(const IntVecIt& level, int lvl) const {
   assert(lvl >= 0);
   assert(isSaturated());
-  LARGE slack = -degree;
   SMALL largestCoef = 0;
-  for (int i = vars.size() - 1; i >= 0; --i) {
+  LARGE slack = -degree;
+  for (int i = 0; i < (int)vars.size(); ++i) {
     Var v = vars[i];
-    if (coefs[v] == 0) {
-      remove(v);
-      aux::swapErase(vars, i);
-      continue;
-    }
     Lit l = coefs[v] < 0 ? -v : v;
     if (level[-l] < lvl) continue;  // falsified lit
     SMALL c = aux::abs(coefs[v]);
     if (level[l] >= lvl) largestCoef = std::max(largestCoef, c);  // unknown lit
     slack += c;
-    int mid = (vars.size() + i) / 2;  // move non-falsifieds to the back for efficiency in next call
-    vars[i] = vars[mid];
-    vars[mid] = v;
     if (slack >= degree) return AssertionStatus::NONASSERTING;
   }
   if (slack >= largestCoef)

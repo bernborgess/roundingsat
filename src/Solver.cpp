@@ -325,6 +325,7 @@ CeSuper Solver::analyze(CeSuper conflict) {
       stats.NLPENCLEARNEDFARKAS += reasonC.getOrigin() == Origin::LEARNEDFARKAS;
       stats.NLPENCFARKAS += reasonC.getOrigin() == Origin::FARKAS;
       ++stats.NRESOLVESTEPS;
+
       reasonC.resolveWith(confl, l, &actSet, *this);
     }
     undoOne();

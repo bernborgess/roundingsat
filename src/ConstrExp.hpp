@@ -163,7 +163,7 @@ struct ConstrExpSuper {
 
   virtual bool divideByGCD() = 0;
   virtual void postProcess(const IntVecIt& level, const std::vector<int>& pos, bool sortFirst, Stats& sts) = 0;
-  virtual AssertionStatus isAssertingBefore(const IntVecIt& level, int lvl) = 0;
+  virtual AssertionStatus isAssertingBefore(const IntVecIt& level, int lvl) const = 0;
   virtual int getAssertionLevel(const IntVecIt& level, const std::vector<int>& pos) const = 0;
   virtual void heuristicWeakening(const IntVecIt& level, const std::vector<int>& pos, Stats& sts) = 0;
 
@@ -345,8 +345,7 @@ struct ConstrExp final : public ConstrExpSuper {
   bool divideByGCD();
   // NOTE: only equivalence preserving operations!
   void postProcess(const IntVecIt& level, const std::vector<int>& pos, bool sortFirst, Stats& sts);
-  // NOTE: also removes encountered zeroes and changes variable order
-  AssertionStatus isAssertingBefore(const IntVecIt& level, int lvl);
+  AssertionStatus isAssertingBefore(const IntVecIt& level, int lvl) const;
   // @return: earliest decision level that propagates a variable
   int getAssertionLevel(const IntVecIt& level, const std::vector<int>& pos) const;
   // @post: preserves order after removeZeroes()
