@@ -364,6 +364,14 @@ void ConstrExp<SMALL, LARGE>::weaken(Var v) {  // fully weaken v
   weaken(-coefs[v], v);
 }
 
+template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::logIfUnit(Lit l, const SMALL& c, const IntVecIt& level, const std::vector<int>& pos) {
+  if (isUnit(level, l))
+    proofBuffer << (l < 0 ? "x" : "~x") << toVar(l) << " " << proofMult(c) << "+ ";
+  else if (isUnit(level, -l))
+    proofBuffer << plogger->unitIDs[pos[toVar(l)]] << " " << proofMult(c) << "+ ";
+}
+
 // @post: preserves order of vars
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::removeUnitsAndZeroes(const IntVecIt& level, const std::vector<int>& pos,
@@ -373,10 +381,7 @@ void ConstrExp<SMALL, LARGE>::removeUnitsAndZeroes(const IntVecIt& level, const 
       Lit l = getLit(v);
       SMALL c = getCoef(l);
       if (l == 0) continue;
-      if (isUnit(level, l))
-        proofBuffer << (l < 0 ? "x" : "~x") << v << " " << proofMult(c) << "+ ";
-      else if (isUnit(level, -l))
-        proofBuffer << plogger->unitIDs[pos[v]] << " " << proofMult(c) << "+ ";
+      logIfUnit(l, c, level, pos);
     }
   }
   int j = 0;
@@ -426,7 +431,9 @@ bool ConstrExp<SMALL, LARGE>::hasNoZeroes() const {
 
 // @post: preserves order of vars
 template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::saturate(const std::vector<Var>& vs) {
+void ConstrExp<SMALL, LARGE>::saturate(const std::vector<Var>& vs, bool check) {
+  if (check && getLargestCoef() <= degree) return;
+  assert(getLargestCoef() > degree);
   if (plogger && !isSaturated()) proofBuffer << "s ";  // log saturation only if it modifies the constraint
   if (degree <= 0) {  // NOTE: does not call reset(0), as we do not want to reset the buffer
     for (Var v : vars) remove(v);
@@ -447,8 +454,8 @@ void ConstrExp<SMALL, LARGE>::saturate(const std::vector<Var>& vs) {
 }
 
 template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::saturate() {
-  saturate(vars);
+void ConstrExp<SMALL, LARGE>::saturate(bool check) {
+  saturate(vars, check);
 }
 
 template <typename SMALL, typename LARGE>
@@ -478,19 +485,25 @@ template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening, int bitOverflow,
                                                      int bitReduce, Lit asserting) {
   removeZeroes();
-  saturate();
+  SMALL largest = getLargestCoef();
+  if (largest > degree) {
+    saturate(false);
+    largest = static_cast<SMALL>(degree);
+  }
   if (bitOverflow == 0) {
     return;
   }
   assert(bitOverflow > 0);
   assert(bitReduce > 0);
-  LARGE largest = getCutoffVal();
-  if (largest <= 0) return;
-  if ((int)aux::msb(largest) >= bitOverflow) {
+  assert(bitOverflow >= bitReduce);
+  LARGE maxVal = std::max<LARGE>(largest, std::max(degree, aux::abs(rhs)) / INF);
+  assert(maxVal == getCutoffVal());
+  if (maxVal <= 0) return;
+  if ((int)aux::msb(maxVal) >= bitOverflow) {
     LARGE cutoff = 2;
     cutoff = aux::pow(cutoff, bitReduce) - 1;
-    LARGE div = aux::ceildiv<LARGE>(largest, cutoff);
-    assert(aux::ceildiv<LARGE>(largest, div) <= cutoff);
+    LARGE div = aux::ceildiv<LARGE>(maxVal, cutoff);
+    assert(aux::ceildiv<LARGE>(maxVal, div) <= cutoff);
     weakenNonDivisibleNonFalsifieds(level, div, fullWeakening, asserting);
     divideRoundUp(div);
   }
@@ -992,10 +1005,15 @@ void ConstrExp<SMALL, LARGE>::resolveWith(const Clause& c, Lit l, IntSet* actSet
 
   SMALL cmult = getCoef(-l);
   assert(cmult >= 1);
-  if (plogger) proofBuffer << c.id << " " << proofMult(cmult) << "+ ";
+  if (plogger) {
+    proofBuffer << c.id << " " << proofMult(cmult) << "+ ";
+    for (unsigned int i = 0; i < c.size(); ++i) logIfUnit(c.data[i], cmult, level, pos);
+  }
   addRhs(cmult);
   for (unsigned int i = 0; i < c.size(); ++i) {
     Lit l = c.data[i];
+    assert(!isUnit(level, l));
+    if (isUnit(level, -l)) continue;
     Var v = toVar(l);
     SMALL cf = cmult;
     if (l < 0) {
@@ -1012,7 +1030,6 @@ void ConstrExp<SMALL, LARGE>::resolveWith(const Clause& c, Lit l, IntSet* actSet
     }
   }
 
-  removeUnitsAndZeroes(level, pos);
   saturateAndFixOverflow(level, (bool)options.weakenFull, options.bitsOverflow.get(), options.bitsReduced.get(), 0);
   assert(getCoef(-l) == 0);
   assert(hasNegativeSlack(level));
@@ -1039,10 +1056,19 @@ void ConstrExp<SMALL, LARGE>::resolveWith(const Cardinality& c, Lit l, IntSet* a
 
   SMALL cmult = getCoef(-l);
   assert(cmult >= 1);
-  if (plogger) proofBuffer << c.id << " " << proofMult(cmult) << "+ ";
+  if (plogger) {
+    proofBuffer << c.id << " " << proofMult(cmult) << "+ ";
+    for (unsigned int i = 0; i < c.size(); ++i) logIfUnit(c.data[i], cmult, level, pos);
+  }
   addRhs(cmult * c.degr);
   for (unsigned int i = 0; i < c.size(); ++i) {
     Lit l = c.data[i];
+    if (isUnit(level, -l)) {
+      continue;
+    } else if (isUnit(level, l)) {
+      addRhs(-cmult);
+      continue;
+    }
     Var v = toVar(l);
     SMALL cf = cmult;
     if (l < 0) {
@@ -1059,7 +1085,6 @@ void ConstrExp<SMALL, LARGE>::resolveWith(const Cardinality& c, Lit l, IntSet* a
     }
   }
 
-  removeUnitsAndZeroes(level, pos);
   saturateAndFixOverflow(level, (bool)options.weakenFull, options.bitsOverflow.get(), options.bitsReduced.get(), 0);
   assert(getCoef(-l) == 0);
   assert(hasNegativeSlack(level));

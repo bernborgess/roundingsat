@@ -172,7 +172,7 @@ CeSuper LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
     assert(lp.lhsReal(r) != INFTY);
     out->addUp(rowToConstraint(r), factor);
   }
-  out->removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
+  out->removeUnitsAndZeroes(solver.getLevel(), solver.getPos());
   assert(out->hasNoZeroes());
   out->weakenSmalls(out->absCoeffSum() / static_cast<bigint>((double)out->vars.size() / options.lpIntolerance.get()));
   out->saturateAndFixOverflow(solver.getLevel(), (bool)options.weakenFull, options.bitsOverflow.get(),
@@ -221,7 +221,7 @@ CandidateCut LpSolver::createLinearCombinationGomory(soplex::DVectorReal& mults)
   if (lcc->plogger) lcc->logAsInput();
   // TODO: fix logging for Gomory cuts
 
-  lcc->removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), true);
+  lcc->removeUnitsAndZeroes(solver.getLevel(), solver.getPos());
   if (lcc->isTautology())
     lcc->reset();
   else {

@@ -150,8 +150,8 @@ struct ConstrExpSuper {
   virtual void removeZeroes() = 0;
   virtual bool hasNoZeroes() const = 0;
 
-  virtual void saturate(const std::vector<Var>& vs) = 0;
-  virtual void saturate() = 0;
+  virtual void saturate(const std::vector<Var>& vs, bool check = true) = 0;
+  virtual void saturate(bool check = true) = 0;
   virtual bool isSaturated() const = 0;
   virtual void saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening, int bitOverflow, int bitReduce,
                                       Lit asserting) = 0;
@@ -223,6 +223,7 @@ struct ConstrExp final : public ConstrExpSuper {
     if (mult != 1) ss << mult << " * ";
     return ss.str();
   }
+  void logIfUnit(Lit l, const SMALL& c, const IntVecIt& level, const std::vector<int>& pos);
 
  public:
   ConstrExp(ConstrExpPool<ConstrExp<SMALL, LARGE>>& cep);
@@ -283,8 +284,8 @@ struct ConstrExp final : public ConstrExpSuper {
   bool hasNoZeroes() const;
 
   // @post: preserves order of vars
-  void saturate(const std::vector<Var>& vs);
-  void saturate();
+  void saturate(const std::vector<Var>& vs, bool check = true);
+  void saturate(bool check = true);
   bool isSaturated() const;
   /*
    * Fixes overflow

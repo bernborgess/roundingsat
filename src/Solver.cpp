@@ -468,7 +468,7 @@ CeSuper Solver::processLearnedStack() {
   while (learnedStack.size() > 0) {
     CeSuper learned = learnedStack.back()->toExpanded(cePools);
     learnedStack.pop_back();
-    learned->removeUnitsAndZeroes(Level, Pos, true);
+    learned->removeUnitsAndZeroes(Level, Pos);
     learned->sortInDecreasingCoefOrder();
     int assertionLevel = learned->getAssertionLevel(Level, Pos);
     if (assertionLevel < 0) {
