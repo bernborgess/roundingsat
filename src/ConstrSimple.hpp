@@ -94,7 +94,7 @@ struct ConstrSimple final : public ConstrSimpleSuper {
 std::ostream& operator<<(std::ostream& os, const __int128& x);
 
 template <typename CF, typename DG>
-inline std::ostream& operator<<(std::ostream& o, const ConstrSimple<CF, DG>& sc) {
+std::ostream& operator<<(std::ostream& o, const ConstrSimple<CF, DG>& sc) {
   for (const Term<CF>& t : sc.terms) o << "+ " << t << " ";
   return o << ">= " << sc.rhs;
 }

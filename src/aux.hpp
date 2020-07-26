@@ -95,40 +95,40 @@ inline std::string tos(const std::string& s) {
 }
 
 template <typename T>
-inline void swapErase(T& indexable, size_t index) {
-  indexable[index] = indexable.back();
+void swapErase(T& indexable, size_t index) {
+  indexable[index] = std::move(indexable.back());
   indexable.pop_back();
 }
 
 template <typename T, typename U>
-inline bool contains(const T& v, const U& x) {
+bool contains(const T& v, const U& x) {
   return std::find(v.cbegin(), v.cend(), x) != v.cend();
 }
 
 template <typename T>
-inline T ceildiv(const T& p, const T& q) {
+T ceildiv(const T& p, const T& q) {
   assert(q > 0);
   assert(p >= 0);
   return (p + q - 1) / q;
 }  // NOTE: potential overflow
 template <typename T>
-inline T floordiv(const T& p, const T& q) {
+T floordiv(const T& p, const T& q) {
   assert(q > 0);
   assert(p >= 0);
   return p / q;
 }
 template <typename T>
-inline T ceildiv_safe(const T& p, const T& q) {
+T ceildiv_safe(const T& p, const T& q) {
   assert(q > 0);
   return (p < 0) ? (-floordiv<T>(-p, q)) : ceildiv(p, q);
 }
 template <typename T>
-inline T floordiv_safe(const T& p, const T& q) {
+T floordiv_safe(const T& p, const T& q) {
   assert(q > 0);
   return (p < 0) ? (-ceildiv<T>(-p, q)) : floordiv(p, q);
 }
 template <typename T>
-inline T mod_safe(const T& p, const T& q) {
+T mod_safe(const T& p, const T& q) {
   assert(q > 0);
   if (p < 0)
     return q - (-p % q);
@@ -183,7 +183,7 @@ T max(const std::vector<T>& v) {
 }
 
 template <typename T>
-inline T abs(const T& x) {
+T abs(const T& x) {
   return std::abs(x);
 }
 template <>
@@ -196,7 +196,7 @@ inline int256 abs(const int256& x) {
 }
 
 template <typename T>
-inline T gcd(const T& x, const T& y) {
+T gcd(const T& x, const T& y) {
   return std::gcd(x, y);
 }
 template <>
@@ -209,7 +209,7 @@ inline int256 gcd(const int256& x, const int256& y) {
 }
 
 template <typename T>
-inline T lcm(const T& x, const T& y) {
+T lcm(const T& x, const T& y) {
   return std::lcm(x, y);
 }
 template <>
@@ -222,7 +222,7 @@ inline int256 lcm(const int256& x, const int256& y) {
 }
 
 template <typename T>
-inline unsigned msb(const T& x) {
+unsigned msb(const T& x) {
   assert(x > 0);
   // return std::bit_floor(x); // C++20
   return boost::multiprecision::msb(boost::multiprecision::uint128_t(x));
@@ -239,7 +239,7 @@ inline unsigned msb(const int256& x) {
 }
 
 template <typename T>
-inline T pow(const T& x, unsigned y) {
+T pow(const T& x, unsigned y) {
   return std::pow(x, y);
 }
 template <>
@@ -252,7 +252,7 @@ inline int256 pow(const int256& x, unsigned y) {
 }
 
 template <typename T>
-inline T timeCall(const std::function<T(void)>& f, double& to) {
+T timeCall(const std::function<T(void)>& f, double& to) {
   double start = cpuTime();
   T result = f();
   to += cpuTime() - start;
