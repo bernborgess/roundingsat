@@ -80,6 +80,7 @@ class Optimization {
   ID lastLowerBoundUnprocessed = ID_Undef;
 
   std::vector<LvM<SMALL>> lazyVars;
+  IntSet assumps;
 
   bool foundSolution() { return run::solution.size() > 0; }
 
@@ -142,7 +143,13 @@ class Optimization {
   }
 
   void handleInconsistency(CeSuper core) {
-    // take care of derived unit lits and remove zeroes
+    // take care of derived unit lits
+    for (Var v : reformObj->vars) {
+      if (isUnit(solver.getLevel(), v) || isUnit(solver.getLevel(), -v)) {
+        assumps.remove(v);
+        assumps.remove(-v);
+      }
+    }
     reformObj->removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), false);
     [[maybe_unused]] LARGE prev_lower = lower_bound;
     lower_bound = -reformObj->getDegree();
@@ -151,6 +158,7 @@ class Optimization {
       assert(lower_bound > prev_lower);
       checkLazyVariables();
       addLowerBound();
+      if (!options.cgIndCores) assumps.clear();
       return;
     }
     if (core->hasNegativeSlack(solver.getLevel())) {
@@ -163,6 +171,11 @@ class Optimization {
     if (!core->isClause()) ++stats.NCORECARDINALITIES;
     Ce32 cardCore = solver.cePools.take32();
     core->copyTo(cardCore);
+    assert(cardCore->hasNoZeroes());
+    for (Var v : cardCore->vars) {
+      assert(assumps.has(-cardCore->getLit(v)));
+      assumps.remove(-cardCore->getLit(v));
+    }
 
     // adjust the lower bound
     SMALL mult = 0;
@@ -179,8 +192,7 @@ class Optimization {
     assert(mult > 0);
     lower_bound += cardCore->getDegree() * mult;
 
-    if ((options.optMode.is("lazy-core-guided") || options.optMode.is("lazy-hybrid")) &&
-        cardCore->vars.size() - cardCore->getDegree() > 1) {
+    if (options.cgLazy && cardCore->vars.size() - cardCore->getDegree() > 1) {
       // add auxiliary variable
       long long newN = solver.getNbVars() + 1;
       solver.setNbVars(newN);
@@ -217,6 +229,7 @@ class Optimization {
     }
     checkLazyVariables();
     addLowerBound();
+    if (!options.cgIndCores) assumps.clear();
   }
 
   void handleNewSolution() {
@@ -236,17 +249,41 @@ class Optimization {
     if (lastUpperBound == ID_Unsat) quit::exit_UNSAT(solver.logger, solution, upper_bound);
   }
 
+  void logProof() {
+    if (!solver.logger) return;
+    assert(lastUpperBound != ID_Undef);
+    assert(lastUpperBound != ID_Unsat);
+    assert(lastLowerBound != ID_Undef);
+    assert(lastLowerBound != ID_Unsat);
+    CePtr<ConstrExp<SMALL, LARGE>> coreAggregate = solver.cePools.take<SMALL, LARGE>();
+    CePtr<ConstrExp<SMALL, LARGE>> aux = solver.cePools.take<SMALL, LARGE>();
+    origObj->copyTo(aux);
+    aux->invert();
+    aux->addRhs(1 - upper_bound);
+    aux->resetBuffer(lastUpperBoundUnprocessed);
+    coreAggregate->addUp(aux);
+    aux->reset();
+    origObj->copyTo(aux);
+    aux->addRhs(lower_bound);
+    aux->resetBuffer(lastLowerBoundUnprocessed);
+    coreAggregate->addUp(aux);
+    assert(coreAggregate->hasNegativeSlack(solver.getLevel()));
+    assert(solver.decisionLevel() == 0);
+    coreAggregate->logInconsistency(solver.getLevel(), solver.getPos(), stats);
+  }
+
   void optimize() {
-    IntSet assumps;
     size_t upper_time = 0, lower_time = 0;
     SolveState reply = SolveState::SAT;
     while (true) {
       size_t current_time = stats.getDetTime();
       if (reply != SolveState::INPROCESSED && reply != SolveState::RESTARTED) printObjBounds();
-      assumps.reset();
-      if (options.optMode.is("core-guided") || options.optMode.is("lazy-core-guided") ||
-          ((options.optMode.is("hybrid") || options.optMode.is("lazy-hybrid")) &&
-           lower_time < upper_time)) {  // use core-guided step
+
+      // NOTE: only if assumptions are empty will they be refilled
+      if (assumps.isEmpty() &&
+          (options.optMode.is("core-guided") ||
+           (options.optMode.is("core-boosted") && stats.getRunTime() < options.cgBoosted.get()) ||
+           (options.optMode.is("hybrid") && lower_time < upper_time))) {  // use core-guided step by setting assumptions
         reformObj->removeZeroes();
         std::vector<Term<double>> litcoefs;  // using double will lead to faster sort than arbitrary
         litcoefs.reserve(reformObj->vars.size());
@@ -266,16 +303,16 @@ class Optimization {
       if (reply == SolveState::RESTARTED) continue;
       if (reply == SolveState::UNSAT) quit::exit_UNSAT(solver.logger, solution, upper_bound);
       assert(solver.decisionLevel() == 0);
-      if (assumps.size() == 0)
+      if (assumps.isEmpty()) {
         upper_time += stats.getDetTime() - current_time;
-      else
+      } else {
         lower_time += stats.getDetTime() - current_time;
+      }
       if (reply == SolveState::SAT) {
+        assumps.clear();
         assert(foundSolution());
         ++stats.NSOLS;
         handleNewSolution();
-        assert((!options.optMode.is("core-guided") && !options.optMode.is("lazy-core-guided")) ||
-               lower_bound == upper_bound);
       } else if (reply == SolveState::INCONSISTENT) {
         ++stats.NCORES;
         handleInconsistency(out.second);
@@ -284,27 +321,7 @@ class Optimization {
       }
       if (lower_bound >= upper_bound) {
         printObjBounds();
-        if (solver.logger) {
-          assert(lastUpperBound != ID_Undef);
-          assert(lastUpperBound != ID_Unsat);
-          assert(lastLowerBound != ID_Undef);
-          assert(lastLowerBound != ID_Unsat);
-          CePtr<ConstrExp<SMALL, LARGE>> coreAggregate = solver.cePools.take<SMALL, LARGE>();
-          CePtr<ConstrExp<SMALL, LARGE>> aux = solver.cePools.take<SMALL, LARGE>();
-          origObj->copyTo(aux);
-          aux->invert();
-          aux->addRhs(1 - upper_bound);
-          aux->resetBuffer(lastUpperBoundUnprocessed);
-          coreAggregate->addUp(aux);
-          aux->reset();
-          origObj->copyTo(aux);
-          aux->addRhs(lower_bound);
-          aux->resetBuffer(lastLowerBoundUnprocessed);
-          coreAggregate->addUp(aux);
-          assert(coreAggregate->hasNegativeSlack(solver.getLevel()));
-          assert(solver.decisionLevel() == 0);
-          coreAggregate->logInconsistency(solver.getLevel(), solver.getPos(), stats);
-        }
+        logProof();
         quit::exit_UNSAT(solver.logger, solution, upper_bound);
       }
     }

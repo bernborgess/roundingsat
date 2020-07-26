@@ -247,11 +247,11 @@ WatchStatus Solver::checkForPropagation(CRef cr, int& idx, Lit p) {
 
 void Solver::recomputeLBD(Constr& C) {
   if (C.lbd() > 2) {  // constraints with LBD <= 2 won't have score recomputed
-    assert(tmpSet.size() == 0);
+    assert(tmpSet.isEmpty());
     for (int i = 0; i < (int)C.size(); i++)
       if (isFalse(Level, C.lit(i))) tmpSet.add(Level[-C.lit(i)]);
     if (C.lbd() > tmpSet.size() + 1) C.setLBD(tmpSet.size());  // simulate Glucose
-    tmpSet.reset();
+    tmpSet.clear();
   }
 }
 
@@ -290,7 +290,7 @@ CeSuper Solver::analyze(CeSuper conflict) {
   CeSuper confl = getAnalysisCE(conflict, options.bitsOverflow.get(), cePools);
   conflict->reset();
 
-  assert(actSet.size() == 0);  // will hold the literals that need their activity bumped
+  assert(actSet.isEmpty());  // will hold the literals that need their activity bumped
   for (Var v : confl->vars) {
     if (options.bumpLits)
       actSet.add(confl->getLit(v));
@@ -333,7 +333,7 @@ CeSuper Solver::analyze(CeSuper conflict) {
   assert(confl->hasNegativeSlack(Level));
   for (Lit l : actSet.keys)
     if (l != 0) vBumpActivity(toVar(l));
-  actSet.reset();
+  actSet.clear();
 
   return confl;
 }

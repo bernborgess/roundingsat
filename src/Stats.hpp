@@ -65,6 +65,7 @@ struct Stats {
   double RUNSTARTTIME = 0;
 
   inline double getTime() const { return aux::cpuTime() - STARTTIME; }
+  inline double getRunTime() const { return aux::cpuTime() - RUNSTARTTIME; }
 
   inline long long getDetTime() const {
     return 1 + NADDEDLITERALS + NWATCHLOOKUPS + NWATCHLOOKUPSBJ + NWATCHCHECKS + NPROPCHECKS + NPROP + NTRAILPOPS +
@@ -74,7 +75,7 @@ struct Stats {
   void print() const {
     printf("c cpu time %g s\n", getTime());
     printf("c deterministic time %lld %.2e\n", getDetTime(), (double)getDetTime());
-    printf("c optimization time %g s\n", aux::cpuTime() - RUNSTARTTIME - SOLVETIME);
+    printf("c optimization time %g s\n", getRunTime() - SOLVETIME);
     printf("c solve time %g s\n", SOLVETIME);
     printf("c propagation time %g s\n", PROPTIME);
     printf("c conflict analysis time %g s\n", CATIME);

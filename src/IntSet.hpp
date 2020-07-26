@@ -36,10 +36,19 @@ namespace rs {
 
 struct IntSet {  // TODO: template to long long, int128, ...?
  private:
-  std::vector<bool> _values = {false};
-  std::vector<bool>::iterator values = _values.begin();
-  static constexpr bool _unused_() { return false; }
+  std::vector<int> _index = {-1};
+  std::vector<int>::iterator index = _index.begin();
+  static constexpr int _unused_() { return -1; }
   const int resize_factor = 2;
+
+  bool check() {
+    for (int i = 0; i < (int)_index.size() / 2; ++i) {
+      assert(index[i] == _unused_() || i == keys[index[i]]);
+      assert(index[-i] == _unused_() || -i == keys[index[-i]]);
+    }
+    for (int i = 0; i < (int)keys.size(); ++i) assert(index[keys[i]] == i);
+    return true;
+  }
 
  public:
   std::vector<int> keys;
@@ -50,23 +59,33 @@ struct IntSet {  // TODO: template to long long, int128, ...?
     for (int i : ints) add(i);
   }
 
-  void reset() {
-    for (int k : keys) values[k] = _unused_();
+  inline void resize(int size) { aux::resizeIntMap(_index, index, size, resize_factor, _unused_()); }
+  inline size_t size() const { return keys.size(); }
+  bool isEmpty() { return size() == 0; }
+
+  void clear() {
+    assert(check());  // TODO: disable
+    for (int k : keys) index[k] = _unused_();
     keys.clear();
   }
 
-  inline void resize(int size) { aux::resizeIntMap(_values, values, size, resize_factor, _unused_()); }
-  inline size_t size() const { return keys.size(); }
+  inline bool has(int key) const { return _index.size() > (unsigned int)2 * std::abs(key) && index[key] != _unused_(); }
 
-  inline bool has(int key) const {
-    return _values.size() > (unsigned int)2 * std::abs(key) && values[key] != _unused_();
-  }
   void add(int key) {
-    if (_values.size() <= (unsigned int)2 * std::abs(key)) resize(std::abs(key));
-    if (values[key] != _unused_()) return;
+    if (_index.size() <= (unsigned int)2 * std::abs(key)) resize(std::abs(key));
+    if (index[key] != _unused_()) return;
     assert(!aux::contains(keys, key));
-    values[key] = !_unused_();
+    index[key] = keys.size();
     keys.push_back(key);
+  }
+
+  void remove(int key) {
+    if (!has(key)) return;
+    int idx = index[key];
+    index[keys.back()] = idx;
+    aux::swapErase(keys, idx);
+    index[key] = _unused_();
+    assert(!has(key));
   }
 
   std::ostream& operator<<(std::ostream& o) const {

@@ -159,10 +159,7 @@ struct Options {
                            [](const int& x) -> bool { return x >= 0; }};
   ValOption<std::string> proofLog{"proof-log", "Filename for the proof logs, left unspecified disables proof logging",
                                   "", "/path/to/file", [](const std::string&) -> bool { return true; }};
-  EnumOption optMode{"opt-mode",
-                     "Optimization mode",
-                     "lazy-hybrid",
-                     {"linear", "core-guided", "lazy-core-guided", "hybrid", "lazy-hybrid"}};
+  EnumOption optMode{"opt-mode", "Optimization mode", "hybrid", {"linear", "core-guided", "core-boosted", "hybrid"}};
   ValOption<double> lubyBase{"luby-base", "Base of the Luby restart sequence", 2, "1 =< float",
                              [](double x) -> bool { return 1 <= x; }};
   ValOption<int> lubyMult{"luby-mult", "Multiplier of the Luby restart sequence", 100, "1 =< int",
@@ -224,20 +221,25 @@ struct Options {
       "bits-input",
       "Bit width of maximum coefficient for input constraints (0 is unlimited, 1 allows only cardinalities)", 0,
       "0 =< int", [](const int& x) -> bool { return x >= 0; }};
+  BoolOption cgLazy{"cg-lazy", "Use lazy extension during core-guided search", 1};
+  ValOption<int> cgBoosted{"cg-boost", "Seconds of core-boosted search before switching to linear search", 10,
+                           "0 =< int", [](const int& x) -> bool { return x >= 0; }};
+  BoolOption cgIndCores{"cg-indcores", "Use independent cores for core-guided search", 1};
+  BoolOption cgStrat{"cg-strat", "Use stratification for core-guided search", 1};
 
-  std::vector<Option*> options = {
+  const std::vector<Option*> options = {
       &help,           &printSol,      &verbosity,     &proofLog,      &optMode,
       &lubyBase,       &lubyMult,      &varDecay,      &clauseDecay,   &dbCleanInc,
       &propCounting,   &propClause,    &propCard,      &propIdx,       &propSup,
       &lpPivotRatio,   &lpPivotBudget, &lpIntolerance, &addGomoryCuts, &addLearnedCuts,
       &gomoryCutLimit, &maxCutCos,     &slackdiv,      &weakenFull,    &weakenNonImplying,
       &bumpOnlyFalse,  &bumpCanceling, &bumpLits,      &bitsOverflow,  &bitsReduced,
-      &bitsLearned,    &bitsInput,
+      &bitsLearned,    &bitsInput,     &cgLazy,        &cgBoosted,     &cgIndCores,
+      &cgStrat,
   };
   std::unordered_map<std::string, Option*> name2opt;
 
   Options() {
-    assert(options.size() == 32);
     for (Option* opt : options) name2opt[opt->name] = opt;
   }
 
