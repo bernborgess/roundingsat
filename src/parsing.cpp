@@ -100,10 +100,10 @@ void parsing::opb_read(std::istream& in, Solver& solver, CeArb objective) {
       input->copyTo(objective);
     else {
       input->addRhs(read_number(line0.substr(line0.find("=") + 1)));
-      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
+      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT(solver.logger);
       if (line0.find(" = ") != std::string::npos) {  // Handle equality case with second constraint
         input->invert();
-        if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
+        if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT(solver.logger);
       }
     }
   }
@@ -130,7 +130,7 @@ void parsing::wcnf_read(std::istream& in, long long top, Solver& solver, CeArb o
         objective->addLhs(weight, solver.getNbVars());
         input->addLhs(1, solver.getNbVars());
       }  // else hard clause
-      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
+      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT(solver.logger);
     }
   }
 }
@@ -149,7 +149,7 @@ void parsing::cnf_read(std::istream& in, Solver& solver) {
         solver.setNbVars(std::abs(l), true);
         input->addLhs(1, l);
       }
-      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT({}, 0, solver.logger);
+      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT(solver.logger);
     }
   }
 }

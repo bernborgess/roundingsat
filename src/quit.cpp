@@ -58,7 +58,8 @@ void quit::exit_SAT(const std::vector<bool>& sol, const std::shared_ptr<Logger>&
   exit(10);
 }
 
-void quit::exit_UNSAT(const std::vector<bool>& sol, const BigVal& bestObjVal, const std::shared_ptr<Logger>& logger) {
+template <typename LARGE>
+void quit::exit_UNSAT(const std::shared_ptr<Logger>& logger, const std::vector<bool>& sol, const LARGE& bestObjVal) {
   if (logger) logger->flush();
   if (options.verbosity.get() > 0) stats.print();
   if (sol.size() > 0) {
@@ -71,6 +72,18 @@ void quit::exit_UNSAT(const std::vector<bool>& sol, const BigVal& bestObjVal, co
     exit(20);
   }
 }
+template void quit::exit_UNSAT<int>(const std::shared_ptr<Logger>& logger, const std::vector<bool>& sol,
+                                    const int& bestObjVal);
+template void quit::exit_UNSAT<long long>(const std::shared_ptr<Logger>& logger, const std::vector<bool>& sol,
+                                          const long long& bestObjVal);
+template void quit::exit_UNSAT<int128>(const std::shared_ptr<Logger>& logger, const std::vector<bool>& sol,
+                                       const int128& bestObjVal);
+template void quit::exit_UNSAT<int256>(const std::shared_ptr<Logger>& logger, const std::vector<bool>& sol,
+                                       const int256& bestObjVal);
+template void quit::exit_UNSAT<bigint>(const std::shared_ptr<Logger>& logger, const std::vector<bool>& sol,
+                                       const bigint& bestObjVal);
+
+void quit::exit_UNSAT(const std::shared_ptr<Logger>& logger) { quit::exit_UNSAT<int>(logger, {}, 0); }
 
 void quit::exit_INDETERMINATE(const std::vector<bool>& sol, const std::shared_ptr<Logger>& logger) {
   if (sol.size() > 0) exit_SAT(sol, logger);

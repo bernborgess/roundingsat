@@ -38,12 +38,10 @@ namespace rs {
 namespace run {
 
 extern std::vector<bool> solution;
-extern BigVal upper_bound;
-extern BigVal lower_bound;
 extern Solver solver;
 
 struct LazyVar {
-  const BigVal mult;
+  Solver& solver;
   const int n;
   Var currentVar;
   ID atLeastID = ID_Undef;
@@ -51,28 +49,268 @@ struct LazyVar {
   ConstrSimple32 atLeast;  // X >= k + y1 + ... + yi
   ConstrSimple32 atMost;   // X =< k + y1 + ... + yi-1 + (1+n-k-i)yi
 
-  LazyVar(const Ce32 cardCore, Var startVar, const BigVal& m);
+  LazyVar(Solver& slvr, const Ce32 cardCore, Var startVar);
   ~LazyVar();
 
   int remainingVars();
   void addVar(Var v);
-  void addAtLeastConstraint();
-  void addAtMostConstraint();
-  void addSymBreakingConstraint(Var prevvar) const;
+  ID addAtLeastConstraint();
+  ID addAtMostConstraint();
+  ID addSymBreakingConstraint(Var prevvar) const;
 };
 
 std::ostream& operator<<(std::ostream& o, const std::shared_ptr<LazyVar> lv);
 
-bool foundSolution();
-void printObjBounds(const BigVal& lower, const BigVal& upper);
+template <typename SMALL>
+struct LvM {
+  std::unique_ptr<LazyVar> lv;
+  SMALL m;
+};
 
-void checkLazyVariables(CeArb reformObj, std::vector<std::shared_ptr<LazyVar>>& lazyVars);
-ID addLowerBound(const CeArb origObj, const BigVal& lower_bound, ID& lastLowerBound);
-ID handleInconsistency(const CeArb origObj, CeArb reformObj, CeSuper core,
-                       std::vector<std::shared_ptr<LazyVar>>& lazyVars, ID& lastLowerBound);
-ID handleNewSolution(const CeArb origObj, ID& lastUpperBound);
+template <typename SMALL, typename LARGE>
+class Optimization {
+  const CePtr<ConstrExp<SMALL, LARGE>> origObj;
+  CePtr<ConstrExp<SMALL, LARGE>> reformObj;
 
-void optimize(CeArb origObj);
+  LARGE lower_bound;
+  LARGE upper_bound;
+  ID lastUpperBound = ID_Undef;
+  ID lastUpperBoundUnprocessed = ID_Undef;
+  ID lastLowerBound = ID_Undef;
+  ID lastLowerBoundUnprocessed = ID_Undef;
+
+  std::vector<LvM<SMALL>> lazyVars;
+
+  bool foundSolution() { return run::solution.size() > 0; }
+
+ public:
+  Optimization(CePtr<ConstrExp<SMALL, LARGE>> obj) : origObj(obj) {
+    assert(origObj->vars.size() > 0);
+    // NOTE: -origObj->getDegree() keeps track of the offset of the reformulated objective (or after removing unit lits)
+    lower_bound = -origObj->getDegree();
+    upper_bound = origObj->absCoeffSum() - origObj->getRhs() + 1;
+
+    reformObj = solver.cePools.take<SMALL, LARGE>();
+    reformObj->stopLogging();
+    origObj->copyTo(reformObj);
+  };
+
+  void printObjBounds() {
+    if (options.verbosity.get() == 0) return;
+    std::cout << "c bounds ";
+    if (foundSolution()) {
+      std::cout << bigint(upper_bound);  // TODO: remove bigint(...) hack
+    } else {
+      std::cout << "-";
+    }
+    std::cout << " >= " << bigint(lower_bound) << " @ " << stats.getTime() << "\n";  // TODO: remove bigint(...) hack
+  }
+
+  void checkLazyVariables() {
+    for (int i = 0; i < (int)lazyVars.size(); ++i) {
+      LazyVar& lv = *lazyVars[i].lv;
+      if (reformObj->getLit(lv.currentVar) == 0) {
+        // add auxiliary variable
+        long long newN = solver.getNbVars() + 1;
+        solver.setNbVars(newN);
+        Var oldvar = lv.currentVar;
+        lv.addVar(newN);
+        // reformulate the objective
+        reformObj->addLhs(lazyVars[i].m, newN);
+        // add necessary lazy constraints
+        if (lv.addAtLeastConstraint() == ID_Unsat || lv.addAtMostConstraint() == ID_Unsat ||
+            lv.addSymBreakingConstraint(oldvar) == ID_Unsat) {
+          quit::exit_UNSAT(solver.logger, solution, upper_bound);
+        }
+        if (lv.remainingVars() == 0) {  // fully expanded, no need to keep in memory
+          aux::swapErase(lazyVars, i--);
+          continue;
+        }
+      }
+    }
+  }
+
+  void addLowerBound() {
+    CePtr<ConstrExp<SMALL, LARGE>> aux = solver.cePools.take<SMALL, LARGE>();
+    origObj->copyTo(aux);
+    aux->addRhs(lower_bound);
+    solver.dropExternal(lastLowerBound, true, true);
+    std::pair<ID, ID> res = solver.addConstraint(aux, Origin::LOWERBOUND);
+    lastLowerBoundUnprocessed = res.first;
+    lastLowerBound = res.second;
+    if (lastLowerBound == ID_Unsat) quit::exit_UNSAT(solver.logger, solution, upper_bound);
+  }
+
+  void handleInconsistency(CeSuper core) {
+    // take care of derived unit lits and remove zeroes
+    reformObj->removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), false);
+    [[maybe_unused]] LARGE prev_lower = lower_bound;
+    lower_bound = -reformObj->getDegree();
+    assert(core);
+    if (core->isTautology()) {  // only violated unit assumptions were derived
+      assert(lower_bound > prev_lower);
+      checkLazyVariables();
+      addLowerBound();
+      return;
+    }
+    if (core->hasNegativeSlack(solver.getLevel())) {
+      assert(solver.decisionLevel() == 0);
+      if (solver.logger) core->logInconsistency(solver.getLevel(), solver.getPos(), stats);
+      quit::exit_UNSAT(solver.logger, solution, upper_bound);
+    }
+    // figure out an appropriate core
+    core->simplifyToCardinality(false);
+    if (!core->isClause()) ++stats.NCORECARDINALITIES;
+    Ce32 cardCore = solver.cePools.take32();
+    core->copyTo(cardCore);
+
+    // adjust the lower bound
+    SMALL mult = 0;
+    for (Var v : cardCore->vars) {
+      assert(reformObj->getLit(v) != 0);
+      if (mult == 0) {
+        mult = aux::abs(reformObj->coefs[v]);
+      } else if (mult == 1) {
+        break;
+      } else {
+        mult = std::min(mult, aux::abs(reformObj->coefs[v]));
+      }
+    }
+    assert(mult > 0);
+    lower_bound += cardCore->getDegree() * mult;
+
+    if ((options.optMode.is("lazy-core-guided") || options.optMode.is("lazy-hybrid")) &&
+        cardCore->vars.size() - cardCore->getDegree() > 1) {
+      // add auxiliary variable
+      long long newN = solver.getNbVars() + 1;
+      solver.setNbVars(newN);
+      // reformulate the objective
+      cardCore->invert();
+      reformObj->addUp(cardCore, mult);
+      cardCore->invert();
+      reformObj->addLhs(mult, newN);  // add only one variable for now
+      assert(lower_bound == -reformObj->getDegree());
+      // add first lazy constraint
+      lazyVars.push_back({std::make_unique<LazyVar>(solver, cardCore, newN), mult});
+      lazyVars.back().lv->addAtLeastConstraint();
+      lazyVars.back().lv->addAtMostConstraint();
+    } else {
+      // add auxiliary variables
+      long long oldN = solver.getNbVars();
+      long long newN = oldN - static_cast<int>(cardCore->getDegree()) + cardCore->vars.size();
+      solver.setNbVars(newN);
+      // reformulate the objective
+      for (Var v = oldN + 1; v <= newN; ++v) cardCore->addLhs(-1, v);
+      cardCore->invert();
+      reformObj->addUp(cardCore, mult);
+      assert(lower_bound == -reformObj->getDegree());
+      // add channeling constraints
+      if (solver.addConstraint(cardCore, Origin::COREGUIDED).second == ID_Unsat)
+        quit::exit_UNSAT(solver.logger, solution, upper_bound);
+      cardCore->invert();
+      if (solver.addConstraint(cardCore, Origin::COREGUIDED).second == ID_Unsat)
+        quit::exit_UNSAT(solver.logger, solution, upper_bound);
+      for (Var v = oldN + 1; v < newN; ++v) {  // add symmetry breaking constraints
+        if (solver.addConstraint(ConstrSimple32({{1, v}, {1, -v - 1}}, 1), Origin::COREGUIDED).second == ID_Unsat)
+          quit::exit_UNSAT(solver.logger, solution, upper_bound);
+      }
+    }
+    checkLazyVariables();
+    addLowerBound();
+  }
+
+  void handleNewSolution() {
+    [[maybe_unused]] LARGE prev_val = upper_bound;
+    upper_bound = -origObj->getRhs();
+    for (Var v : origObj->vars) upper_bound += origObj->coefs[v] * (int)solution[v];
+    assert(upper_bound < prev_val);
+
+    CePtr<ConstrExp<SMALL, LARGE>> aux = solver.cePools.take<SMALL, LARGE>();
+    origObj->copyTo(aux);
+    aux->invert();
+    aux->addRhs(-upper_bound + 1);
+    solver.dropExternal(lastUpperBound, true, true);
+    std::pair<ID, ID> res = solver.addConstraint(aux, Origin::UPPERBOUND);
+    lastUpperBoundUnprocessed = res.first;
+    lastUpperBound = res.second;
+    if (lastUpperBound == ID_Unsat) quit::exit_UNSAT(solver.logger, solution, upper_bound);
+  }
+
+  void optimize() {
+    IntSet assumps;
+    size_t upper_time = 0, lower_time = 0;
+    SolveState reply = SolveState::SAT;
+    while (true) {
+      size_t current_time = stats.getDetTime();
+      if (reply != SolveState::INPROCESSED && reply != SolveState::RESTARTED) printObjBounds();
+      assumps.reset();
+      if (options.optMode.is("core-guided") || options.optMode.is("lazy-core-guided") ||
+          ((options.optMode.is("hybrid") || options.optMode.is("lazy-hybrid")) &&
+           lower_time < upper_time)) {  // use core-guided step
+        reformObj->removeZeroes();
+        std::vector<Term<double>> litcoefs;  // using double will lead to faster sort than arbitrary
+        litcoefs.reserve(reformObj->vars.size());
+        for (Var v : reformObj->vars) {
+          assert(reformObj->getLit(v) != 0);
+          litcoefs.emplace_back(static_cast<double>(aux::abs(reformObj->coefs[v])), v);
+        }
+        std::sort(litcoefs.begin(), litcoefs.end(), [](const Term<double>& t1, const Term<double>& t2) {
+          return t1.c > t2.c || (t1.l < t2.l && t1.c == t2.c);
+        });
+        for (const Term<double>& t : litcoefs) assumps.add(-reformObj->getLit(t.l));
+      }
+      assert(upper_bound > lower_bound);
+      std::pair<SolveState, CeSuper> out = aux::timeCall<std::pair<SolveState, CeSuper>>(
+          [&] { return solver.solve(assumps, solution); }, stats.SOLVETIME);
+      reply = out.first;
+      if (reply == SolveState::RESTARTED) continue;
+      if (reply == SolveState::UNSAT) quit::exit_UNSAT(solver.logger, solution, upper_bound);
+      assert(solver.decisionLevel() == 0);
+      if (assumps.size() == 0)
+        upper_time += stats.getDetTime() - current_time;
+      else
+        lower_time += stats.getDetTime() - current_time;
+      if (reply == SolveState::SAT) {
+        assert(foundSolution());
+        ++stats.NSOLS;
+        handleNewSolution();
+        assert((!options.optMode.is("core-guided") && !options.optMode.is("lazy-core-guided")) ||
+               lower_bound == upper_bound);
+      } else if (reply == SolveState::INCONSISTENT) {
+        ++stats.NCORES;
+        handleInconsistency(out.second);
+      } else {
+        assert(reply == SolveState::INPROCESSED);  // keep looping
+      }
+      if (lower_bound >= upper_bound) {
+        printObjBounds();
+        if (solver.logger) {
+          assert(lastUpperBound != ID_Undef);
+          assert(lastUpperBound != ID_Unsat);
+          assert(lastLowerBound != ID_Undef);
+          assert(lastLowerBound != ID_Unsat);
+          CePtr<ConstrExp<SMALL, LARGE>> coreAggregate = solver.cePools.take<SMALL, LARGE>();
+          CePtr<ConstrExp<SMALL, LARGE>> aux = solver.cePools.take<SMALL, LARGE>();
+          origObj->copyTo(aux);
+          aux->invert();
+          aux->addRhs(1 - upper_bound);
+          aux->resetBuffer(lastUpperBoundUnprocessed);
+          coreAggregate->addUp(aux);
+          aux->reset();
+          origObj->copyTo(aux);
+          aux->addRhs(lower_bound);
+          aux->resetBuffer(lastLowerBoundUnprocessed);
+          coreAggregate->addUp(aux);
+          assert(coreAggregate->hasNegativeSlack(solver.getLevel()));
+          assert(solver.decisionLevel() == 0);
+          coreAggregate->logInconsistency(solver.getLevel(), solver.getPos(), stats);
+        }
+        quit::exit_UNSAT(solver.logger, solution, upper_bound);
+      }
+    }
+  }
+};
+
 void decide();
 void run(CeArb objective);
 
