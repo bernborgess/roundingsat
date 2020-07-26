@@ -65,8 +65,8 @@ for j in "${arr_dec[@]}"; do
         echo "$formula does not exist."
         exit 1
     fi
-    echo "running $formula"
     obj="$(cut -d'_' -f2 <<<$j)"
+    echo "running $binary $formula $options --proof-log=$logfile"
     output=`timeout $time $binary $formula $options --proof-log=$logfile 2>&1 | awk '/^o|SATISFIABLE|.*Assertion.*/ {print $2}'`
     if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
         errors=`expr 1000 + $errors`
@@ -85,9 +85,17 @@ done
 declare -a arr_modes=(
 "linear"
 "core-guided"
-"lazy-core-guided"
+"core-guided"
 "hybrid"
-"lazy-hybrid"
+"hybrid"
+)
+
+declare -a arr_lazy=(
+0
+0
+1
+0
+1
 )
 
 declare -a arr_opt=(
@@ -119,8 +127,10 @@ declare -a arr_opt=(
 "opb/opt/cracpb1.opb_22199"
 )
 
-for mode in "${arr_modes[@]}"; do
-    echo "########## $mode ##########"
+for idx in "${!arr_modes[@]}"; do
+    mode=${arr_modes[$idx]}
+    lazy=${arr_lazy[$idx]}
+    echo "########## $mode lazy=$lazy ##########"
     echo ""
     for j in "${arr_opt[@]}"; do
         formula="$(cut -d'_' -f1 <<<$j)"
@@ -133,9 +143,9 @@ for mode in "${arr_modes[@]}"; do
             echo "$formula does not exist."
             exit 1
         fi
-        echo "running $formula"
         obj="$(cut -d'_' -f2 <<<$j)"
-        output=`timeout $time $binary $formula $options --opt-mode=$mode --proof-log=$logfile 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
+        echo "running $binary $formula $options --opt-mode=$mode --cg-lazy=$lazy --proof-log=$logfile"
+        output=`timeout $time $binary $formula $options --opt-mode=$mode --cg-lazy=$lazy --proof-log=$logfile 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
         if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
             errors=`expr 1000 + $errors`
             echo "wrong output: $output vs $obj"
@@ -164,9 +174,9 @@ for j in "${arr_opt[@]}"; do
         echo "$formula does not exist."
         exit 1
     fi
-    echo "running $formula"
     obj="$(cut -d'_' -f2 <<<$j)"
-    output=`timeout $time $binary $formula $options --opt-mode="lazy-hybrid" 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
+    echo "running $binary $formula $options --opt-mode="hybrid" --cg-lazy=1"
+    output=`timeout $time $binary $formula $options --opt-mode="hybrid" --cg-lazy=1 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
     if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
         errors=`expr 1000 + $errors`
         echo "wrong output: $output vs $obj"
