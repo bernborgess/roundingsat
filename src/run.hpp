@@ -275,6 +275,8 @@ class Optimization {
   void optimize() {
     size_t upper_time = 0, lower_time = 0;
     SolveState reply = SolveState::SAT;
+    SMALL coeflim = options.cgStrat ? reformObj->getLargestCoef() : 0;
+    int coefLimFlag = -1;
     while (true) {
       size_t current_time = stats.getDetTime();
       if (reply != SolveState::INPROCESSED && reply != SolveState::RESTARTED) printObjBounds();
@@ -285,16 +287,26 @@ class Optimization {
            (options.optMode.is("core-boosted") && stats.getRunTime() < options.cgBoosted.get()) ||
            (options.optMode.is("hybrid") && lower_time < upper_time))) {  // use core-guided step by setting assumptions
         reformObj->removeZeroes();
+        if (coefLimFlag == 1) {
+          int oldCoeflim = coeflim;
+          coeflim = 0;
+          for (Var v : reformObj->vars) {
+            SMALL cf = aux::abs(reformObj->coefs[v]);
+            if (cf > coeflim && cf < oldCoeflim) coeflim = cf;
+          }
+        }
         std::vector<Term<double>> litcoefs;  // using double will lead to faster sort than arbitrary
         litcoefs.reserve(reformObj->vars.size());
         for (Var v : reformObj->vars) {
           assert(reformObj->getLit(v) != 0);
-          litcoefs.emplace_back(static_cast<double>(aux::abs(reformObj->coefs[v])), v);
+          SMALL cf = aux::abs(reformObj->coefs[v]);
+          if (cf >= coeflim) litcoefs.emplace_back(static_cast<double>(cf), v);
         }
         std::sort(litcoefs.begin(), litcoefs.end(), [](const Term<double>& t1, const Term<double>& t2) {
           return t1.c > t2.c || (t1.l < t2.l && t1.c == t2.c);
         });
         for (const Term<double>& t : litcoefs) assumps.add(-reformObj->getLit(t.l));
+        coefLimFlag = 0;
       }
       assert(upper_bound > lower_bound);
       std::pair<SolveState, CeSuper> out = aux::timeCall<std::pair<SolveState, CeSuper>>(
@@ -313,11 +325,15 @@ class Optimization {
         assert(foundSolution());
         ++stats.NSOLS;
         handleNewSolution();
+        if (coefLimFlag == 0) coefLimFlag = 1;
       } else if (reply == SolveState::INCONSISTENT) {
         ++stats.NCORES;
         handleInconsistency(out.second);
+        coefLimFlag = -1;
       } else {
         assert(reply == SolveState::INPROCESSED);  // keep looping
+        if (coefLimFlag == 0) coefLimFlag = 1;
+        assumps.clear();
       }
       if (lower_bound >= upper_bound) {
         printObjBounds();
