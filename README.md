@@ -18,6 +18,12 @@ For a debug build:
 
 For more builds, similar build directories can be created.
 
+## Dependencies
+
+- C++17 (i.e., a reasonably recent compiler)
+- Boost library: www.boost.org
+- Optionally: SoPlex LP solver (see below)
+
 ## SoPlex
 
 RoundingSat supports an integration with the LP solver SoPlex to improve its search routine.
