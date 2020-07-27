@@ -602,12 +602,11 @@ void ConstrExp<SMALL, LARGE>::weakenNonDivisibleNonFalsifieds(const IntVecIt& le
   if (div == 1) return;
   if (fullWeakening) {
     for (Var v : vars)
-      if (coefs[v] % div != 0 && !falsified(level, v) && !(v == toVar(asserting) && div > aux::abs(coefs[v])))
-        weaken(v);
+      if (coefs[v] % div != 0 && !falsified(level, v) && v != toVar(asserting)) weaken(v);
   } else {
     for (Var v : vars)
-      if (coefs[v] % div != 0 && !falsified(level, v) && !(v == toVar(asserting) && div > aux::abs(coefs[v])))
-        weaken(static_cast<SMALL>(-(coefs[v] % div)), v);
+      if (coefs[v] % div != 0 && !falsified(level, v) && v != toVar(asserting))
+        weaken(-static_cast<SMALL>(coefs[v] % div), v);
   }
 }
 

@@ -17,6 +17,9 @@ Non-linear terms are not supported.
 An OPB file consists of a header line `* #variable= <N> #constraint= <M>`, comment lines (lines starting with `*`)
 and linear inequalities as defined above (using the variables `x1` to `xN`). The number of constraints is ignored by the solver; it reads until EOF.
 
+For more information, see the [OPB description](http://www.cril.univ-artois.fr/PB16/format.pdf) for the SAT competition.
+Note that RoundingSat only supports linear OPB constraints.
+
 ### Example OPB file
 
 ```
@@ -62,6 +65,8 @@ A *clause* is written as `{<literal> }* 0`.
 A DIMACS file consists of a header line `p cnf <N> <M>` where `<N>` is the number of variables and `<M>` is the number of clauses,
 comment lines starting with `c`, and clauses as defined above. The variables are `x1` to `xN`, and the number of clauses is ignored and the solver reads until EOF.
 
+For more information, see the [CNF description](https://www.satcompetition.org/2011/format-benchmarks2011.html) for the SAT competition.
+
 ### Example CNF file
 
 ```
@@ -99,4 +104,4 @@ p cnf 12 22
 
 ### WCNF format
 
-An extension of the CNF format to allow for soft (weighted) clauses. See the [description](https://maxsat-evaluations.github.io/2018/rules.html#input) for the MaxSAT competition.
+An extension of the CNF format to allow for soft (weighted) clauses. See the [WCNF description](https://maxsat-evaluations.github.io/2018/rules.html#input) for the MaxSAT competition.
