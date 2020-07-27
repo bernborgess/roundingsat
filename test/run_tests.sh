@@ -23,39 +23,40 @@ echo "options: $options"
 echo ""
 
 declare -a arr_dec=(
-"cnf/ec-rand4regsplit-v030-n1.cnf_UNSATISFIABLE"
-"opb/dec/air01.0.s.opb_SATISFIABLE"
-"opb/dec/air01.0.u.opb_UNSATISFIABLE"
-"opb/dec/air02.0.s.opb_SATISFIABLE"
-"opb/dec/air02.0.u.opb_UNSATISFIABLE"
-"opb/dec/air06.0.s.opb_SATISFIABLE"
-"opb/dec/air06.0.u.opb_UNSATISFIABLE"
-"opb/dec/bm23.0.s.opb_SATISFIABLE"
-"opb/dec/bm23.0.u.opb_UNSATISFIABLE"
-"opb/dec/cracpb1.0.s.opb_SATISFIABLE"
-"opb/dec/cracpb1.0.u.opb_UNSATISFIABLE"
-"opb/dec/diamond.0.d.opb_UNSATISFIABLE"
-"opb/dec/lp4l.0.s.opb_SATISFIABLE"
-"opb/dec/lp4l.0.u.opb_UNSATISFIABLE"
-"opb/dec/p0040.0.s.opb_SATISFIABLE"
-"opb/dec/p0040.0.u.opb_UNSATISFIABLE"
-"opb/dec/p0291.0.s.opb_SATISFIABLE"
-"opb/dec/p0291.0.u.opb_UNSATISFIABLE"
-"opb/dec/pipex.0.s.opb_SATISFIABLE"
-"opb/dec/pipex.0.u.opb_UNSATISFIABLE"
-"opb/dec/sentoy.0.s.opb_SATISFIABLE"
-"opb/dec/sentoy.0.u.opb_UNSATISFIABLE"
-"opb/dec/stein9.0.s.opb_SATISFIABLE"
-"opb/dec/stein9.0.u.opb_UNSATISFIABLE"
-"opb/dec/stein15.0.s.opb_SATISFIABLE"
-"opb/dec/stein15.0.u.opb_UNSATISFIABLE"
+"cnf/ec-rand4regsplit-v030-n1.cnf*UNSATISFIABLE"
+"opb/dec/32array_alg_ineq5.opb*UNSATISFIABLE"
+"opb/dec/air01.0.s.opb*SATISFIABLE"
+"opb/dec/air01.0.u.opb*UNSATISFIABLE"
+"opb/dec/air02.0.s.opb*SATISFIABLE"
+"opb/dec/air02.0.u.opb*UNSATISFIABLE"
+"opb/dec/air06.0.s.opb*SATISFIABLE"
+"opb/dec/air06.0.u.opb*UNSATISFIABLE"
+"opb/dec/bm23.0.s.opb*SATISFIABLE"
+"opb/dec/bm23.0.u.opb*UNSATISFIABLE"
+"opb/dec/cracpb1.0.s.opb*SATISFIABLE"
+"opb/dec/cracpb1.0.u.opb*UNSATISFIABLE"
+"opb/dec/diamond.0.d.opb*UNSATISFIABLE"
+"opb/dec/lp4l.0.s.opb*SATISFIABLE"
+"opb/dec/lp4l.0.u.opb*UNSATISFIABLE"
+"opb/dec/p0040.0.s.opb*SATISFIABLE"
+"opb/dec/p0040.0.u.opb*UNSATISFIABLE"
+"opb/dec/p0291.0.s.opb*SATISFIABLE"
+"opb/dec/p0291.0.u.opb*UNSATISFIABLE"
+"opb/dec/pipex.0.s.opb*SATISFIABLE"
+"opb/dec/pipex.0.u.opb*UNSATISFIABLE"
+"opb/dec/sentoy.0.s.opb*SATISFIABLE"
+"opb/dec/sentoy.0.u.opb*UNSATISFIABLE"
+"opb/dec/stein9.0.s.opb*SATISFIABLE"
+"opb/dec/stein9.0.u.opb*UNSATISFIABLE"
+"opb/dec/stein15.0.s.opb*SATISFIABLE"
+"opb/dec/stein15.0.u.opb*UNSATISFIABLE"
 )
 
 echo "########## simple #########"
 echo ""
 
 for j in "${arr_dec[@]}"; do
-    formula="$(cut -d'_' -f1 <<<$j)"
+    formula="$(cut -d'*' -f1 <<<$j)"
     logfile="$logfolder/$formula"
     mkdir -p `dirname $logfile`
     echo -n "" > $logfile.proof
@@ -66,7 +67,7 @@ for j in "${arr_dec[@]}"; do
         exit 1
     fi
     echo "running $formula"
-    obj="$(cut -d'_' -f2 <<<$j)"
+    obj="$(cut -d'*' -f2 <<<$j)"
     output=`timeout $time $binary $formula $options --proof-log=$logfile 2>&1 | awk '/^o|SATISFIABLE|.*Assertion.*/ {print $2}'`
     if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
         errors=`expr 1000 + $errors`
@@ -91,39 +92,39 @@ declare -a arr_modes=(
 )
 
 declare -a arr_opt=(
-"maxsat/driverlog01bc.wcsp.dir.wcnf_2245"
-"opb/opt/normalized-single-obj-f47-DC-Side1.seq-B-2-1-EDCBAir.opb_-1593213266"
-"opb/opt/enigma.opb_0"
-"opb/opt/stein9.opb_5"
-"opb/opt/stein15.opb_9"
-"opb/opt/stein27.opb_18"
-"opb/opt/stein45.opb_30"
-"opb/opt/p0033.opb_3089"
-"opb/opt/p0040.opb_62027"
-"opb/opt/p0201.opb_7615"
-"opb/opt/p0282.opb_258411"
-"opb/opt/p0291.opb_7609041"
-"opb/opt/p0548.opb_8691"
-"opb/opt/mod008.opb_307"
-"opb/opt/mod010.opb_6548"
-"opb/opt/air01.opb_6796"
-"opb/opt/air02.opb_7810"
-"opb/opt/air03.opb_340160"
-"opb/opt/air06.opb_49649"
-"opb/opt/pipex.opb_788263"
-"opb/opt/sentoy.opb_-7772"
-"opb/opt/bm23.opb_34"
-"opb/opt/l152lav.opb_4722"
-"opb/opt/lp4l.opb_2967"
-"opb/opt/lseu.opb_1120"
-"opb/opt/cracpb1.opb_22199"
+"wcnf/driverlog01bc.wcsp.dir.wcnf*2245"
+"opb/opt/normalized-single-obj-f47-DC-Side1.seq-B-2-1-EDCBAir.opb*-1593213266"
+"opb/opt/enigma.opb*0"
+"opb/opt/stein9.opb*5"
+"opb/opt/stein15.opb*9"
+"opb/opt/stein27.opb*18"
+"opb/opt/stein45.opb*30"
+"opb/opt/p0033.opb*3089"
+"opb/opt/p0040.opb*62027"
+"opb/opt/p0201.opb*7615"
+"opb/opt/p0282.opb*258411"
+"opb/opt/p0291.opb*7609041"
+"opb/opt/p0548.opb*8691"
+"opb/opt/mod008.opb*307"
+"opb/opt/mod010.opb*6548"
+"opb/opt/air01.opb*6796"
+"opb/opt/air02.opb*7810"
+"opb/opt/air03.opb*340160"
+"opb/opt/air06.opb*49649"
+"opb/opt/pipex.opb*788263"
+"opb/opt/sentoy.opb*-7772"
+"opb/opt/bm23.opb*34"
+"opb/opt/l152lav.opb*4722"
+"opb/opt/lp4l.opb*2967"
+"opb/opt/lseu.opb*1120"
+"opb/opt/cracpb1.opb*22199"
 )
 
 for mode in "${arr_modes[@]}"; do
     echo "########## $mode ##########"
     echo ""
     for j in "${arr_opt[@]}"; do
-        formula="$(cut -d'_' -f1 <<<$j)"
+        formula="$(cut -d'*' -f1 <<<$j)"
         logfile="$logfolder/$formula"
         mkdir -p `dirname $logfile`
         echo -n "" > $logfile.proof
@@ -134,7 +135,7 @@ for mode in "${arr_modes[@]}"; do
             exit 1
         fi
         echo "running $formula"
-        obj="$(cut -d'_' -f2 <<<$j)"
+        obj="$(cut -d'*' -f2 <<<$j)"
         output=`timeout $time $binary $formula $options --opt-mode=$mode --proof-log=$logfile 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
         if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
             errors=`expr 1000 + $errors`
@@ -154,7 +155,7 @@ done
 echo "########## no proofs ##########"
 echo ""
 for j in "${arr_opt[@]}"; do
-    formula="$(cut -d'_' -f1 <<<$j)"
+    formula="$(cut -d'*' -f1 <<<$j)"
     logfile="$logfolder/$formula"
     mkdir -p `dirname $logfile`
     echo -n "" > $logfile.proof
@@ -165,7 +166,7 @@ for j in "${arr_opt[@]}"; do
         exit 1
     fi
     echo "running $formula"
-    obj="$(cut -d'_' -f2 <<<$j)"
+    obj="$(cut -d'*' -f2 <<<$j)"
     output=`timeout $time $binary $formula $options --opt-mode="lazy-hybrid" 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
     if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
         errors=`expr 1000 + $errors`
