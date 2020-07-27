@@ -404,6 +404,7 @@ struct ConstrExp final : public ConstrExpSuper {
     assert(reason->getCoef(l) > 0);
     assert(reason->getCoef(l) > reason->getSlack(Level));
     reason->weakenDivideRound(Level, l, (bool)options.slackdiv, (bool)options.weakenFull);
+    assert(reason->getCoef(l) > 0);
     assert(reason->getSlack(Level) <= 0);
     if (actSet != nullptr) {
       for (Var v : reason->vars) {
@@ -460,7 +461,7 @@ struct ConstrExp final : public ConstrExpSuper {
 };
 
 template <typename S, typename L>
-std::ostream& operator<<(std::ostream& o, const CePtr<ConstrExp<S, L>> C) {
+std::ostream& operator<<(std::ostream& o, const ConstrExp<S, L>& C) {
   std::vector<Var> vars = C.vars;
   std::sort(vars.begin(), vars.end(), [](Var v1, Var v2) { return v1 < v2; });
   for (Var v : vars) {
