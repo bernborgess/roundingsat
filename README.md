@@ -21,7 +21,7 @@ For more builds, similar build directories can be created.
 ## Dependencies
 
 - C++17 (i.e., a reasonably recent compiler)
-- Boost library: www.boost.org
+- Boost library: https://www.boost.org
 - Optionally: SoPlex LP solver (see below)
 
 ## SoPlex
@@ -38,15 +38,21 @@ The location of the SoPlex package can be configured with the cmake option `-Dso
 
 ## Usage
 
-For the input formats, see [here](InputFormats.md).
+RoundingSat takes as input a linear Boolean formula / 0-1 integer linear program, and outputs a(n optimal) solution or reports that none exists.
+Either pipe the formula to RoundingSat
 
-Download OPB files:
+    cat test/instances/opb/opt/stein15.opb | build/roundingsat
 
-    curl http://www.cril.univ-artois.fr/PB12/bench12/PB12-DEC-SMALLINT-LIN.tar | tar xv
+or pass the file as a parameter
 
-Try on an example instance which is solved quickly:
+    build/roundingsat test/instances/opb/opt/stein15.opb
 
-    bzcat ./PB12/normalized-PB12/DEC-SMALLINT-LIN/sroussel/ShortestPathBA/normalized-BeauxArts_K76.opb.bz2 | ./roundingsat
+RoundingSat supports three input formats:
+- pseudo-Boolean PBO format (only linear objective and constraints)
+- DIMACS CNF (conjunctive normal form)
+- Weighted CNF
+
+For a description of these input formats, see [here](InputFormats.md).
 
 ## Citation
 
