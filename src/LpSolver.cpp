@@ -106,7 +106,7 @@ LpSolver::LpSolver(Solver& slvr, const CeArb obj) : solver(slvr) {
   assert(INFTY == lp.realParam(lp.INFTY));
 
   if (options.verbosity.get() > 1) std::cout << "c Initializing LP" << std::endl;
-  setNbVariables(solver.getNbVars() + 1);
+  setNbVariables(slvr.getNbVars() + 1);
   lp.setIntParam(soplex::SoPlex::SYNCMODE, soplex::SoPlex::SYNCMODE_ONLYREAL);
   lp.setIntParam(soplex::SoPlex::SOLVEMODE, soplex::SoPlex::SOLVEMODE_REAL);
   lp.setIntParam(soplex::SoPlex::CHECKMODE, soplex::SoPlex::CHECKMODE_REAL);
@@ -114,8 +114,6 @@ LpSolver::LpSolver(Solver& slvr, const CeArb obj) : solver(slvr) {
   lp.setIntParam(soplex::SoPlex::OBJSENSE, soplex::SoPlex::OBJSENSE_MINIMIZE);
   lp.setIntParam(soplex::SoPlex::VERBOSITY, options.verbosity.get());
   lp.setRandomSeed(0);
-
-  setNbVariables(slvr.getNbVars());
 
   // add two empty rows for objective bound constraints
   while (row2data.size() < 2) {
@@ -277,11 +275,13 @@ void LpSolver::constructLearnedCandidates() {
     if (asynch_interrupt) throw asynchInterrupt;
     const Constr& c = solver.ca[cr];
     if (c.getOrigin() == Origin::LEARNED || c.getOrigin() == Origin::LEARNEDFARKAS || c.getOrigin() == Origin::GOMORY) {
-      bool containsNonOriginalVars = false;
-      for (unsigned int i = 0; i < c.size() && !containsNonOriginalVars; ++i) {
-        containsNonOriginalVars = aux::abs(c.lit(i)) > solver.getNbOrigVars();
+      bool containsNewVars = false;
+      for (unsigned int i = 0; i < c.size() && !containsNewVars; ++i) {
+        containsNewVars = toVar(c.lit(i)) >= getNbVariables();
+        assert((toVar(c.lit(i))> solver.getNbOrigVars())==containsNewVars);
+        // for now, getNbVariables() == solver.getNbOrigVars().nbOrigVars+1
       }
-      if (containsNonOriginalVars) continue;
+      if (containsNewVars) continue;
       candidateCuts.emplace_back(c, cr, lpSolution, solver.cePools);
       if (candidateCuts.back().ratSlack >= -options.lpIntolerance.get()) candidateCuts.pop_back();
     }
