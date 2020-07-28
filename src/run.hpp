@@ -288,7 +288,7 @@ class Optimization {
            (options.optMode.is("hybrid") && lower_time < upper_time))) {  // use core-guided step by setting assumptions
         reformObj->removeZeroes();
         if (coefLimFlag == 1) {
-          int oldCoeflim = coeflim;
+          SMALL oldCoeflim = coeflim;
           coeflim = 0;
           for (Var v : reformObj->vars) {
             SMALL cf = aux::abs(reformObj->coefs[v]);
