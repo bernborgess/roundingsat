@@ -39,7 +39,6 @@ namespace rs {
 enum WatchStatus { DROPWATCH, KEEPWATCH, CONFLICTING };
 
 class Solver;
-// TODO: check all static_cast downcasts of bigints
 struct Constr {  // internal solver constraint optimized for fast propagation
   virtual size_t getMemSize() const = 0;
 
@@ -190,7 +189,8 @@ struct Counting final : public Constr {
   template <typename SMALL, typename LARGE>
   void initialize(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id) {
     assert(_id > ID_Trivial);
-    // TODO: check whether constraint fits in <CF,DG>
+    assert(aux::fitsIn<DG>(constraint->getDegree()));
+    assert(aux::fitsIn<CF>(constraing->getLargestCoef()));
     ++stats.NCOUNTING;
     unsigned int length = constraint->vars.size();
 
@@ -238,7 +238,8 @@ struct Watched final : public Constr {
   template <typename SMALL, typename LARGE>
   void initialize(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id) {
     assert(_id > ID_Trivial);
-    // TODO: check whether constraint fits in <CF,DG>
+    assert(aux::fitsIn<DG>(constraint->getDegree()));
+    assert(aux::fitsIn<CF>(constraing->getLargestCoef()));
     ++stats.NWATCHED;
     unsigned int length = constraint->vars.size();
 

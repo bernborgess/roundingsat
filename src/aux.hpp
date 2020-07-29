@@ -265,6 +265,27 @@ inline void timeCall(const std::function<void(void)>& f, double& to) {
   to += cpuTime() - start;
 }
 
+template <typename T>
+bool fitsIn([[maybe_unused]] bigint x) {
+  return false;
+}
+template <>
+inline bool fitsIn<int>(bigint x) {
+  return aux::abs(x) <= bigint(limit32);
+}
+template <>
+inline bool fitsIn<long long>(bigint x) {
+  return aux::abs(x) <= bigint(limit64);
+}
+template <>
+inline bool fitsIn<int128>(bigint x) {
+  return aux::abs(x) <= bigint(limit128);
+}
+template <>
+inline bool fitsIn<int256>(bigint x) {
+  return aux::abs(x) <= bigint(limit256);
+}
+
 }  // namespace aux
 
 }  // namespace rs

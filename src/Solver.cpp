@@ -56,7 +56,7 @@ void Solver::setNbVars(long long nvars, bool orig) {
   cePools.resize(nvars + 1);
   order_heap.resize(nvars + 1);
   for (Var v = n + 1; v <= nvars; ++v) phase[v] = -v, order_heap.insert(v);
-  //if (lpSolver) lpSolver->setNbVariables(nvars + 1); // Currently, LP solver only reasons on formula constraints
+  // if (lpSolver) lpSolver->setNbVariables(nvars + 1); // Currently, LP solver only reasons on formula constraints
   n = nvars;
   if (orig) {
     orig_n = n;

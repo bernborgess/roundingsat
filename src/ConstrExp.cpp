@@ -78,7 +78,7 @@ CRef ConstrExp<SMALL, LARGE>::toConstr(ConstraintAllocator& ca, bool locked, ID 
   assert(!isInconsistency());
 
   CRef result = CRef{ca.at};
-  LARGE maxCoef = aux::abs(coefs[vars[0]]);
+  SMALL maxCoef = aux::abs(coefs[vars[0]]);
   if (options.propClause && isClause()) {
     ca.alloc<Clause>(vars.size())->initialize(this, locked, id);
   } else if (options.propCard && maxCoef == 1) {

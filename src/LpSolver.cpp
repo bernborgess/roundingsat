@@ -278,7 +278,7 @@ void LpSolver::constructLearnedCandidates() {
       bool containsNewVars = false;
       for (unsigned int i = 0; i < c.size() && !containsNewVars; ++i) {
         containsNewVars = toVar(c.lit(i)) >= getNbVariables();
-        assert((toVar(c.lit(i))> solver.getNbOrigVars())==containsNewVars);
+        assert((toVar(c.lit(i)) > solver.getNbOrigVars()) == containsNewVars);
         // for now, getNbVariables() == solver.getNbOrigVars().nbOrigVars+1
       }
       if (containsNewVars) continue;
