@@ -31,10 +31,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #pragma once
 
 #include <memory>
+#include "Constr.hpp"
 #include "IntSet.hpp"
 #include "LpSolver.hpp"
 #include "Options.hpp"
-#include "SolverStructs.hpp"
 #include "typedefs.hpp"
 
 namespace rs {

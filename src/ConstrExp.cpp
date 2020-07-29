@@ -32,7 +32,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <algorithm>
 #include <functional>
 #include "Constr.hpp"
-#include "SolverStructs.hpp"
 #include "aux.hpp"
 
 namespace rs {
@@ -80,12 +79,12 @@ CRef ConstrExp<SMALL, LARGE>::toConstr(ConstraintAllocator& ca, bool locked, ID 
   CRef result = CRef{ca.at};
   SMALL maxCoef = aux::abs(coefs[vars[0]]);
   if (options.propClause && isClause()) {
-    ca.alloc<Clause>(vars.size())->initialize(this, locked, id);
+    new (ca.alloc<Clause>(vars.size())) Clause(this, locked, id);
   } else if (options.propCard && maxCoef == 1) {
-    ca.alloc<Cardinality>(vars.size())->initialize(this, locked, id);
+    new (ca.alloc<Cardinality>(vars.size())) Cardinality(this, locked, id);
   } else {
     if (maxCoef > limit96) {
-      ca.alloc<Arbitrary>(vars.size())->initialize(this, locked, id);
+      new (ca.alloc<Arbitrary>(vars.size())) Arbitrary(this, locked, id);
     } else {
       LARGE watchSum = -degree;
       unsigned int minWatches = 1;  // sorted per decreasing coefs, so we can skip the first, largest coef
@@ -94,22 +93,22 @@ CRef ConstrExp<SMALL, LARGE>::toConstr(ConstraintAllocator& ca, bool locked, ID 
           options.propCounting.get() == 1 || options.propCounting.get() > (1 - minWatches / (double)vars.size());
       if (maxCoef <= limit32) {
         if (useCounting) {
-          ca.alloc<Counting32>(vars.size())->initialize(this, locked, id);
+          new (ca.alloc<Counting32>(vars.size())) Counting32(this, locked, id);
         } else {
-          ca.alloc<Watched32>(vars.size())->initialize(this, locked, id);
+          new (ca.alloc<Watched32>(vars.size())) Watched32(this, locked, id);
         }
       } else if (maxCoef <= limit64) {
         if (useCounting) {
-          ca.alloc<Counting64>(vars.size())->initialize(this, locked, id);
+          new (ca.alloc<Counting64>(vars.size())) Counting64(this, locked, id);
         } else {
-          ca.alloc<Watched64>(vars.size())->initialize(this, locked, id);
+          new (ca.alloc<Watched64>(vars.size())) Watched64(this, locked, id);
         }
       } else {
         assert(maxCoef <= limit96);
         if (useCounting) {
-          ca.alloc<Counting96>(vars.size())->initialize(this, locked, id);
+          new (ca.alloc<Counting96>(vars.size())) Counting96(this, locked, id);
         } else {
-          ca.alloc<Watched96>(vars.size())->initialize(this, locked, id);
+          new (ca.alloc<Watched96>(vars.size())) Watched96(this, locked, id);
         }
       }
     }

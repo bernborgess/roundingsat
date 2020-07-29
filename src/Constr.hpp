@@ -54,6 +54,9 @@ struct Constr {  // internal solver constraint optimized for fast propagation
   } header;
   ActValC act;
 
+  Constr(ID i, Origin o, bool lkd, unsigned int lngth) : id(i), act(0) {
+    header = {0, (unsigned int)o, 0x07FFFFFF, 0, lkd, lngth};
+  }
   virtual ~Constr() {}
 
   unsigned int size() const { return header.size; }
@@ -101,15 +104,12 @@ struct Clause final : public Constr {
   Lit lit(unsigned int i) const { return data[i]; }
 
   template <typename SMALL, typename LARGE>
-  void initialize(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id) {
+  Clause(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id)
+      : Constr(_id, constraint->orig, locked, constraint->vars.size()) {
     assert(_id > ID_Trivial);
     assert(constraint->vars.size() < INF);
     assert(constraint->getDegree() == 1);
-    unsigned int length = constraint->vars.size();
-
-    id = _id;
-    act = 0;
-    header = {0, (unsigned int)constraint->orig, 0x07FFFFFF, 0, locked, length};
+    const unsigned int length = constraint->vars.size();
 
     for (unsigned int i = 0; i < length; ++i) {
       Var v = constraint->vars[i];
@@ -117,6 +117,7 @@ struct Clause final : public Constr {
       data[i] = constraint->getLit(v);
     }
   }
+
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified([[maybe_unused]] int i) { assert(false); }
@@ -141,19 +142,16 @@ struct Cardinality final : public Constr {
   Lit lit(unsigned int i) const { return data[i]; }
 
   template <typename SMALL, typename LARGE>
-  void initialize(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id) {
+  Cardinality(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id)
+      : Constr(_id, constraint->orig, locked, constraint->vars.size()),
+        watchIdx(0),
+        degr(static_cast<unsigned int>(constraint->getDegree())),
+        ntrailpops(-1) {
     assert(_id > ID_Trivial);
     assert(constraint->vars.size() < INF);
     assert(aux::abs(constraint->coefs[constraint->vars[0]]) == 1);
-    unsigned int length = constraint->vars.size();
-    assert(constraint->getDegree() <= length);
-
-    id = _id;
-    act = 0;
-    degr = static_cast<unsigned int>(constraint->getDegree());
-    header = {0, (unsigned int)constraint->orig, 0x07FFFFFF, 0, locked, length};
-    ntrailpops = -1;
-    watchIdx = 0;
+    assert(constraint->getDegree() <= (LARGE)constraint->vars.size());
+    const unsigned int length = constraint->vars.size();
 
     for (unsigned int i = 0; i < length; ++i) {
       Var v = constraint->vars[i];
@@ -161,6 +159,7 @@ struct Cardinality final : public Constr {
       data[i] = constraint->getLit(v);
     }
   }
+
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified([[maybe_unused]] int i) { assert(false); }
@@ -172,8 +171,8 @@ struct Cardinality final : public Constr {
 template <typename CF, typename DG>
 struct Counting final : public Constr {
   unsigned int watchIdx;
-  DG degr;
   long long ntrailpops;
+  DG degr;
   DG slack;  // sum of non-falsifieds minus w
   Term<CF> data[];
 
@@ -187,19 +186,17 @@ struct Counting final : public Constr {
   Lit lit(unsigned int i) const { return data[i].l; }
 
   template <typename SMALL, typename LARGE>
-  void initialize(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id) {
+  Counting(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id)
+      : Constr(_id, constraint->orig, locked, constraint->vars.size()),
+        watchIdx(0),
+        ntrailpops(-1),
+        degr(static_cast<DG>(constraint->getDegree())),
+        slack(0) {
     assert(_id > ID_Trivial);
     assert(aux::fitsIn<DG>(constraint->getDegree()));
-    assert(aux::fitsIn<CF>(constraing->getLargestCoef()));
+    assert(aux::fitsIn<CF>(constraint->getLargestCoef()));
     ++stats.NCOUNTING;
-    unsigned int length = constraint->vars.size();
-
-    id = _id;
-    act = 0;
-    degr = static_cast<DG>(constraint->getDegree());
-    header = {0, (unsigned int)constraint->orig, 0x07FFFFFF, 0, locked, length};
-    ntrailpops = -1;
-    watchIdx = 0;
+    const unsigned int length = constraint->vars.size();
 
     for (unsigned int i = 0; i < length; ++i) {
       Var v = constraint->vars[i];
@@ -207,6 +204,7 @@ struct Counting final : public Constr {
       data[i] = {static_cast<CF>(aux::abs(constraint->coefs[v])), constraint->getLit(v)};
     }
   }
+
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
@@ -221,8 +219,8 @@ struct Counting final : public Constr {
 template <typename CF, typename DG>
 struct Watched final : public Constr {
   unsigned int watchIdx;
-  DG degr;
   long long ntrailpops;
+  DG degr;
   DG watchslack;  // sum of non-falsified watches minus w
   Term<CF> data[];
 
@@ -236,19 +234,17 @@ struct Watched final : public Constr {
   Lit lit(unsigned int i) const { return data[i].l; }
 
   template <typename SMALL, typename LARGE>
-  void initialize(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id) {
+  Watched(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id)
+      : Constr(_id, constraint->orig, locked, constraint->vars.size()),
+        watchIdx(0),
+        ntrailpops(-1),
+        degr(static_cast<DG>(constraint->getDegree())),
+        watchslack(0) {
     assert(_id > ID_Trivial);
     assert(aux::fitsIn<DG>(constraint->getDegree()));
-    assert(aux::fitsIn<CF>(constraing->getLargestCoef()));
+    assert(aux::fitsIn<CF>(constraint->getLargestCoef()));
     ++stats.NWATCHED;
-    unsigned int length = constraint->vars.size();
-
-    id = _id;
-    act = 0;
-    degr = static_cast<DG>(constraint->getDegree());
-    header = {0, (unsigned int)constraint->orig, 0x07FFFFFF, 0, locked, length};
-    ntrailpops = -1;
-    watchIdx = 0;
+    const unsigned int length = constraint->vars.size();
 
     for (unsigned int i = 0; i < length; ++i) {
       Var v = constraint->vars[i];
@@ -271,39 +267,38 @@ struct Watched final : public Constr {
 struct Arbitrary final : public Constr {
   unsigned int watchIdx;
   long long ntrailpops;
-  BigVal degr;
-  BigVal slack;                // sum of non-falsifieds minus w
-  std::vector<BigCoef> coefs;  // NOTE: seemed not possible to put bigints in below dynamic array
-  Lit lits[];
+  BigVal* degr;
+  BigVal* slack;                     // sum of non-falsifieds minus w
+  std::vector<Term<BigCoef>> terms;  // NOTE: seemed not possible to put bigints in below dynamic array
 
-  static size_t getMemSize(unsigned int length) {
-    return (sizeof(Arbitrary) + sizeof(Lit) * length) / sizeof(uint32_t);
+  ~Arbitrary() {
+    delete degr;
+    delete slack;
   }
+
+  static size_t getMemSize([[maybe_unused]] unsigned int length) { return sizeof(Arbitrary) / sizeof(uint32_t); }
   size_t getMemSize() const { return getMemSize(size()); }
 
-  BigVal degree() const { return degr; }
-  BigCoef coef(unsigned int i) const { return coefs[i]; }
-  Lit lit(unsigned int i) const { return lits[i]; }
+  BigVal degree() const { return *degr; }
+  BigCoef coef(unsigned int i) const { return terms[i].c; }
+  Lit lit(unsigned int i) const { return terms[i].l; }
 
   template <typename SMALL, typename LARGE>
-  void initialize(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id) {
+  Arbitrary(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id)
+      : Constr(_id, constraint->orig, locked, constraint->vars.size()),
+        watchIdx(0),
+        ntrailpops(-1),
+        degr(new BigVal(static_cast<BigVal>(constraint->getDegree()))),
+        slack(new BigVal(0)) {
     assert(_id > ID_Trivial);
     ++stats.NCOUNTING;
-    unsigned int length = constraint->vars.size();
+    const unsigned int length = constraint->vars.size();
 
-    id = _id;
-    act = 0;
-    degr = constraint->getDegree();
-    header = {0, (unsigned int)constraint->orig, 0x07FFFFFF, 0, locked, length};
-    ntrailpops = -1;
-    watchIdx = 0;
-
-    coefs.resize(length);
+    terms.resize(length);
     for (unsigned int i = 0; i < length; ++i) {
       Var v = constraint->vars[i];
       assert(constraint->getLit(v) != 0);
-      coefs[i] = aux::abs(constraint->coefs[v]);
-      lits[i] = constraint->getLit(v);
+      terms[i] = {aux::abs(constraint->coefs[v]), constraint->getLit(v)};
     }
   }
   void initializeWatches(CRef cr, Solver& solver);

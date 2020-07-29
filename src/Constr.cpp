@@ -491,22 +491,25 @@ void Arbitrary::initializeWatches(CRef cr, Solver& solver) {
   auto& adj = solver.adj;
   auto& qhead = solver.qhead;
 
-  slack = -degr;
+  BigVal& slk = *slack;
+  slk = -*degr;
   unsigned int length = size();
   for (unsigned int i = 0; i < length; ++i) {
-    Lit l = lits[i];
+    Lit l = terms[i].l;
     adj[l].emplace_back(cr, i + INF);
-    if (!isFalse(Level, l) || Pos[toVar(l)] >= qhead) slack += coefs[i];
+    if (!isFalse(Level, l) || Pos[toVar(l)] >= qhead) slk += terms[i].c;
   }
 
-  assert(slack >= 0);
+  assert(slk >= 0);
   assert(hasCorrectSlack(solver));
-  if (slack < coefs[0]) {  // propagate
-    for (unsigned int i = 0; i < length && coefs[i] > slack; ++i)
-      if (isUnknown(Pos, lits[i])) {
+  if (slk < terms[0].c) {  // propagate
+    for (unsigned int i = 0; i < length && terms[i].c > slk; ++i) {
+      Lit l = terms[i].l;
+      if (isUnknown(Pos, l)) {
         assert(isCorrectlyPropagating(solver, i));
-        solver.propagate(lits[i], cr);
+        solver.propagate(l, cr);
       }
+    }
   }
 }
 
@@ -514,26 +517,27 @@ WatchStatus Arbitrary::checkForPropagation(CRef cr, int& idx, [[maybe_unused]] L
   auto& Pos = solver.Pos;
 
   assert(idx >= INF);
-  assert(lits[idx - INF] == p);
+  assert(terms[idx - INF].l == p);
   const unsigned int length = size();
-  const BigCoef& lrgstCf = coefs[0];
-  const BigCoef& c = coefs[idx - INF];
+  const BigCoef& lrgstCf = terms[0].c;
+  const BigCoef& c = terms[idx - INF].c;
 
-  slack -= c;
+  BigVal& slk = *slack;
+  slk -= c;
   assert(hasCorrectSlack(solver));
 
-  if (slack < 0) {
+  if (slk < 0) {
     assert(isCorrectlyConflicting(solver));
     return WatchStatus::CONFLICTING;
   }
-  if (slack < lrgstCf) {
+  if (slk < lrgstCf) {
     if (!options.propIdx || ntrailpops < stats.NTRAILPOPS) {
       ntrailpops = stats.NTRAILPOPS;
       watchIdx = 0;
     }
     stats.NPROPCHECKS -= watchIdx;
-    for (; watchIdx < length && coefs[watchIdx] > slack; ++watchIdx) {
-      const Lit l = lits[watchIdx];
+    for (; watchIdx < length && terms[watchIdx].c > slk; ++watchIdx) {
+      const Lit l = terms[watchIdx].l;
       if (isUnknown(Pos, l)) {
         ++stats.NPROPCOUNTING;
         assert(isCorrectlyPropagating(solver, watchIdx));
@@ -547,7 +551,8 @@ WatchStatus Arbitrary::checkForPropagation(CRef cr, int& idx, [[maybe_unused]] L
 
 void Arbitrary::undoFalsified(int i) {
   assert(i >= INF);
-  slack += coefs[i - INF];
+  BigVal& slk = *slack;
+  slk += terms[i - INF].c;
   ++stats.NWATCHLOOKUPSBJ;
 }
 
@@ -557,9 +562,9 @@ void Arbitrary::resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver
 
 CeArb Arbitrary::expandTo(ConstrExpPools& cePools) const {
   CeArb result = cePools.takeArb();
-  result->addRhs(degr);
+  result->addRhs(*degr);
   for (size_t i = 0; i < size(); ++i) {
-    result->addLhs(coefs[i], lits[i]);
+    result->addLhs(terms[i].c, terms[i].l);
   }
   result->orig = getOrigin();
   if (result->plogger) result->resetBuffer(id);
@@ -619,13 +624,13 @@ bool Watched<CF, DG>::hasCorrectSlack(const Solver& solver) {
 }
 
 bool Arbitrary::hasCorrectSlack(const Solver& solver) {
-  BigVal slack = -degree();
+  BigVal slk = -degree();
   for (int i = 0; i < (int)size(); ++i) {
     if (solver.getPos()[toVar(lit(i))] >= solver.qhead || !isFalse(solver.getLevel(), lit(i))) {
-      slack += coef(i);
+      slk += coef(i);
     }
   }
-  return (slack == this->slack);
+  return (slk == *slack);
 }
 
 template <typename CF, typename DG>

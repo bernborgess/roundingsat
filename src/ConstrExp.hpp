@@ -35,20 +35,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "ConstrSimple.hpp"
 #include "IntSet.hpp"
 #include "Logger.hpp"
+#include "SolverStructs.hpp"
 #include "globals.hpp"
 #include "typedefs.hpp"
 
 namespace rs {
-
-struct CRef {
-  uint32_t ofs;
-  bool operator==(CRef const& o) const { return ofs == o.ofs; }
-  bool operator!=(CRef const& o) const { return ofs != o.ofs; }
-  bool operator<(CRef const& o) const { return ofs < o.ofs; }
-  std::ostream& operator<<(std::ostream& os) { return os << ofs; }
-};
-const CRef CRef_Undef = {std::numeric_limits<uint32_t>::max()};
-const CRef CRef_Unsat = {std::numeric_limits<uint32_t>::max() - 1};  // TODO: needed?
 
 enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
 
