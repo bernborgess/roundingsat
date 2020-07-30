@@ -24,6 +24,12 @@ echo ""
 
 declare -a arr_dec=(
 "cnf/ec-rand4regsplit-v030-n1.cnf*UNSATISFIABLE"
+"opb/dec/256ebits_any.opb*UNSATISFIABLE"
+"opb/dec/256ebits_0.opb*UNSATISFIABLE"
+"opb/dec/128ebits_any.opb*UNSATISFIABLE"
+"opb/dec/128ebits_0.opb*UNSATISFIABLE"
+"opb/dec/22array_alg_ineq7.opb*UNSATISFIABLE"
+"opb/dec/21array_alg_ineq7.opb*UNSATISFIABLE"
 "opb/dec/32array_alg_ineq5.opb*UNSATISFIABLE"
 "opb/dec/air01.0.s.opb*SATISFIABLE"
 "opb/dec/air01.0.u.opb*UNSATISFIABLE"
@@ -69,6 +75,37 @@ for j in "${arr_dec[@]}"; do
     obj="$(cut -d'*' -f2 <<<$j)"
     echo "running $binary $formula $options --proof-log=$logfile"
     output=`timeout $time $binary $formula $options --proof-log=$logfile 2>&1 | awk '/^o|SATISFIABLE|.*Assertion.*/ {print $2}'`
+    if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
+        errors=`expr 1000 + $errors`
+        echo "wrong output: $output vs $obj"
+    fi
+    echo "verifying $logfile"
+    wc -l $logfile.proof
+    veripb $logfile.formula $logfile.proof -d --arbitraryPrecision
+    errors=`expr $? + $errors`
+    echo $errors
+    tested=`expr 1 + $tested`
+    echo $tested
+    echo ""
+done
+
+echo "########## arbitrary precision #########"
+echo ""
+
+for j in "${arr_dec[@]}"; do
+    formula="$(cut -d'*' -f1 <<<$j)"
+    logfile="$logfolder/$formula"
+    mkdir -p `dirname $logfile`
+    echo -n "" > $logfile.proof
+    echo -n "" > $logfile.formula
+    formula="$SCRIPTPATH/instances/$formula"
+    if [ ! -f "$formula" ]; then
+        echo "$formula does not exist."
+        exit 1
+    fi
+    obj="$(cut -d'*' -f2 <<<$j)"
+    echo "running $binary $formula $options --bits-learned=0 --bits-overflow=0 --bits-reduced=0 --proof-log=$logfile"
+    output=`timeout $time $binary $formula $options --bits-learned=0 --bits-overflow=0 --bits-reduced=0 --proof-log=$logfile 2>&1 | awk '/^o|SATISFIABLE|.*Assertion.*/ {print $2}'`
     if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
         errors=`expr 1000 + $errors`
         echo "wrong output: $output vs $obj"
