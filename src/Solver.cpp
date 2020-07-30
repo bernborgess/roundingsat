@@ -583,10 +583,6 @@ void Solver::dropExternal(ID id, bool erasable, bool forceDelete) {
 void Solver::garbage_collect() {
   assert(decisionLevel() == 0);  // so we don't need to update the pointer of Reason<CRef>
   if (options.verbosity.get() > 0) puts("c GARBAGE COLLECT");
-  for (Lit l = -n; l <= n; ++l)
-    for (int i = 0; i < (int)adj[l].size(); ++i) {
-      if (ca[adj[l][i].cref].isMarkedForDelete()) aux::swapErase(adj[l], i--);
-    }
 
   ca.wasted = 0;
   ca.at = 0;
@@ -641,10 +637,21 @@ void Solver::reduceDB() {
   });
   for (size_t i = 0; i < std::min(totalLearnts / 2, learnts.size()); ++i) removeConstraint(ca[learnts[i]]);
 
+  for (Lit l = -n; l <= n; ++l)
+    for (int i = 0; i < (int)adj[l].size(); ++i) {
+      if (ca[adj[l][i].cref].isMarkedForDelete()) aux::swapErase(adj[l], i--);
+    }
+
   size_t i = 0;
   size_t j = 0;
-  for (; i < constraints.size(); ++i)
-    if (!ca[constraints[i]].isMarkedForDelete()) constraints[j++] = constraints[i];
+  for (; i < constraints.size(); ++i) {
+    Constr& c = ca[constraints[i]];
+    if (c.isMarkedForDelete()) {
+      c.freeUp();  // free up indirectly owned memory before implicitly deleting c during garbage collect
+    } else {
+      constraints[j++] = constraints[i];
+    }
+  }
   constraints.resize(j);
   if ((double)ca.wasted / (double)ca.at > 0.2) garbage_collect();
 }

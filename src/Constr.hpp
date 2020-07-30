@@ -58,6 +58,7 @@ struct Constr {  // internal solver constraint optimized for fast propagation
     header = {0, (unsigned int)o, 0x07FFFFFF, 0, lkd, lngth};
   }
   virtual ~Constr() {}
+  virtual void freeUp() = 0;  // poor man's destructor
 
   unsigned int size() const { return header.size; }
   void setLocked(bool lkd) { header.locked = lkd; }
@@ -117,6 +118,7 @@ struct Clause final : public Constr {
       data[i] = constraint->getLit(v);
     }
   }
+  void freeUp() {}
 
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
@@ -159,6 +161,7 @@ struct Cardinality final : public Constr {
       data[i] = constraint->getLit(v);
     }
   }
+  void freeUp() {}
 
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
@@ -173,7 +176,7 @@ struct Counting final : public Constr {
   unsigned int watchIdx;
   long long ntrailpops;
   DG degr;
-  DG slack;  // sum of non-falsifieds minus w
+  DG slack;
   Term<CF> data[];
 
   static size_t getMemSize(unsigned int length) {
@@ -204,6 +207,7 @@ struct Counting final : public Constr {
       data[i] = {static_cast<CF>(aux::abs(constraint->coefs[v])), constraint->getLit(v)};
     }
   }
+  void freeUp() {}
 
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
@@ -221,7 +225,7 @@ struct Watched final : public Constr {
   unsigned int watchIdx;
   long long ntrailpops;
   DG degr;
-  DG watchslack;  // sum of non-falsified watches minus w
+  DG watchslack;
   Term<CF> data[];
 
   static size_t getMemSize(unsigned int length) {
@@ -252,6 +256,8 @@ struct Watched final : public Constr {
       data[i] = {static_cast<CF>(aux::abs(constraint->coefs[v])), constraint->getLit(v)};
     }
   }
+  void freeUp() {}
+
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
@@ -268,13 +274,8 @@ struct Arbitrary final : public Constr {
   unsigned int watchIdx;
   long long ntrailpops;
   BigVal* degr;
-  BigVal* slack;                     // sum of non-falsifieds minus w
-  std::vector<Term<BigCoef>> terms;  // NOTE: seemed not possible to put bigints in below dynamic array
-
-  ~Arbitrary() {
-    delete degr;
-    delete slack;
-  }
+  BigVal* slack;
+  std::vector<Term<BigCoef>> terms;
 
   static size_t getMemSize([[maybe_unused]] unsigned int length) { return sizeof(Arbitrary) / sizeof(uint32_t); }
   size_t getMemSize() const { return getMemSize(size()); }
@@ -301,6 +302,13 @@ struct Arbitrary final : public Constr {
       terms[i] = {aux::abs(constraint->coefs[v]), constraint->getLit(v)};
     }
   }
+  void freeUp() {
+    delete degr;
+    delete slack;
+    terms = std::vector<Term<BigCoef>>();
+    assert(terms.capacity() == 0);  // no allocations left
+  }
+
   void initializeWatches(CRef cr, Solver& solver);
   WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
   void undoFalsified(int i);
