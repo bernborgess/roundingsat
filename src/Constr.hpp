@@ -276,7 +276,7 @@ struct CountingSafe final : public Constr {
   long long ntrailpops;
   DG* degr;
   DG* slack;
-  std::vector<Term<CF>>* terms;
+  Term<CF>* terms;  // array
 
   static size_t getMemSize([[maybe_unused]] unsigned int length) {
     return sizeof(CountingSafe<CF, DG>) / sizeof(uint32_t);
@@ -284,8 +284,8 @@ struct CountingSafe final : public Constr {
   size_t getMemSize() const { return getMemSize(size()); }
 
   BigVal degree() const { return *degr; }
-  BigCoef coef(unsigned int i) const { return terms->at(i).c; }
-  Lit lit(unsigned int i) const { return terms->at(i).l; }
+  BigCoef coef(unsigned int i) const { return terms[i].c; }
+  Lit lit(unsigned int i) const { return terms[i].l; }
 
   template <typename SMALL, typename LARGE>
   CountingSafe(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id)
@@ -294,24 +294,23 @@ struct CountingSafe final : public Constr {
         ntrailpops(-1),
         degr(new DG(static_cast<DG>(constraint->getDegree()))),
         slack(new DG(0)),
-        terms(new std::vector<Term<CF>>) {
+        terms(new Term<CF>[constraint->vars.size()]) {
     assert(_id > ID_Trivial);
     assert(aux::fitsIn<DG>(constraint->getDegree()));
     assert(aux::fitsIn<CF>(constraint->getLargestCoef()));
     ++stats.NCOUNTING;
     const unsigned int length = constraint->vars.size();
 
-    terms->reserve(length);
     for (unsigned int i = 0; i < length; ++i) {
       Var v = constraint->vars[i];
       assert(constraint->getLit(v) != 0);
-      terms->emplace_back(static_cast<CF>(aux::abs(constraint->coefs[v])), constraint->getLit(v));
+      terms[i] = {static_cast<CF>(aux::abs(constraint->coefs[v])), constraint->getLit(v)};
     }
   }
   void freeUp() {
     delete degr;
     delete slack;
-    delete terms;
+    delete[] terms;
   }
 
   void initializeWatches(CRef cr, Solver& solver);
@@ -323,6 +322,61 @@ struct CountingSafe final : public Constr {
   CeSuper toExpanded(ConstrExpPools& cePools) const;
 
   bool hasCorrectSlack(const Solver& solver);
+};
+
+template <typename CF, typename DG>
+struct WatchedSafe final : public Constr {
+  unsigned int watchIdx;
+  long long ntrailpops;
+  DG* degr;
+  DG* watchslack;
+  Term<CF>* terms;  // array
+
+  static size_t getMemSize([[maybe_unused]] unsigned int length) {
+    return sizeof(WatchedSafe<CF, DG>) / sizeof(uint32_t);
+  }
+  size_t getMemSize() const { return getMemSize(size()); }
+
+  BigVal degree() const { return *degr; }
+  BigCoef coef(unsigned int i) const { return aux::abs(terms[i].c); }
+  Lit lit(unsigned int i) const { return terms[i].l; }
+
+  template <typename SMALL, typename LARGE>
+  WatchedSafe(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id)
+      : Constr(_id, constraint->orig, locked, constraint->vars.size()),
+        watchIdx(0),
+        ntrailpops(-1),
+        degr(new DG(static_cast<DG>(constraint->getDegree()))),
+        watchslack(new DG(0)),
+        terms(new Term<CF>[constraint->vars.size()]) {
+    assert(_id > ID_Trivial);
+    assert(aux::fitsIn<DG>(constraint->getDegree()));
+    assert(aux::fitsIn<CF>(constraint->getLargestCoef()));
+    ++stats.NWATCHED;
+    const unsigned int length = constraint->vars.size();
+
+    for (unsigned int i = 0; i < length; ++i) {
+      Var v = constraint->vars[i];
+      assert(constraint->getLit(v) != 0);
+      terms[i] = {static_cast<CF>(aux::abs(constraint->coefs[v])), constraint->getLit(v)};
+    }
+  }
+  void freeUp() {
+    delete degr;
+    delete watchslack;
+    delete[] terms;
+  }
+
+  void initializeWatches(CRef cr, Solver& solver);
+  WatchStatus checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver);
+  void undoFalsified(int i);
+  void resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver);
+
+  CePtr<ConstrExp<CF, DG>> expandTo(ConstrExpPools& cePools) const;
+  CeSuper toExpanded(ConstrExpPools& cePools) const;
+
+  bool hasCorrectSlack(const Solver& solver);
+  bool hasCorrectWatches(const Solver& solver);
 };
 
 }  // namespace rs

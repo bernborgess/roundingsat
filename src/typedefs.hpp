@@ -148,7 +148,14 @@ struct CountingSafe;
 using CountingSafe32 = CountingSafe<int, long long>;
 using CountingSafe64 = CountingSafe<long long, int128>;
 using CountingSafe96 = CountingSafe<int128, int128>;
-using Arbitrary = CountingSafe<bigint, bigint>;
+using CountingSafeArb = CountingSafe<bigint, bigint>;
+
+template <typename CF, typename DG>
+struct WatchedSafe;
+using WatchedSafe32 = WatchedSafe<int, long long>;
+using WatchedSafe64 = WatchedSafe<long long, int128>;
+using WatchedSafe96 = WatchedSafe<int128, int128>;
+using WatchedSafeArb = WatchedSafe<bigint, bigint>;
 
 template <typename CF>
 struct Term {

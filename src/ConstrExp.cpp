@@ -83,33 +83,34 @@ CRef ConstrExp<SMALL, LARGE>::toConstr(ConstraintAllocator& ca, bool locked, ID 
   } else if (options.propCard && maxCoef == 1) {
     new (ca.alloc<Cardinality>(vars.size())) Cardinality(this, locked, id);
   } else {
-    if (maxCoef > limit96) {
-      new (ca.alloc<Arbitrary>(vars.size())) Arbitrary(this, locked, id);
-    } else {
-      LARGE watchSum = -degree;
-      unsigned int minWatches = 1;  // sorted per decreasing coefs, so we can skip the first, largest coef
-      for (; minWatches < vars.size() && watchSum < 0; ++minWatches) watchSum += aux::abs(coefs[vars[minWatches]]);
-      bool useCounting =
-          options.propCounting.get() == 1 || options.propCounting.get() > (1 - minWatches / (double)vars.size());
-      if (maxCoef <= limit32) {
-        if (useCounting) {
-          new (ca.alloc<Counting32>(vars.size())) Counting32(this, locked, id);
-        } else {
-          new (ca.alloc<Watched32>(vars.size())) Watched32(this, locked, id);
-        }
-      } else if (maxCoef <= limit64) {
-        if (useCounting) {
-          new (ca.alloc<CountingSafe64>(vars.size())) CountingSafe64(this, locked, id);
-        } else {
-          new (ca.alloc<CountingSafe64>(vars.size())) CountingSafe64(this, locked, id);
-        }
+    LARGE watchSum = -degree;
+    unsigned int minWatches = 1;  // sorted per decreasing coefs, so we can skip the first, largest coef
+    for (; minWatches < vars.size() && watchSum < 0; ++minWatches) watchSum += aux::abs(coefs[vars[minWatches]]);
+    bool useCounting =
+        options.propCounting.get() == 1 || options.propCounting.get() > (1 - minWatches / (double)vars.size());
+    if (maxCoef <= limit32) {
+      if (useCounting) {
+        new (ca.alloc<Counting32>(vars.size())) Counting32(this, locked, id);
       } else {
-        assert(maxCoef <= limit96);
-        if (useCounting) {
-          new (ca.alloc<CountingSafe96>(vars.size())) CountingSafe96(this, locked, id);
-        } else {
-          new (ca.alloc<CountingSafe96>(vars.size())) CountingSafe96(this, locked, id);
-        }
+        new (ca.alloc<Watched32>(vars.size())) Watched32(this, locked, id);
+      }
+    } else if (maxCoef <= limit64) {
+      if (useCounting) {
+        new (ca.alloc<CountingSafe64>(vars.size())) CountingSafe64(this, locked, id);
+      } else {
+        new (ca.alloc<WatchedSafe64>(vars.size())) WatchedSafe64(this, locked, id);
+      }
+    } else if (maxCoef <= limit96) {
+      if (useCounting) {
+        new (ca.alloc<CountingSafe96>(vars.size())) CountingSafe96(this, locked, id);
+      } else {
+        new (ca.alloc<WatchedSafe96>(vars.size())) WatchedSafe96(this, locked, id);
+      }
+    } else {
+      if (useCounting) {
+        new (ca.alloc<CountingSafeArb>(vars.size())) CountingSafeArb(this, locked, id);
+      } else {
+        new (ca.alloc<WatchedSafeArb>(vars.size())) WatchedSafeArb(this, locked, id);
       }
     }
   }

@@ -285,6 +285,10 @@ template <>
 inline bool fitsIn<int256>(bigint x) {
   return aux::abs(x) <= bigint(limit256);
 }
+template <>
+inline bool fitsIn<bigint>([[maybe_unused]] bigint x) {
+  return true;
+}
 
 }  // namespace aux
 

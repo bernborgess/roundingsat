@@ -41,7 +41,7 @@ void Clause::initializeWatches(CRef cr, Solver& solver) {
   assert(length >= 1);
   if (length == 1) {
     assert(solver.decisionLevel() == 0);
-    //    assert(isCorrectlyPropagating(solver, 0));
+    assert(isCorrectlyPropagating(solver, 0));
     solver.propagate(data[0], cr);
     return;
   }
@@ -59,7 +59,7 @@ void Clause::initializeWatches(CRef cr, Solver& solver) {
   if (watch == 1) {
     assert(!isFalse(Level, data[0]));
     if (!isTrue(Level, data[0])) {
-      //      assert(isCorrectlyPropagating(solver, 0));
+      assert(isCorrectlyPropagating(solver, 0));
       solver.propagate(data[0], cr);
     }
     for (unsigned int i = 2; i < length; ++i) {  // ensure last watch is last falsified literal
@@ -114,12 +114,12 @@ WatchStatus Clause::checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver
   assert(isFalse(Level, watch));
   for (unsigned int i = 2; i < length; ++i) assert(isFalse(Level, data[i]));
   if (isFalse(Level, otherwatch)) {
-    //    assert(isCorrectlyConflicting(solver));
+    assert(isCorrectlyConflicting(solver));
     return WatchStatus::CONFLICTING;
   } else {
     assert(!isTrue(Level, otherwatch));
     ++stats.NPROPCLAUSE;
-    //    assert(isCorrectlyPropagating(solver, 1 - widx));
+    assert(isCorrectlyPropagating(solver, 1 - widx));
     solver.propagate(otherwatch, cr);
   }
   ++stats.NPROPCHECKS;
@@ -151,7 +151,7 @@ void Cardinality::initializeWatches(CRef cr, Solver& solver) {
     assert(solver.decisionLevel() == 0);
     for (unsigned int i = 0; i < length; ++i) {
       assert(isUnknown(Pos, data[i]));
-      //      assert(isCorrectlyPropagating(solver, i));
+      assert(isCorrectlyPropagating(solver, i));
       solver.propagate(data[i], cr);
     }
     return;
@@ -170,7 +170,7 @@ void Cardinality::initializeWatches(CRef cr, Solver& solver) {
     for (unsigned int i = 0; i < degr; ++i) {
       assert(!isFalse(Level, data[i]));
       if (!isTrue(Level, data[i])) {
-        //        assert(isCorrectlyPropagating(solver, i));
+        assert(isCorrectlyPropagating(solver, i));
         solver.propagate(data[i], cr);
       }
     }
@@ -219,14 +219,14 @@ WatchStatus Cardinality::checkForPropagation(CRef cr, int& idx, [[maybe_unused]]
   for (unsigned int i = degr + 1; i < length; ++i) assert(isFalse(Level, data[i]));
   for (int i = 0; i <= (int)degr; ++i)
     if (i != idx && isFalse(Level, data[i])) {
-      //      assert(isCorrectlyConflicting(solver));
+      assert(isCorrectlyConflicting(solver));
       return WatchStatus::CONFLICTING;
     }
   for (int i = 0; i <= (int)degr; ++i) {
     Lit l = data[i];
     if (i != idx && !isTrue(Level, l)) {
       ++stats.NPROPCARD;
-      //      assert(isCorrectlyPropagating(solver, i));
+      assert(isCorrectlyPropagating(solver, i));
       solver.propagate(l, cr);
     }
   }
@@ -265,11 +265,11 @@ void Counting<CF, DG>::initializeWatches(CRef cr, Solver& solver) {
   }
 
   assert(slack >= 0);
-  //  assert(hasCorrectSlack(solver));
+  assert(hasCorrectSlack(solver));
   if (slack < data[0].c) {  // propagate
     for (unsigned int i = 0; i < length && data[i].c > slack; ++i)
       if (isUnknown(Pos, data[i].l)) {
-        //        assert(isCorrectlyPropagating(solver, i));
+        assert(isCorrectlyPropagating(solver, i));
         solver.propagate(data[i].l, cr);
       }
   }
@@ -287,10 +287,10 @@ WatchStatus Counting<CF, DG>::checkForPropagation(CRef cr, int& idx, Lit p, Solv
   const CF& c = data[idx - INF].c;
 
   slack -= c;
-  //  assert(hasCorrectSlack(solver));
+  assert(hasCorrectSlack(solver));
 
   if (slack < 0) {
-    //    assert(isCorrectlyConflicting(solver));
+    assert(isCorrectlyConflicting(solver));
     return WatchStatus::CONFLICTING;
   }
   if (slack < lrgstCf) {
@@ -305,7 +305,7 @@ WatchStatus Counting<CF, DG>::checkForPropagation(CRef cr, int& idx, Lit p, Solv
         stats.NPROPCLAUSE += (degr == 1);
         stats.NPROPCARD += (degr != 1 && lrgstCf == 1);
         ++stats.NPROPCOUNTING;
-        //        assert(isCorrectlyPropagating(solver, watchIdx));
+        assert(isCorrectlyPropagating(solver, watchIdx));
         solver.propagate(l, cr);
       }
     }
@@ -363,7 +363,7 @@ void Watched<CF, DG>::initializeWatches(CRef cr, Solver& solver) {
     }
   }
   assert(watchslack >= 0);
-  //  assert(hasCorrectSlack(solver));
+  assert(hasCorrectSlack(solver));
   if (watchslack < lrgstCf) {
     // set sufficient falsified watches
     std::vector<unsigned int> falsifiedIdcs;
@@ -383,7 +383,7 @@ void Watched<CF, DG>::initializeWatches(CRef cr, Solver& solver) {
     // perform initial propagation
     for (unsigned int i = 0; i < length && aux::abs(data[i].c) > watchslack; ++i)
       if (isUnknown(Pos, data[i].l)) {
-        //        assert(isCorrectlyPropagating(solver, i));
+        assert(isCorrectlyPropagating(solver, i));
         solver.propagate(data[i].l, cr);
       }
   }
@@ -428,15 +428,15 @@ WatchStatus Watched<CF, DG>::checkForPropagation(CRef cr, int& idx, Lit p, Solve
     }
   }  // else we did not find enough watches last time, so we can skip looking for them now
 
-  //  assert(hasCorrectSlack(solver));
-  //  assert(hasCorrectWatches(solver));
+  assert(hasCorrectSlack(solver));
+  assert(hasCorrectWatches(solver));
 
   if (watchslack >= lrgstCf) {
     c = -c;
     return WatchStatus::DROPWATCH;
   }
   if (watchslack < 0) {
-    //    assert(isCorrectlyConflicting(solver));
+    assert(isCorrectlyConflicting(solver));
     return WatchStatus::CONFLICTING;
   }
   // keep the watch, check for propagation
@@ -447,7 +447,7 @@ WatchStatus Watched<CF, DG>::checkForPropagation(CRef cr, int& idx, Lit p, Solve
       stats.NPROPCLAUSE += (degr == 1);
       stats.NPROPCARD += (degr != 1 && lrgstCf == 1);
       ++stats.NPROPWATCH;
-      //      assert(isCorrectlyPropagating(solver, watchIdx));
+      assert(isCorrectlyPropagating(solver, watchIdx));
       solver.propagate(l, cr);
     }  // NOTE: second innermost loop of RoundingSat
   }
@@ -494,19 +494,18 @@ void CountingSafe<CF, DG>::initializeWatches(CRef cr, Solver& solver) {
 
   DG& slk = *slack;
   slk = -*degr;
-  const Term<CF>* trms = terms->data();
   unsigned int length = size();
   for (unsigned int i = 0; i < length; ++i) {
-    Lit l = trms[i].l;
+    Lit l = terms[i].l;
     adj[l].emplace_back(cr, i + INF);
-    if (!isFalse(Level, l) || Pos[toVar(l)] >= qhead) slk += trms[i].c;
+    if (!isFalse(Level, l) || Pos[toVar(l)] >= qhead) slk += terms[i].c;
   }
 
   assert(slk >= 0);
   assert(hasCorrectSlack(solver));
-  if (slk < trms[0].c) {  // propagate
-    for (unsigned int i = 0; i < length && trms[i].c > slk; ++i) {
-      Lit l = trms[i].l;
+  if (slk < terms[0].c) {  // propagate
+    for (unsigned int i = 0; i < length && terms[i].c > slk; ++i) {
+      Lit l = terms[i].l;
       if (isUnknown(Pos, l)) {
         assert(isCorrectlyPropagating(solver, i));
         solver.propagate(l, cr);
@@ -518,13 +517,12 @@ void CountingSafe<CF, DG>::initializeWatches(CRef cr, Solver& solver) {
 template <typename CF, typename DG>
 WatchStatus CountingSafe<CF, DG>::checkForPropagation(CRef cr, int& idx, [[maybe_unused]] Lit p, Solver& solver) {
   auto& Pos = solver.Pos;
-  const Term<CF>* trms = terms->data();
 
   assert(idx >= INF);
-  assert(trms[idx - INF].l == p);
+  assert(terms[idx - INF].l == p);
   const unsigned int length = size();
-  const CF& lrgstCf = trms[0].c;
-  const CF& c = trms[idx - INF].c;
+  const CF& lrgstCf = terms[0].c;
+  const CF& c = terms[idx - INF].c;
 
   DG& slk = *slack;
   slk -= c;
@@ -540,9 +538,11 @@ WatchStatus CountingSafe<CF, DG>::checkForPropagation(CRef cr, int& idx, [[maybe
       watchIdx = 0;
     }
     stats.NPROPCHECKS -= watchIdx;
-    for (; watchIdx < length && trms[watchIdx].c > slk; ++watchIdx) {
-      const Lit l = trms[watchIdx].l;
+    for (; watchIdx < length && terms[watchIdx].c > slk; ++watchIdx) {
+      const Lit l = terms[watchIdx].l;
       if (isUnknown(Pos, l)) {
+        stats.NPROPCLAUSE += (*degr == 1);
+        stats.NPROPCARD += (*degr != 1 && lrgstCf == 1);
         ++stats.NPROPCOUNTING;
         assert(isCorrectlyPropagating(solver, watchIdx));
         solver.propagate(l, cr);
@@ -557,7 +557,7 @@ template <typename CF, typename DG>
 void CountingSafe<CF, DG>::undoFalsified(int i) {
   assert(i >= INF);
   DG& slk = *slack;
-  slk += terms->at(i - INF).c;
+  slk += terms[i - INF].c;
   ++stats.NWATCHLOOKUPSBJ;
 }
 
@@ -570,9 +570,8 @@ template <typename CF, typename DG>
 CeArb CountingSafe<CF, DG>::expandTo(ConstrExpPools& cePools) const {
   CeArb result = cePools.takeArb();
   result->addRhs(*degr);
-  const Term<CF>* trms = terms->data();
   for (size_t i = 0; i < size(); ++i) {
-    result->addLhs(trms[i].c, trms[i].l);
+    result->addLhs(terms[i].c, terms[i].l);
   }
   result->orig = getOrigin();
   if (result->plogger) result->resetBuffer(id);
@@ -584,9 +583,154 @@ CeSuper CountingSafe<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
   return expandTo(cePools);
 }
 
+template <typename CF, typename DG>
+void WatchedSafe<CF, DG>::initializeWatches(CRef cr, Solver& solver) {
+  auto& Level = solver.Level;
+  auto& Pos = solver.Pos;
+  auto& adj = solver.adj;
+  auto& qhead = solver.qhead;
+
+  DG& wslk = *watchslack;
+  wslk = -*degr;
+  unsigned int length = size();
+  const CF lrgstCf = aux::abs(terms[0].c);
+  for (unsigned int i = 0; i < length && wslk < lrgstCf; ++i) {
+    Lit l = terms[i].l;
+    if (!isFalse(Level, l) || Pos[toVar(l)] >= qhead) {
+      assert(terms[i].c > 0);
+      wslk += terms[i].c;
+      terms[i].c = -terms[i].c;
+      adj[l].emplace_back(cr, i + INF);
+    }
+  }
+  assert(wslk >= 0);
+  assert(hasCorrectSlack(solver));
+  if (wslk < lrgstCf) {
+    // set sufficient falsified watches
+    std::vector<unsigned int> falsifiedIdcs;
+    falsifiedIdcs.reserve(length);
+    for (unsigned int i = 0; i < length; ++i)
+      if (isFalse(Level, terms[i].l) && Pos[toVar(terms[i].l)] < qhead) falsifiedIdcs.push_back(i);
+    std::sort(falsifiedIdcs.begin(), falsifiedIdcs.end(),
+              [&](unsigned int i1, unsigned int i2) { return Pos[toVar(terms[i1].l)] > Pos[toVar(terms[i2].l)]; });
+    DG diff = lrgstCf - wslk;
+    for (unsigned int i : falsifiedIdcs) {
+      assert(terms[i].c > 0);
+      diff -= terms[i].c;
+      terms[i].c = -terms[i].c;
+      adj[terms[i].l].emplace_back(cr, i + INF);
+      if (diff <= 0) break;
+    }
+    // perform initial propagation
+    for (unsigned int i = 0; i < length && aux::abs(terms[i].c) > wslk; ++i)
+      if (isUnknown(Pos, terms[i].l)) {
+        assert(isCorrectlyPropagating(solver, i));
+        solver.propagate(terms[i].l, cr);
+      }
+  }
+}
+
+template <typename CF, typename DG>
+WatchStatus WatchedSafe<CF, DG>::checkForPropagation(CRef cr, int& idx, Lit p, Solver& solver) {
+  _unused(p);
+  auto& Level = solver.Level;
+  auto& Pos = solver.Pos;
+  auto& adj = solver.adj;
+
+  assert(idx >= INF);
+  assert(terms[idx - INF].l == p);
+  const unsigned int length = size();
+  const CF lrgstCf = aux::abs(terms[0].c);
+  CF& c = terms[idx - INF].c;
+
+  if (!options.propIdx || ntrailpops < stats.NTRAILPOPS) {
+    ntrailpops = stats.NTRAILPOPS;
+    watchIdx = 0;
+  }
+
+  assert(c < 0);
+  DG& wslk = *watchslack;
+  wslk += c;
+  if (!options.propSup || wslk - c >= lrgstCf) {  // look for new watches if previously, slack was at least lrgstCf
+    stats.NWATCHCHECKS -= watchIdx;
+    for (; watchIdx < length && wslk < lrgstCf; ++watchIdx) {
+      const CF& cf = terms[watchIdx].c;
+      const Lit l = terms[watchIdx].l;
+      if (cf > 0 && !isFalse(Level, l)) {
+        wslk += cf;
+        terms[watchIdx].c = -cf;
+        adj[l].emplace_back(cr, watchIdx + INF);
+      }
+    }  // NOTE: first innermost loop of RoundingSat
+    stats.NWATCHCHECKS += watchIdx;
+    if (wslk < lrgstCf) {
+      assert(watchIdx == length);
+      watchIdx = 0;
+    }
+  }  // else we did not find enough watches last time, so we can skip looking for them now
+
+  assert(hasCorrectSlack(solver));
+  assert(hasCorrectWatches(solver));
+
+  if (wslk >= lrgstCf) {
+    c = -c;
+    return WatchStatus::DROPWATCH;
+  }
+  if (wslk < 0) {
+    assert(isCorrectlyConflicting(solver));
+    return WatchStatus::CONFLICTING;
+  }
+  // keep the watch, check for propagation
+  stats.NPROPCHECKS -= watchIdx;
+  for (; watchIdx < length && aux::abs(terms[watchIdx].c) > wslk; ++watchIdx) {
+    const Lit l = terms[watchIdx].l;
+    if (isUnknown(Pos, l)) {
+      stats.NPROPCLAUSE += (*degr == 1);
+      stats.NPROPCARD += (*degr != 1 && lrgstCf == 1);
+      ++stats.NPROPWATCH;
+      assert(isCorrectlyPropagating(solver, watchIdx));
+      solver.propagate(l, cr);
+    }  // NOTE: second innermost loop of RoundingSat
+  }
+  stats.NPROPCHECKS += watchIdx;
+  return WatchStatus::KEEPWATCH;
+}
+
+template <typename CF, typename DG>
+void WatchedSafe<CF, DG>::undoFalsified(int i) {
+  assert(i >= INF);
+  assert(terms[i - INF].c < 0);
+  DG& wslk = *watchslack;
+  wslk -= terms[i - INF].c;
+  ++stats.NWATCHLOOKUPSBJ;
+}
+
+template <typename CF, typename DG>
+void WatchedSafe<CF, DG>::resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver) {
+  confl->resolveWith(expandTo(solver.cePools), l, actSet, solver.getLevel(), solver.getPos());
+}
+
+template <typename CF, typename DG>
+CePtr<ConstrExp<CF, DG>> WatchedSafe<CF, DG>::expandTo(ConstrExpPools& cePools) const {
+  CePtr<ConstrExp<CF, DG>> result = cePools.take<CF, DG>();
+  result->addRhs(*degr);
+  for (size_t i = 0; i < size(); ++i) {
+    result->addLhs(aux::abs(terms[i].c), terms[i].l);
+  }
+  result->orig = getOrigin();
+  if (result->plogger) result->resetBuffer(id);
+  return result;
+}
+
+template <typename CF, typename DG>
+CeSuper WatchedSafe<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
+  return expandTo(cePools);
+}
+
 // TODO: keep below test methods?
 
 bool Constr::isCorrectlyConflicting(const Solver& solver) {
+  return true;  // comment to run check
   BigVal slack = -degree();
   for (int i = 0; i < (int)size(); ++i) {
     slack += isFalse(solver.getLevel(), lit(i)) ? 0 : coef(i);
@@ -595,6 +739,7 @@ bool Constr::isCorrectlyConflicting(const Solver& solver) {
 }
 
 bool Constr::isCorrectlyPropagating(const Solver& solver, int idx) {
+  return true;  // comment to run check
   assert(isUnknown(solver.getPos(), lit(idx)));
   BigVal slack = -degree();
   for (int i = 0; i < (int)size(); ++i) {
@@ -615,6 +760,7 @@ void Constr::print(const Solver& solver) {
 
 template <typename CF, typename DG>
 bool Counting<CF, DG>::hasCorrectSlack(const Solver& solver) {
+  return true;  // comment to run check
   BigVal slack = -degree();
   for (int i = 0; i < (int)size(); ++i) {
     if (solver.getPos()[toVar(lit(i))] >= solver.qhead || !isFalse(solver.getLevel(), lit(i))) {
@@ -626,6 +772,7 @@ bool Counting<CF, DG>::hasCorrectSlack(const Solver& solver) {
 
 template <typename CF, typename DG>
 bool Watched<CF, DG>::hasCorrectSlack(const Solver& solver) {
+  return true;  // comment to run check
   BigVal slack = -degree();
   for (int i = 0; i < (int)size(); ++i) {
     if (data[i].c < 0 && (solver.getPos()[toVar(lit(i))] >= solver.qhead || !isFalse(solver.getLevel(), lit(i))))
@@ -636,6 +783,7 @@ bool Watched<CF, DG>::hasCorrectSlack(const Solver& solver) {
 
 template <typename CF, typename DG>
 bool CountingSafe<CF, DG>::hasCorrectSlack(const Solver& solver) {
+  return true;  // comment to run check
   BigVal slk = -degree();
   for (int i = 0; i < (int)size(); ++i) {
     if (solver.getPos()[toVar(lit(i))] >= solver.qhead || !isFalse(solver.getLevel(), lit(i))) {
@@ -646,8 +794,19 @@ bool CountingSafe<CF, DG>::hasCorrectSlack(const Solver& solver) {
 }
 
 template <typename CF, typename DG>
+bool WatchedSafe<CF, DG>::hasCorrectSlack(const Solver& solver) {
+  return true;  // comment to run check
+  BigVal slack = -degree();
+  for (int i = 0; i < (int)size(); ++i) {
+    if (terms[i].c < 0 && (solver.getPos()[toVar(lit(i))] >= solver.qhead || !isFalse(solver.getLevel(), lit(i))))
+      slack += coef(i);
+  }
+  return (slack == *watchslack);
+}
+
+template <typename CF, typename DG>
 bool Watched<CF, DG>::hasCorrectWatches(const Solver& solver) {
-  _unused(solver);
+  return true;  // comment to run check
   if (watchslack >= largestCoef()) return true;
   for (int i = 0; i < (int)watchIdx; ++i) assert(!isUnknown(solver.getPos(), lit(i)));
   for (int i = 0; i < (int)size(); ++i) {
@@ -660,17 +819,31 @@ bool Watched<CF, DG>::hasCorrectWatches(const Solver& solver) {
   return true;
 }
 
+template <typename CF, typename DG>
+bool WatchedSafe<CF, DG>::hasCorrectWatches(const Solver& solver) {
+  return true;  // comment to run check
+  if (*watchslack >= largestCoef()) return true;
+  for (int i = 0; i < (int)watchIdx; ++i) assert(!isUnknown(solver.getPos(), lit(i)));
+  for (int i = 0; i < (int)size(); ++i) {
+    if (!(terms[i].c < 0 || isFalse(solver.getLevel(), terms[i].l))) {
+      std::cout << i << " " << terms[i].c << " " << isFalse(solver.getLevel(), terms[i].l) << std::endl;
+      print(solver);
+    }
+    assert(terms[i].c < 0 || isFalse(solver.getLevel(), terms[i].l));
+  }
+  return true;
+}
+
 template struct Counting<int, long long>;
-template struct Counting<long long, int128>;
-template struct Counting<int128, int128>;
 
 template struct Watched<int, long long>;
-template struct Watched<long long, int128>;
-template struct Watched<int128, int128>;
 
-template struct CountingSafe<int, long long>;
 template struct CountingSafe<long long, int128>;
 template struct CountingSafe<int128, int128>;
 template struct CountingSafe<bigint, bigint>;
+
+template struct WatchedSafe<long long, int128>;
+template struct WatchedSafe<int128, int128>;
+template struct WatchedSafe<bigint, bigint>;
 
 }  // namespace rs
