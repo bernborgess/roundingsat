@@ -495,16 +495,15 @@ void ConstrExp<SMALL, LARGE>::saturateAndFixOverflow(const IntVecIt& level, bool
   assert(bitOverflow >= bitReduce);
   LARGE maxVal = std::max<LARGE>(largest, std::max(degree, aux::abs(rhs)) / INF);
   assert(maxVal == getCutoffVal());
-  if (maxVal <= 0) return;
-  if ((int)aux::msb(maxVal) >= bitOverflow) {
+  if (maxVal > 0 && (int)aux::msb(maxVal) >= bitOverflow) {
     LARGE cutoff = 2;
     cutoff = aux::pow(cutoff, bitReduce) - 1;
     LARGE div = aux::ceildiv<LARGE>(maxVal, cutoff);
     assert(aux::ceildiv<LARGE>(maxVal, div) <= cutoff);
     weakenNonDivisibleNonFalsifieds(level, div, fullWeakening, asserting);
     divideRoundUp(div);
+    saturate();
   }
-  saturate();
 }
 
 /*
