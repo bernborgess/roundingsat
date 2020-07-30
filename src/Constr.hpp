@@ -270,43 +270,48 @@ struct Watched final : public Constr {
   bool hasCorrectWatches(const Solver& solver);
 };
 
-struct Arbitrary final : public Constr {
+template <typename CF, typename DG>
+struct CountingSafe final : public Constr {
   unsigned int watchIdx;
   long long ntrailpops;
-  BigVal* degr;
-  BigVal* slack;
-  std::vector<Term<BigCoef>> terms;
+  DG* degr;
+  DG* slack;
+  std::vector<Term<CF>>* terms;
 
-  static size_t getMemSize([[maybe_unused]] unsigned int length) { return sizeof(Arbitrary) / sizeof(uint32_t); }
+  static size_t getMemSize([[maybe_unused]] unsigned int length) {
+    return sizeof(CountingSafe<CF, DG>) / sizeof(uint32_t);
+  }
   size_t getMemSize() const { return getMemSize(size()); }
 
   BigVal degree() const { return *degr; }
-  BigCoef coef(unsigned int i) const { return terms[i].c; }
-  Lit lit(unsigned int i) const { return terms[i].l; }
+  BigCoef coef(unsigned int i) const { return terms->at(i).c; }
+  Lit lit(unsigned int i) const { return terms->at(i).l; }
 
   template <typename SMALL, typename LARGE>
-  Arbitrary(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id)
+  CountingSafe(const ConstrExp<SMALL, LARGE>* constraint, bool locked, ID _id)
       : Constr(_id, constraint->orig, locked, constraint->vars.size()),
         watchIdx(0),
         ntrailpops(-1),
-        degr(new BigVal(static_cast<BigVal>(constraint->getDegree()))),
-        slack(new BigVal(0)) {
+        degr(new DG(static_cast<DG>(constraint->getDegree()))),
+        slack(new DG(0)),
+        terms(new std::vector<Term<CF>>) {
     assert(_id > ID_Trivial);
+    assert(aux::fitsIn<DG>(constraint->getDegree()));
+    assert(aux::fitsIn<CF>(constraint->getLargestCoef()));
     ++stats.NCOUNTING;
     const unsigned int length = constraint->vars.size();
 
-    terms.resize(length);
+    terms->reserve(length);
     for (unsigned int i = 0; i < length; ++i) {
       Var v = constraint->vars[i];
       assert(constraint->getLit(v) != 0);
-      terms[i] = {aux::abs(constraint->coefs[v]), constraint->getLit(v)};
+      terms->emplace_back(static_cast<CF>(aux::abs(constraint->coefs[v])), constraint->getLit(v));
     }
   }
   void freeUp() {
     delete degr;
     delete slack;
-    terms = std::vector<Term<BigCoef>>();
-    assert(terms.capacity() == 0);  // no allocations left
+    delete terms;
   }
 
   void initializeWatches(CRef cr, Solver& solver);

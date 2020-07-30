@@ -99,16 +99,16 @@ CRef ConstrExp<SMALL, LARGE>::toConstr(ConstraintAllocator& ca, bool locked, ID 
         }
       } else if (maxCoef <= limit64) {
         if (useCounting) {
-          new (ca.alloc<Counting64>(vars.size())) Counting64(this, locked, id);
+          new (ca.alloc<CountingSafe64>(vars.size())) CountingSafe64(this, locked, id);
         } else {
-          new (ca.alloc<Watched64>(vars.size())) Watched64(this, locked, id);
+          new (ca.alloc<CountingSafe64>(vars.size())) CountingSafe64(this, locked, id);
         }
       } else {
         assert(maxCoef <= limit96);
         if (useCounting) {
-          new (ca.alloc<Counting96>(vars.size())) Counting96(this, locked, id);
+          new (ca.alloc<CountingSafe96>(vars.size())) CountingSafe96(this, locked, id);
         } else {
-          new (ca.alloc<Watched96>(vars.size())) Watched96(this, locked, id);
+          new (ca.alloc<CountingSafe96>(vars.size())) CountingSafe96(this, locked, id);
         }
       }
     }

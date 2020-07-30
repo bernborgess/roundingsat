@@ -130,7 +130,6 @@ struct ConstrSimpleSuper;
 struct Constr;
 struct Clause;
 struct Cardinality;
-struct Arbitrary;
 
 template <typename CF, typename DG>
 struct Counting;
@@ -143,6 +142,13 @@ struct Watched;
 using Watched32 = Watched<int, long long>;
 using Watched64 = Watched<long long, int128>;
 using Watched96 = Watched<int128, int128>;
+
+template <typename CF, typename DG>
+struct CountingSafe;
+using CountingSafe32 = CountingSafe<int, long long>;
+using CountingSafe64 = CountingSafe<long long, int128>;
+using CountingSafe96 = CountingSafe<int128, int128>;
+using Arbitrary = CountingSafe<bigint, bigint>;
 
 template <typename CF>
 struct Term {

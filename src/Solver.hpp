@@ -52,7 +52,8 @@ class Solver {
   friend struct Counting;
   template <typename CF, typename DG>
   friend struct Watched;
-  friend struct Arbitrary;
+  template <typename CF, typename DG>
+  friend struct CountingSafe;
 
   // ---------------------------------------------------------------------
   // Members

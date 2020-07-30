@@ -485,26 +485,28 @@ CeSuper Watched<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
   return expandTo(cePools);
 }
 
-void Arbitrary::initializeWatches(CRef cr, Solver& solver) {
+template <typename CF, typename DG>
+void CountingSafe<CF, DG>::initializeWatches(CRef cr, Solver& solver) {
   auto& Level = solver.Level;
   auto& Pos = solver.Pos;
   auto& adj = solver.adj;
   auto& qhead = solver.qhead;
 
-  BigVal& slk = *slack;
+  DG& slk = *slack;
   slk = -*degr;
+  const Term<CF>* trms = terms->data();
   unsigned int length = size();
   for (unsigned int i = 0; i < length; ++i) {
-    Lit l = terms[i].l;
+    Lit l = trms[i].l;
     adj[l].emplace_back(cr, i + INF);
-    if (!isFalse(Level, l) || Pos[toVar(l)] >= qhead) slk += terms[i].c;
+    if (!isFalse(Level, l) || Pos[toVar(l)] >= qhead) slk += trms[i].c;
   }
 
   assert(slk >= 0);
   assert(hasCorrectSlack(solver));
-  if (slk < terms[0].c) {  // propagate
-    for (unsigned int i = 0; i < length && terms[i].c > slk; ++i) {
-      Lit l = terms[i].l;
+  if (slk < trms[0].c) {  // propagate
+    for (unsigned int i = 0; i < length && trms[i].c > slk; ++i) {
+      Lit l = trms[i].l;
       if (isUnknown(Pos, l)) {
         assert(isCorrectlyPropagating(solver, i));
         solver.propagate(l, cr);
@@ -513,16 +515,18 @@ void Arbitrary::initializeWatches(CRef cr, Solver& solver) {
   }
 }
 
-WatchStatus Arbitrary::checkForPropagation(CRef cr, int& idx, [[maybe_unused]] Lit p, Solver& solver) {
+template <typename CF, typename DG>
+WatchStatus CountingSafe<CF, DG>::checkForPropagation(CRef cr, int& idx, [[maybe_unused]] Lit p, Solver& solver) {
   auto& Pos = solver.Pos;
+  const Term<CF>* trms = terms->data();
 
   assert(idx >= INF);
-  assert(terms[idx - INF].l == p);
+  assert(trms[idx - INF].l == p);
   const unsigned int length = size();
-  const BigCoef& lrgstCf = terms[0].c;
-  const BigCoef& c = terms[idx - INF].c;
+  const CF& lrgstCf = trms[0].c;
+  const CF& c = trms[idx - INF].c;
 
-  BigVal& slk = *slack;
+  DG& slk = *slack;
   slk -= c;
   assert(hasCorrectSlack(solver));
 
@@ -536,8 +540,8 @@ WatchStatus Arbitrary::checkForPropagation(CRef cr, int& idx, [[maybe_unused]] L
       watchIdx = 0;
     }
     stats.NPROPCHECKS -= watchIdx;
-    for (; watchIdx < length && terms[watchIdx].c > slk; ++watchIdx) {
-      const Lit l = terms[watchIdx].l;
+    for (; watchIdx < length && trms[watchIdx].c > slk; ++watchIdx) {
+      const Lit l = trms[watchIdx].l;
       if (isUnknown(Pos, l)) {
         ++stats.NPROPCOUNTING;
         assert(isCorrectlyPropagating(solver, watchIdx));
@@ -549,29 +553,36 @@ WatchStatus Arbitrary::checkForPropagation(CRef cr, int& idx, [[maybe_unused]] L
   return WatchStatus::KEEPWATCH;
 }
 
-void Arbitrary::undoFalsified(int i) {
+template <typename CF, typename DG>
+void CountingSafe<CF, DG>::undoFalsified(int i) {
   assert(i >= INF);
-  BigVal& slk = *slack;
-  slk += terms[i - INF].c;
+  DG& slk = *slack;
+  slk += terms->at(i - INF).c;
   ++stats.NWATCHLOOKUPSBJ;
 }
 
-void Arbitrary::resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver) {
+template <typename CF, typename DG>
+void CountingSafe<CF, DG>::resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver) {
   confl->resolveWith(expandTo(solver.cePools), l, actSet, solver.getLevel(), solver.getPos());
 }
 
-CeArb Arbitrary::expandTo(ConstrExpPools& cePools) const {
+template <typename CF, typename DG>
+CeArb CountingSafe<CF, DG>::expandTo(ConstrExpPools& cePools) const {
   CeArb result = cePools.takeArb();
   result->addRhs(*degr);
+  const Term<CF>* trms = terms->data();
   for (size_t i = 0; i < size(); ++i) {
-    result->addLhs(terms[i].c, terms[i].l);
+    result->addLhs(trms[i].c, trms[i].l);
   }
   result->orig = getOrigin();
   if (result->plogger) result->resetBuffer(id);
   return result;
 }
 
-CeSuper Arbitrary::toExpanded(ConstrExpPools& cePools) const { return expandTo(cePools); }
+template <typename CF, typename DG>
+CeSuper CountingSafe<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
+  return expandTo(cePools);
+}
 
 // TODO: keep below test methods?
 
@@ -623,7 +634,8 @@ bool Watched<CF, DG>::hasCorrectSlack(const Solver& solver) {
   return (slack == this->watchslack);
 }
 
-bool Arbitrary::hasCorrectSlack(const Solver& solver) {
+template <typename CF, typename DG>
+bool CountingSafe<CF, DG>::hasCorrectSlack(const Solver& solver) {
   BigVal slk = -degree();
   for (int i = 0; i < (int)size(); ++i) {
     if (solver.getPos()[toVar(lit(i))] >= solver.qhead || !isFalse(solver.getLevel(), lit(i))) {
@@ -655,5 +667,10 @@ template struct Counting<int128, int128>;
 template struct Watched<int, long long>;
 template struct Watched<long long, int128>;
 template struct Watched<int128, int128>;
+
+template struct CountingSafe<int, long long>;
+template struct CountingSafe<long long, int128>;
+template struct CountingSafe<int128, int128>;
+template struct CountingSafe<bigint, bigint>;
 
 }  // namespace rs
