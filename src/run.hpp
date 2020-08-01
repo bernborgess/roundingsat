@@ -310,7 +310,7 @@ class Optimization {
       }
       assert(upper_bound > lower_bound);
       std::pair<SolveState, CeSuper> out = aux::timeCall<std::pair<SolveState, CeSuper>>(
-          [&] { return solver.solve(assumps, solution); }, stats.SOLVETIME);
+          [&] { return solver.solve(assumps, solution); }, assumps.isEmpty() ? stats.SOLVETIME : stats.SOLVETIMECG);
       reply = out.first;
       if (reply == SolveState::RESTARTED) continue;
       if (reply == SolveState::UNSAT) quit::exit_UNSAT(solver.logger, solution, upper_bound);
