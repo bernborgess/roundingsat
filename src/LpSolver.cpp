@@ -458,7 +458,7 @@ void LpSolver::inProcess() {
   assert(lpSol.dim() == (int)lpSolution.size());
   for (int i = 0; i < lpSol.dim(); ++i) lpSolution[i] = lpSol[i];
   lp.getSlacksReal(lpSlackSolution);
-  assert((int)solver.phase.size() == getNbVariables());
+  assert((int)solver.phase.size() >= getNbVariables());
   for (Var v = 1; v < getNbVariables(); ++v) solver.phase[v] = (lpSolution[v] <= 0.5) ? -v : v;
   if (options.verbosity.get() > 0) std::cout << "c rational objective " << lp.objValueReal() << std::endl;
   candidateCuts.clear();
