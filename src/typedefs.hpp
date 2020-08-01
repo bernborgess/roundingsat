@@ -91,7 +91,19 @@ const ActValC actLimitC = 1e30;  // ~1e30 << 2^(2^7)
  *
  * max number of types is 16, as the type is stored with 4 bits in Constr
  */
-enum Origin { UNKNOWN, FORMULA, LEARNED, BOUND, COREGUIDED, FARKAS, LEARNEDFARKAS, GOMORY, UPPERBOUND, LOWERBOUND };
+enum Origin {
+  UNKNOWN,
+  FORMULA,
+  LEARNED,
+  BOUND,
+  COREGUIDED,
+  FARKAS,
+  LEARNEDFARKAS,
+  GOMORY,
+  UPPERBOUND,
+  LOWERBOUND,
+  HARDENEDBOUND,
+};
 
 // TODO: make below methods part of a Solver object that's passed around
 inline bool isTrue(const IntVecIt& level, Lit l) { return level[l] != INF; }

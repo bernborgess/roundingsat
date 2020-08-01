@@ -497,11 +497,11 @@ CeSuper Solver::processLearnedStack() {
 
 std::pair<ID, ID> Solver::addInputConstraint(CeSuper ce) {
   assert(ce->orig == Origin::FORMULA || ce->orig == Origin::UPPERBOUND || ce->orig == Origin::LOWERBOUND ||
-         ce->orig == Origin::COREGUIDED);
+         ce->orig == Origin::HARDENEDBOUND || ce->orig == Origin::COREGUIDED);
   assert(decisionLevel() == 0);
   bool upperbound = ce->orig == Origin::UPPERBOUND;
   bool lowerbound = ce->orig == Origin::LOWERBOUND;
-  if (upperbound || lowerbound) ce->orig = Origin::BOUND;
+  if (upperbound || lowerbound || ce->orig == Origin::HARDENEDBOUND) ce->orig = Origin::BOUND;
   ID input = ID_Undef;
   if (logger) input = ce->logAsInput();
   ce->postProcess(Level, Pos, true, stats);
@@ -535,7 +535,7 @@ std::pair<ID, ID> Solver::addInputConstraint(CeSuper ce) {
   if (orig != Origin::FORMULA) {
     external[id] = cr;
   }
-  if (lpSolver && (orig == Origin::BOUND || orig == Origin::FORMULA)) {
+  if (lpSolver && (upperbound || lowerbound || orig == Origin::FORMULA)) {
     lpSolver->addConstraint(cr, false, upperbound, lowerbound);
   }
   return {input, id};
@@ -554,6 +554,10 @@ std::pair<ID, ID> Solver::addConstraint(const ConstrSimpleSuper& c, Origin orig)
   ce->orig = orig;
   std::pair<ID, ID> result = addInputConstraint(ce);
   return result;
+}
+
+std::pair<ID, ID> Solver::addUnitConstraint(Lit l, Origin orig) {
+  return addConstraint(ConstrSimple32({{1, l}}, 1), orig);
 }
 
 void Solver::removeConstraint(Constr& C, [[maybe_unused]] bool override) {

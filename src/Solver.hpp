@@ -110,8 +110,9 @@ class Solver {
   const std::vector<int>& getPos() const { return Pos; }
   int decisionLevel() const { return trail_lim.size(); }
 
-  std::pair<ID, ID> addConstraint(const CeSuper c, Origin orig);             // formula line id, processed id
-  std::pair<ID, ID> addConstraint(const ConstrSimpleSuper& c, Origin orig);  // formula line id, processed id
+  std::pair<ID, ID> addConstraint(const CeSuper c, Origin orig);             // result: formula line id, processed id
+  std::pair<ID, ID> addConstraint(const ConstrSimpleSuper& c, Origin orig);  // result: formula line id, processed id
+  std::pair<ID, ID> addUnitConstraint(Lit l, Origin orig);                   // result: formula line id, processed id
   void dropExternal(ID id, bool erasable, bool forceDelete);
   int getNbConstraints() const { return constraints.size(); }
   CeSuper getIthConstraint(int i) { return ca[constraints[i]].toExpanded(cePools); }

@@ -57,6 +57,7 @@ struct LazyVar {
   ID addAtLeastConstraint();
   ID addAtMostConstraint();
   ID addSymBreakingConstraint(Var prevvar) const;
+  ID addFinalAtMost();
 };
 
 std::ostream& operator<<(std::ostream& o, const std::shared_ptr<LazyVar> lv);
@@ -93,7 +94,9 @@ class Optimization {
 
     reformObj = solver.cePools.take<SMALL, LARGE>();
     reformObj->stopLogging();
-    origObj->copyTo(reformObj);
+    if (!options.optMode.is("linear")) {
+      origObj->copyTo(reformObj);
+    }
   };
 
   void printObjBounds() {
@@ -111,21 +114,25 @@ class Optimization {
     for (int i = 0; i < (int)lazyVars.size(); ++i) {
       LazyVar& lv = *lazyVars[i].lv;
       if (reformObj->getLit(lv.currentVar) == 0) {
-        // add auxiliary variable
-        long long newN = solver.getNbVars() + 1;
-        solver.setNbVars(newN);
-        Var oldvar = lv.currentVar;
-        lv.addVar(newN);
-        // reformulate the objective
-        reformObj->addLhs(lazyVars[i].m, newN);
-        // add necessary lazy constraints
-        if (lv.addAtLeastConstraint() == ID_Unsat || lv.addAtMostConstraint() == ID_Unsat ||
-            lv.addSymBreakingConstraint(oldvar) == ID_Unsat) {
-          quit::exit_UNSAT(solver.logger, solution, upper_bound);
-        }
-        if (lv.remainingVars() == 0) {  // fully expanded, no need to keep in memory
-          aux::swapErase(lazyVars, i--);
-          continue;
+        if (isUnit(solver.getLevel(), -lv.currentVar)) {  // binary constraints make all new auxiliary variables unit
+          if (lv.addFinalAtMost() == ID_Unsat) {
+            quit::exit_UNSAT(solver.logger, solution, upper_bound);
+          }
+          aux::swapErase(lazyVars, i--);  // fully expanded, no need to keep in memory
+        } else {                          // add auxiliary variable
+          long long newN = solver.getNbVars() + 1;
+          solver.setNbVars(newN);
+          Var oldvar = lv.currentVar;
+          lv.addVar(newN);
+          // reformulate the objective
+          reformObj->addLhs(lazyVars[i].m, newN);
+          // add necessary lazy constraints
+          if (lv.addAtLeastConstraint() == ID_Unsat || lv.addAtMostConstraint() == ID_Unsat ||
+              lv.addSymBreakingConstraint(oldvar) == ID_Unsat) {
+            quit::exit_UNSAT(solver.logger, solution, upper_bound);
+          } else if (lv.remainingVars() == 0) {
+            aux::swapErase(lazyVars, i--);  // fully expanded, no need to keep in memory
+          }
         }
       }
     }
@@ -272,6 +279,16 @@ class Optimization {
     coreAggregate->logInconsistency(solver.getLevel(), solver.getPos(), stats);
   }
 
+  void harden() {
+    LARGE diff = upper_bound - lower_bound;
+    for (Var v : reformObj->vars) {
+      if (aux::abs(reformObj->coefs[v]) > diff &&
+          solver.addUnitConstraint(-reformObj->getLit(v), Origin::HARDENEDBOUND).second == ID_Unsat) {
+        quit::exit_UNSAT(solver.logger, solution, upper_bound);
+      }
+    }
+  }
+
   void optimize() {
     size_t upper_time = 0, lower_time = 0;
     SolveState reply = SolveState::SAT;
@@ -325,10 +342,13 @@ class Optimization {
         assert(foundSolution());
         ++stats.NSOLS;
         handleNewSolution();
+        harden();
         if (coefLimFlag == 0) coefLimFlag = 1;
       } else if (reply == SolveState::INCONSISTENT) {
+        assert(!options.optMode.is("linear"));
         ++stats.NCORES;
         handleInconsistency(out.second);
+        harden();
         coefLimFlag = -1;
       } else {
         assert(reply == SolveState::INPROCESSED);  // keep looping

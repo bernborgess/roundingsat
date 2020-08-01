@@ -85,6 +85,13 @@ ID run::LazyVar::addSymBreakingConstraint(Var prevvar) const {
   return solver.addConstraint(ConstrSimple32({{1, prevvar}, {1, -currentVar}}, 1), Origin::COREGUIDED).second;
 }
 
+ID run::LazyVar::addFinalAtMost() {
+  solver.dropExternal(atMostID, false, false);  // TODO: should be erasable
+  assert(atMost.terms.back().c == 1);
+  atMostID = solver.addConstraint(atMost, Origin::COREGUIDED).second;
+  return atMostID;
+}
+
 std::ostream& run::operator<<(std::ostream& o, const std::shared_ptr<LazyVar> lv) {
   o << lv->atLeast << "\n" << lv->atMost;
   return o;
