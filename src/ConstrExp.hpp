@@ -251,6 +251,7 @@ struct ConstrExp final : public ConstrExpSuper {
   LARGE getDegree() const;
   SMALL getCoef(Lit l) const;
   SMALL getLargestCoef() const;
+  SMALL getSmallestCoef() const;
   LARGE getCutoffVal() const;
   Lit getLit(Lit l) const;
   bool hasLit(Lit l) const;

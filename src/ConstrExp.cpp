@@ -249,6 +249,14 @@ SMALL ConstrExp<SMALL, LARGE>::getLargestCoef() const {
 }
 
 template <typename SMALL, typename LARGE>
+SMALL ConstrExp<SMALL, LARGE>::getSmallestCoef() const {
+  assert(vars.size() > 0);
+  SMALL result = aux::abs(coefs[vars[0]]);
+  for (Var v : vars) result = std::min(result, aux::abs(coefs[v]));
+  return result;
+}
+
+template <typename SMALL, typename LARGE>
 LARGE ConstrExp<SMALL, LARGE>::getCutoffVal() const {
   return std::max<LARGE>(getLargestCoef(), std::max(degree, aux::abs(rhs)) / INF);
 }
@@ -589,7 +597,7 @@ void ConstrExp<SMALL, LARGE>::weakenDivideRound(const IntVecIt& level, Lit l, bo
   assert(getCoef(l) > 0);
   LARGE div = slackdiv ? getSlack(level) + 1 : getCoef(l);
   if (div <= 1) return;
-  weakenNonDivisibleNonFalsifieds(level, div, fullWeakening, l);
+  weakenNonDivisibleNonFalsifieds(level, div, fullWeakening, 0);
   divideRoundUp(div);
   saturate();
 }
@@ -633,10 +641,11 @@ template <typename SMALL, typename LARGE>
 bool ConstrExp<SMALL, LARGE>::divideByGCD() {
   assert(isSaturated());
   assert(hasNoZeroes());
-  if (vars.size() == 0 || aux::abs(coefs[vars.back()]) == 1) return false;
-  SMALL _gcd = aux::abs(coefs[vars.back()]);  // smallest if sorted in decreasing order
-  for (int i = vars.size() - 2; i >= 0; --i) {
-    _gcd = aux::gcd(_gcd, aux::abs(coefs[vars[i]]));
+  if (vars.size() == 0) return false;
+  SMALL _gcd = getSmallestCoef();
+  if (_gcd == 1) return false;
+  for (Var v : vars) {
+    _gcd = aux::gcd(_gcd, aux::abs(coefs[v]));
     if (_gcd == 1) return false;
   }
   assert(_gcd > 1);
