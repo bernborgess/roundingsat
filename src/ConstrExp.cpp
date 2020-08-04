@@ -320,6 +320,14 @@ bool ConstrExp<SMALL, LARGE>::isInconsistency() const {
 }
 
 template <typename SMALL, typename LARGE>
+bool ConstrExp<SMALL, LARGE>::isSatisfied(const IntVecIt& level) const {
+  LARGE eval = -degree;
+  for (Var v : vars)
+    if (isTrue(level, getLit(v))) eval += aux::abs(coefs[v]);
+  return eval >= 0;
+}
+
+template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::addLhs(const SMALL& cf, Lit l) {  // add c*(l>=0) if c>0 and -c*(-l>=0) if c<0
   if (cf == 0) return;
   assert(l != 0);
@@ -737,6 +745,7 @@ void ConstrExp<SMALL, LARGE>::weakenNonImplied(const IntVecIt& level, const LARG
 }
 
 // @post: preserves order after removeZeroes()
+// TODO: return modified slack?
 template <typename SMALL, typename LARGE>
 bool ConstrExp<SMALL, LARGE>::weakenNonImplying(const IntVecIt& level, const SMALL& propCoef, const LARGE& slack,
                                                 Stats& sts) {
@@ -752,9 +761,7 @@ bool ConstrExp<SMALL, LARGE>::weakenNonImplying(const IntVecIt& level, const SMA
       ++sts.NWEAKENEDNONIMPLYING;
     }
   }
-  bool changed = oldCount != sts.NWEAKENEDNONIMPLYING;
-  if (changed) saturate();  // TODO: always saturate?
-  return changed;
+  return oldCount != sts.NWEAKENEDNONIMPLYING;
 }
 
 // @post: preserves order after removeZeroes()

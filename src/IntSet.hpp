@@ -59,9 +59,9 @@ struct IntSet {  // TODO: template to long long, int128, ...?
     for (int i : ints) add(i);
   }
 
-  inline void resize(int size) { aux::resizeIntMap(_index, index, size, resize_factor, _unused_()); }
-  inline size_t size() const { return keys.size(); }
-  bool isEmpty() { return size() == 0; }
+  void resize(int size) { aux::resizeIntMap(_index, index, size, resize_factor, _unused_()); }
+  size_t size() const { return keys.size(); }
+  bool isEmpty() const { return size() == 0; }
 
   void clear() {
     assert(check());  // TODO: disable
@@ -69,7 +69,7 @@ struct IntSet {  // TODO: template to long long, int128, ...?
     keys.clear();
   }
 
-  inline bool has(int key) const { return _index.size() > (unsigned int)2 * std::abs(key) && index[key] != _unused_(); }
+  bool has(int key) const { return _index.size() > (unsigned int)2 * std::abs(key) && index[key] != _unused_(); }
 
   void add(int key) {
     if (_index.size() <= (unsigned int)2 * std::abs(key)) resize(std::abs(key));

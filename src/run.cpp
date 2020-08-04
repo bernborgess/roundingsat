@@ -34,7 +34,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 namespace rs {
 
-std::vector<bool> run::solution;
 Solver run::solver;
 
 run::LazyVar::LazyVar(Solver& slvr, const Ce32 cardCore, Var startVar) : solver(slvr), n(cardCore->vars.size()) {
@@ -99,13 +98,12 @@ std::ostream& run::operator<<(std::ostream& o, const std::shared_ptr<LazyVar> lv
 
 void run::decide() {
   while (true) {
-    SolveState reply =
-        aux::timeCall<SolveState>([&] { return solver.solve(IntSet(), solution).first; }, stats.SOLVETIME);
+    SolveState reply = aux::timeCall<SolveState>([&] { return solver.solve(IntSet()).state; }, stats.SOLVETIME);
     assert(reply != SolveState::INCONSISTENT);
     if (reply == SolveState::SAT)
-      quit::exit_SAT(solution, solver.logger);
+      quit::exit_SAT(solver);
     else if (reply == SolveState::UNSAT)
-      quit::exit_UNSAT(solver.logger);
+      quit::exit_UNSAT(solver);
   }
 }
 
@@ -151,7 +149,7 @@ void run::run(CeArb objective) {
     }
   } catch (const AsynchronousInterrupt& ai) {
     std::cout << "c " << ai.what() << std::endl;
-    quit::exit_INDETERMINATE(solution, solver.logger);
+    quit::exit_INDETERMINATE(solver);
   }
 }
 

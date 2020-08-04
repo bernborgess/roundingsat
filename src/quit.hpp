@@ -36,16 +36,16 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 namespace rs {
 
-struct Logger;
+class Solver;
 
 namespace quit {
-void printSol(const std::vector<bool>& sol);
-void printSolAsOpb(const std::vector<bool>& sol);
-void exit_SAT(const std::vector<bool>& sol, const std::shared_ptr<Logger>& logger);
+void printSol(const std::vector<Lit>& sol);
+void printSolAsOpb(const std::vector<Lit>& sol);
+void exit_SAT(const Solver& solver);
 template <typename LARGE>
-void exit_UNSAT(const std::shared_ptr<Logger>& logger, const std::vector<bool>& sol, const LARGE& bestObjVal);
-void exit_UNSAT(const std::shared_ptr<Logger>& logger);
-void exit_INDETERMINATE(const std::vector<bool>& sol, const std::shared_ptr<Logger>& logger);
+void exit_UNSAT(const Solver& solver, const LARGE& bestObjVal);
+void exit_UNSAT(const Solver& solver);
+void exit_INDETERMINATE(const Solver& solver);
 void exit_ERROR(const std::initializer_list<std::string>& messages);
 }  // namespace quit
 

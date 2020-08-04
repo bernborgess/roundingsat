@@ -227,6 +227,7 @@ struct Options {
                            "0 =< int", [](const int& x) -> bool { return x >= 0; }};
   BoolOption cgIndCores{"cg-indcores", "Use independent cores for core-guided search", 1};
   BoolOption cgStrat{"cg-strat", "Use stratification for core-guided search", 1};
+  BoolOption cgFixedPhase{"cg-fixedphase", "Fix the phase to the incumbent solution during linear optimization", 1};
 
   const std::vector<Option*> options = {
       &help,           &printSol,      &verbosity,     &proofLog,      &optMode,
@@ -236,7 +237,7 @@ struct Options {
       &gomoryCutLimit, &maxCutCos,     &slackdiv,      &weakenFull,    &weakenNonImplying,
       &bumpOnlyFalse,  &bumpCanceling, &bumpLits,      &bitsOverflow,  &bitsReduced,
       &bitsLearned,    &bitsInput,     &cgLazy,        &cgBoosted,     &cgIndCores,
-      &cgStrat,
+      &cgStrat,        &cgFixedPhase,
   };
   std::unordered_map<std::string, Option*> name2opt;
 

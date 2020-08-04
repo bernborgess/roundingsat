@@ -41,7 +41,13 @@ namespace rs {
 
 struct Logger;
 
-enum SolveState { SAT, UNSAT, INCONSISTENT, INPROCESSED, RESTARTED };
+enum class SolveState { SAT, UNSAT, INCONSISTENT, INPROCESSED, RESTARTED };
+
+struct SolveAnswer {
+  SolveState state;
+  CeSuper core;
+  std::vector<Lit>& solution;
+};
 
 class Solver {
   friend class LpSolver;
@@ -63,6 +69,8 @@ class Solver {
  public:
   std::shared_ptr<Logger> logger;
   ConstrExpPools cePools;
+  std::vector<Lit> lastSol = {0};
+  bool foundSolution() const { return lastSol.size() > 1; }
 
  private:
   int n;
@@ -84,6 +92,7 @@ class Solver {
   std::vector<int> trail_lim, Pos;
   std::vector<CRef> Reason;
   int qhead = 0;  // for unit propagation
+
   std::vector<Lit> phase;
   std::vector<ActValV> activity;
 
@@ -118,19 +127,20 @@ class Solver {
   CeSuper getIthConstraint(int i) { return ca[constraints[i]].toExpanded(cePools); }
 
   /**
-   * @return 1:
+   * @return SolveAnswer.state:
    * 	UNSAT if root inconsistency detected
    * 	SAT if satisfying assignment found
    * 	INCONSISTENT if no solution extending assumptions exists
    * 	INPROCESSING if solver just finished a cleanup phase
-   * @return 2:
+   * @return SolveAnswer.core:
    *    an implied constraint C if INCONSISTENT
    *        if C is a tautology, negated assumptions at root level exist
    *        if C is not a tautology, it is falsified by the assumptions
+   * @return SolveAnswer.solution:
+   *    the satisfying assignment if SAT
    * @param assumptions: set of assumptions
-   * @param solution: if SAT, full variable assignment satisfying all constraints, otherwise untouched
    */
-  std::pair<SolveState, CeSuper> solve(const IntSet& assumptions, std::vector<bool>& solution);
+  SolveAnswer solve(const IntSet& assumptions);
 
  private:
   void presolve();
@@ -184,10 +194,9 @@ class Solver {
   // ---------------------------------------------------------------------
   // Solving
 
-  double luby(double y, int i);
-  BigVal lhs(Constr& C, const std::vector<bool>& sol);
-  bool checksol(const std::vector<bool>& sol);
-  Lit pickBranchLit();
+  double luby(double y, int i) const;
+  bool checkSAT();
+  Lit pickBranchLit(bool lastSolPhase);
 };
 
 }  // namespace rs

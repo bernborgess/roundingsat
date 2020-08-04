@@ -69,7 +69,7 @@ struct Constr {  // internal solver constraint optimized for fast propagation
   bool isMarkedForDelete() const { return header.markedfordel; }
   void markForDel() { header.markedfordel = 1; }
 
-  virtual BigVal degree() const = 0;
+  virtual BigVal degree() const = 0;  // TODO: remove direct uses of these bigint methods, convert to ConstrExp instead
   virtual BigCoef coef(unsigned int i) const = 0;
   BigCoef largestCoef() const { return coef(0); };
   virtual Lit lit(unsigned int i) const = 0;

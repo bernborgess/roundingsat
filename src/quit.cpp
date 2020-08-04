@@ -30,64 +30,60 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "quit.hpp"
 #include <iostream>
-#include "Logger.hpp"
+#include "Solver.hpp"
 #include "globals.hpp"
 
 namespace rs {
 
-void quit::printSol(const std::vector<bool>& sol) {
+void quit::printSol(const std::vector<Lit>& sol) {
   printf("v");
-  for (Var v = 1; v < (Var)sol.size() - stats.NAUXVARS; ++v) printf(sol[v] ? " x%d" : " -x%d", v);
+  for (Var v = 1; v < (Var)sol.size() - stats.NAUXVARS; ++v) printf(sol[v] > 0 ? " x%d" : " -x%d", v);
   printf("\n");
 }
 
-void quit::printSolAsOpb(const std::vector<bool>& sol) {
+void quit::printSolAsOpb(const std::vector<Lit>& sol) {
   for (Var v = 1; v < (Var)sol.size() - stats.NAUXVARS; ++v) {
-    if (sol[v])
+    if (sol[v] > 0)
       std::cout << "+1 x" << v << " >= 1 ;\n";
     else
       std::cout << "-1 x" << v << " >= 0 ;\n";
   }
 }
 
-void quit::exit_SAT(const std::vector<bool>& sol, const std::shared_ptr<Logger>& logger) {
-  if (logger) logger->flush();
+void quit::exit_SAT(const Solver& solver) {
+  assert(solver.foundSolution());
+  if (solver.logger) solver.logger->flush();
   if (options.verbosity.get() > 0) stats.print();
   puts("s SATISFIABLE");
-  if (options.printSol) printSol(sol);
+  if (options.printSol) printSol(solver.lastSol);
   exit(10);
 }
 
 template <typename LARGE>
-void quit::exit_UNSAT(const std::shared_ptr<Logger>& logger, const std::vector<bool>& sol, const LARGE& bestObjVal) {
-  if (logger) logger->flush();
+void quit::exit_UNSAT(const Solver& solver, const LARGE& bestObjVal) {
+  if (solver.logger) solver.logger->flush();
   if (options.verbosity.get() > 0) stats.print();
-  if (sol.size() > 0) {
+  if (solver.foundSolution()) {
     std::cout << "o " << bestObjVal << std::endl;
     std::cout << "s OPTIMUM FOUND" << std::endl;
-    if (options.printSol) printSol(sol);
+    if (options.printSol) printSol(solver.lastSol);
     exit(30);
   } else {
     puts("s UNSATISFIABLE");
     exit(20);
   }
 }
-template void quit::exit_UNSAT<int>(const std::shared_ptr<Logger>& logger, const std::vector<bool>& sol,
-                                    const int& bestObjVal);
-template void quit::exit_UNSAT<long long>(const std::shared_ptr<Logger>& logger, const std::vector<bool>& sol,
-                                          const long long& bestObjVal);
-template void quit::exit_UNSAT<int128>(const std::shared_ptr<Logger>& logger, const std::vector<bool>& sol,
-                                       const int128& bestObjVal);
-template void quit::exit_UNSAT<int256>(const std::shared_ptr<Logger>& logger, const std::vector<bool>& sol,
-                                       const int256& bestObjVal);
-template void quit::exit_UNSAT<bigint>(const std::shared_ptr<Logger>& logger, const std::vector<bool>& sol,
-                                       const bigint& bestObjVal);
+template void quit::exit_UNSAT<int>(const Solver& solver, const int& bestObjVal);
+template void quit::exit_UNSAT<long long>(const Solver& solver, const long long& bestObjVal);
+template void quit::exit_UNSAT<int128>(const Solver& solver, const int128& bestObjVal);
+template void quit::exit_UNSAT<int256>(const Solver& solver, const int256& bestObjVal);
+template void quit::exit_UNSAT<bigint>(const Solver& solver, const bigint& bestObjVal);
 
-void quit::exit_UNSAT(const std::shared_ptr<Logger>& logger) { quit::exit_UNSAT<int>(logger, {}, 0); }
+void quit::exit_UNSAT(const Solver& solver) { quit::exit_UNSAT<int>(solver, 0); }
 
-void quit::exit_INDETERMINATE(const std::vector<bool>& sol, const std::shared_ptr<Logger>& logger) {
-  if (sol.size() > 0) exit_SAT(sol, logger);
-  if (logger) logger->flush();
+void quit::exit_INDETERMINATE(const Solver& solver) {
+  if (solver.foundSolution()) exit_SAT(solver);
+  if (solver.logger) solver.logger->flush();
   if (options.verbosity.get() > 0) stats.print();
   puts("s UNKNOWN");
   exit(0);

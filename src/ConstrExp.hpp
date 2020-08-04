@@ -135,6 +135,7 @@ struct ConstrExpSuper {
   virtual bool hasNegativeSlack(const IntSet& assumptions) const = 0;
   virtual bool isTautology() const = 0;
   virtual bool isInconsistency() const = 0;
+  virtual bool isSatisfied(const IntVecIt& level) const = 0;
 
   virtual void removeUnitsAndZeroes(const IntVecIt& level, const std::vector<int>& pos, bool doSaturation = true) = 0;
   virtual bool hasNoUnits(const IntVecIt& level) const = 0;
@@ -267,6 +268,7 @@ struct ConstrExp final : public ConstrExpSuper {
   bool hasNegativeSlack(const IntSet& assumptions) const;
   bool isTautology() const;
   bool isInconsistency() const;
+  bool isSatisfied(const IntVecIt& level) const;
 
   // @post: preserves order of vars
   void removeUnitsAndZeroes(const IntVecIt& level, const std::vector<int>& pos, bool doSaturation = true);

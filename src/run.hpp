@@ -37,7 +37,6 @@ namespace rs {
 
 namespace run {
 
-extern std::vector<bool> solution;
 extern Solver solver;
 
 struct LazyVar {
@@ -83,8 +82,6 @@ class Optimization {
   std::vector<LvM<SMALL>> lazyVars;
   IntSet assumps;
 
-  bool foundSolution() { return run::solution.size() > 0; }
-
  public:
   Optimization(CePtr<ConstrExp<SMALL, LARGE>> obj) : origObj(obj) {
     assert(origObj->vars.size() > 0);
@@ -102,7 +99,7 @@ class Optimization {
   void printObjBounds() {
     if (options.verbosity.get() == 0) return;
     std::cout << "c bounds ";
-    if (foundSolution()) {
+    if (solver.foundSolution()) {
       std::cout << bigint(upper_bound);  // TODO: remove bigint(...) hack
     } else {
       std::cout << "-";
@@ -116,7 +113,7 @@ class Optimization {
       if (reformObj->getLit(lv.currentVar) == 0) {
         if (isUnit(solver.getLevel(), -lv.currentVar)) {  // binary constraints make all new auxiliary variables unit
           if (lv.addFinalAtMost() == ID_Unsat) {
-            quit::exit_UNSAT(solver.logger, solution, upper_bound);
+            quit::exit_UNSAT(solver, upper_bound);
           }
           aux::swapErase(lazyVars, i--);  // fully expanded, no need to keep in memory
         } else {                          // add auxiliary variable
@@ -129,7 +126,7 @@ class Optimization {
           // add necessary lazy constraints
           if (lv.addAtLeastConstraint() == ID_Unsat || lv.addAtMostConstraint() == ID_Unsat ||
               lv.addSymBreakingConstraint(oldvar) == ID_Unsat) {
-            quit::exit_UNSAT(solver.logger, solution, upper_bound);
+            quit::exit_UNSAT(solver, upper_bound);
           } else if (lv.remainingVars() == 0) {
             aux::swapErase(lazyVars, i--);  // fully expanded, no need to keep in memory
           }
@@ -146,7 +143,7 @@ class Optimization {
     std::pair<ID, ID> res = solver.addConstraint(aux, Origin::LOWERBOUND);
     lastLowerBoundUnprocessed = res.first;
     lastLowerBound = res.second;
-    if (lastLowerBound == ID_Unsat) quit::exit_UNSAT(solver.logger, solution, upper_bound);
+    if (lastLowerBound == ID_Unsat) quit::exit_UNSAT(solver, upper_bound);
   }
 
   void handleInconsistency(CeSuper core) {
@@ -171,7 +168,7 @@ class Optimization {
     if (core->hasNegativeSlack(solver.getLevel())) {
       assert(solver.decisionLevel() == 0);
       if (solver.logger) core->logInconsistency(solver.getLevel(), solver.getPos(), stats);
-      quit::exit_UNSAT(solver.logger, solution, upper_bound);
+      quit::exit_UNSAT(solver, upper_bound);
     }
     // figure out an appropriate core
     core->simplifyToCardinality(false);
@@ -224,14 +221,12 @@ class Optimization {
       reformObj->addUp(cardCore, mult);
       assert(lower_bound == -reformObj->getDegree());
       // add channeling constraints
-      if (solver.addConstraint(cardCore, Origin::COREGUIDED).second == ID_Unsat)
-        quit::exit_UNSAT(solver.logger, solution, upper_bound);
+      if (solver.addConstraint(cardCore, Origin::COREGUIDED).second == ID_Unsat) quit::exit_UNSAT(solver, upper_bound);
       cardCore->invert();
-      if (solver.addConstraint(cardCore, Origin::COREGUIDED).second == ID_Unsat)
-        quit::exit_UNSAT(solver.logger, solution, upper_bound);
+      if (solver.addConstraint(cardCore, Origin::COREGUIDED).second == ID_Unsat) quit::exit_UNSAT(solver, upper_bound);
       for (Var v = oldN + 1; v < newN; ++v) {  // add symmetry breaking constraints
         if (solver.addConstraint(ConstrSimple32({{1, v}, {1, -v - 1}}, 1), Origin::COREGUIDED).second == ID_Unsat)
-          quit::exit_UNSAT(solver.logger, solution, upper_bound);
+          quit::exit_UNSAT(solver, upper_bound);
       }
     }
     checkLazyVariables();
@@ -239,10 +234,10 @@ class Optimization {
     if (!options.cgIndCores) assumps.clear();
   }
 
-  void handleNewSolution() {
+  void handleNewSolution(const std::vector<Lit>& sol) {
     [[maybe_unused]] LARGE prev_val = upper_bound;
     upper_bound = -origObj->getRhs();
-    for (Var v : origObj->vars) upper_bound += origObj->coefs[v] * (int)solution[v];
+    for (Var v : origObj->vars) upper_bound += origObj->coefs[v] * (int)(sol[v] > 0);
     assert(upper_bound < prev_val);
 
     CePtr<ConstrExp<SMALL, LARGE>> aux = solver.cePools.take<SMALL, LARGE>();
@@ -253,7 +248,7 @@ class Optimization {
     std::pair<ID, ID> res = solver.addConstraint(aux, Origin::UPPERBOUND);
     lastUpperBoundUnprocessed = res.first;
     lastUpperBound = res.second;
-    if (lastUpperBound == ID_Unsat) quit::exit_UNSAT(solver.logger, solution, upper_bound);
+    if (lastUpperBound == ID_Unsat) quit::exit_UNSAT(solver, upper_bound);
   }
 
   void logProof() {
@@ -284,7 +279,7 @@ class Optimization {
     for (Var v : reformObj->vars) {
       if (aux::abs(reformObj->coefs[v]) > diff &&
           solver.addUnitConstraint(-reformObj->getLit(v), Origin::HARDENEDBOUND).second == ID_Unsat) {
-        quit::exit_UNSAT(solver.logger, solution, upper_bound);
+        quit::exit_UNSAT(solver, upper_bound);
       }
     }
   }
@@ -326,11 +321,11 @@ class Optimization {
         coefLimFlag = 0;
       }
       assert(upper_bound > lower_bound);
-      std::pair<SolveState, CeSuper> out = aux::timeCall<std::pair<SolveState, CeSuper>>(
-          [&] { return solver.solve(assumps, solution); }, assumps.isEmpty() ? stats.SOLVETIME : stats.SOLVETIMECG);
-      reply = out.first;
+      SolveAnswer out = aux::timeCall<SolveAnswer>([&] { return solver.solve(assumps); },
+                                                   assumps.isEmpty() ? stats.SOLVETIME : stats.SOLVETIMECG);
+      reply = out.state;
       if (reply == SolveState::RESTARTED) continue;
-      if (reply == SolveState::UNSAT) quit::exit_UNSAT(solver.logger, solution, upper_bound);
+      if (reply == SolveState::UNSAT) quit::exit_UNSAT(solver, upper_bound);
       assert(solver.decisionLevel() == 0);
       if (assumps.isEmpty()) {
         upper_time += stats.getDetTime() - current_time;
@@ -339,15 +334,15 @@ class Optimization {
       }
       if (reply == SolveState::SAT) {
         assumps.clear();
-        assert(foundSolution());
+        assert(solver.foundSolution());
         ++stats.NSOLS;
-        handleNewSolution();
+        handleNewSolution(out.solution);
         harden();
         if (coefLimFlag == 0) coefLimFlag = 1;
       } else if (reply == SolveState::INCONSISTENT) {
         assert(!options.optMode.is("linear"));
         ++stats.NCORES;
-        handleInconsistency(out.second);
+        handleInconsistency(out.core);
         harden();
         coefLimFlag = -1;
       } else {
@@ -358,7 +353,7 @@ class Optimization {
       if (lower_bound >= upper_bound) {
         printObjBounds();
         logProof();
-        quit::exit_UNSAT(solver.logger, solution, upper_bound);
+        quit::exit_UNSAT(solver, upper_bound);
       }
     }
   }

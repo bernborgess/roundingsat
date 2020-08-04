@@ -663,7 +663,7 @@ void Solver::reduceDB() {
 // ---------------------------------------------------------------------
 // Solving
 
-double Solver::luby(double y, int i) {
+double Solver::luby(double y, int i) const {
   // Find the finite subsequence that contains index 'i', and the
   // size of that subsequence:
   int size, seq;
@@ -678,24 +678,15 @@ double Solver::luby(double y, int i) {
   return std::pow(y, seq);
 }
 
-BigVal Solver::lhs(Constr& C, const std::vector<bool>& sol) {
-  BigVal result = 0;
-  for (size_t j = 0; j < C.size(); ++j) {
-    Lit l = C.lit(j);
-    result += ((l > 0) == sol[toVar(l)]) * C.coef(j);
-  }
-  return result;
-}
-
-bool Solver::checksol(const std::vector<bool>& sol) {
+bool Solver::checkSAT() {
   for (CRef cr : constraints) {
-    Constr& C = ca[cr];
-    if (C.getOrigin() == Origin::FORMULA && lhs(C, sol) < C.degree()) return false;
+    const Constr& C = ca[cr];
+    if (C.getOrigin() == Origin::FORMULA && !C.toExpanded(cePools)->isSatisfied(getLevel())) return false;
   }
   return true;
 }
 
-Lit Solver::pickBranchLit() {
+Lit Solver::pickBranchLit(bool lastSolPhase) {
   Var next = 0;
   // Activity based decision:
   while (next == 0 || !isUnknown(Pos, next)) {
@@ -705,7 +696,8 @@ Lit Solver::pickBranchLit() {
       next = order_heap.removeMax();
   }
   assert(phase[0] == 0);
-  return phase[next];
+  assert(lastSol[0] == 0);
+  return (lastSolPhase && (int)lastSol.size() > next) ? lastSol[next] : phase[next];
 }
 
 void Solver::presolve() {
@@ -727,7 +719,7 @@ void Solver::presolve() {
  * @param solution: if SAT, full variable assignment satisfying all constraints, otherwise untouched
  */
 // TODO: use a coroutine / yield instead of a SolveState return value
-std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vector<bool>& solution) {
+SolveAnswer Solver::solve(const IntSet& assumptions) {
   backjumpTo(0);  // ensures assumptions are reset
   if (firstRun) presolve();
   std::vector<int> assumptions_lim = {0};
@@ -758,7 +750,7 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
         if (logger) {
           confl->logInconsistency(Level, Pos, stats);
         }
-        return {SolveState::UNSAT, CeNull()};
+        return {SolveState::UNSAT, CeNull(), lastSol};
       } else if (decisionLevel() >= (int)assumptions_lim.size()) {
         CeSuper analyzed = aux::timeCall<CeSuper>([&] { return analyze(confl); }, stats.CATIME);
         assert(analyzed);
@@ -772,7 +764,7 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
         CeSuper result = aux::timeCall<CeSuper>([&] { return extractCore(confl, assumptions); }, stats.CATIME);
         assert(result);
         assert(result->hasNegativeSlack(assumptions));
-        return {SolveState::INCONSISTENT, result};
+        return {SolveState::INCONSISTENT, result, lastSol};
       }
     } else {  // no conflict
       if (nconfl_to_restart <= 0) {
@@ -783,11 +775,11 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
           reduceDB();
           while (stats.NCONFL >= stats.NCLEANUP * nconfl_to_reduce) nconfl_to_reduce += options.dbCleanInc.get();
           if (lpSolver) aux::timeCall<void>([&] { lpSolver->inProcess(); }, stats.LPTOTALTIME);
-          return {SolveState::INPROCESSED, CeNull()};
+          return {SolveState::INPROCESSED, CeNull(), lastSol};
         }
         double rest_base = luby(options.lubyBase.get(), ++stats.NRESTARTS);
         nconfl_to_restart = (long long)rest_base * options.lubyMult.get();
-        return {SolveState::RESTARTED, CeNull()};
+        //        return {SolveState::RESTARTED, CeNull(), lastSol}; // avoid this overhead for now
       }
       Lit next = 0;
       if ((int)assumptions_lim.size() > decisionLevel() + 1) assumptions_lim.resize(decisionLevel() + 1);
@@ -797,12 +789,12 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
           if (assumptions.has(-l)) {  // found conflicting assumption
             if (isUnit(Level, l)) {   // negated assumption is unit
               backjumpTo(0);
-              return {SolveState::INCONSISTENT, cePools.take32()};
+              return {SolveState::INCONSISTENT, cePools.take32(), lastSol};
             } else {
               CeSuper result = extractCore(ca[Reason[toVar(l)]].toExpanded(cePools), assumptions, -l);
               assert(result);
               assert(result->hasNegativeSlack(assumptions));
-              return {SolveState::INCONSISTENT, result};
+              return {SolveState::INCONSISTENT, result, lastSol};
             }
           }
         }
@@ -819,17 +811,17 @@ std::pair<SolveState, CeSuper> Solver::solve(const IntSet& assumptions, std::vec
           break;
         }
       }
-      if (next == 0) next = pickBranchLit();
+      if (next == 0) next = pickBranchLit(assumptions.isEmpty() && options.cgFixedPhase);
       if (next == 0) {
         assert(order_heap.empty());
-        assert((int)trail.size() == n);
-        solution.clear();
-        solution.resize(n + 1);
-        solution[0] = false;
-        for (Var v = 1; v <= n; ++v) solution[v] = isTrue(Level, v);
+        assert((int)trail.size() == getNbVars());
+        assert(checkSAT());
+        lastSol.clear();
+        lastSol.resize(getNbVars() + 1);
+        lastSol[0] = 0;
+        for (Var v = 1; v <= getNbVars(); ++v) lastSol[v] = isTrue(Level, v) ? v : -v;
         backjumpTo(0);
-        assert(checksol(solution));
-        return {SolveState::SAT, CeNull()};
+        return {SolveState::SAT, CeNull(), lastSol};
       }
       decide(next);
     }
