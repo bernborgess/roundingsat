@@ -170,7 +170,7 @@ struct Options {
                                 [](const double& x) -> bool { return 0.5 <= x && x < 1; }};
   ValOption<int> dbCleanInc{"db-inc", "Database cleanup interval increment", 100, "1 =< int",
                             [](const int& x) -> bool { return 1 <= x; }};
-  ValOption<double> propCounting{"prop-counting", "Counting propagation instead of watched propagation", 0,
+  ValOption<double> propCounting{"prop-counting", "Counting propagation instead of watched propagation", 0.7,
                                  "0 (no counting) =< float =< 1 (always counting)",
                                  [](const double& x) -> bool { return 0 <= x && x <= 1; }};
   BoolOption propClause{"prop-clause", "Optimized two-watched propagation for clauses", 1};
