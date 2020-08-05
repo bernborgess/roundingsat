@@ -36,7 +36,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 namespace rs {
 
-enum WatchStatus { DROPWATCH, KEEPWATCH, CONFLICTING };
+enum class WatchStatus { DROPWATCH, KEEPWATCH, CONFLICTING };
 
 class Solver;
 struct Constr {  // internal solver constraint optimized for fast propagation

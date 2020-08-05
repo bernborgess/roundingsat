@@ -369,7 +369,7 @@ std::pair<LpStatus, CeSuper> LpSolver::checkFeasibility(bool inProcessing) {
   if (options.lpPivotRatio.get() < 0)
     lp.setIntParam(soplex::SoPlex::ITERLIMIT, -1);  // no pivot limit
   else if (options.lpPivotRatio.get() * stats.NCONFL < (inProcessing ? stats.NLPPIVOTSROOT : stats.NLPPIVOTSINTERNAL))
-    return {PIVOTLIMIT, CeNull()};  // pivot ratio exceeded
+    return {LpStatus::PIVOTLIMIT, CeNull()};  // pivot ratio exceeded
   else
     lp.setIntParam(soplex::SoPlex::ITERLIMIT, options.lpPivotBudget.get() * lpPivotMult);
   flushConstraints();
@@ -399,7 +399,7 @@ std::pair<LpStatus, CeSuper> LpSolver::checkFeasibility(bool inProcessing) {
 
   if (stat == soplex::SPxSolver::Status::ABORT_ITER) {
     lpPivotMult *= 2;  // increase pivot budget when calling the LP solver
-    return {PIVOTLIMIT, CeNull()};
+    return {LpStatus::PIVOTLIMIT, CeNull()};
   }
 
   if (stat == soplex::SPxSolver::Status::OPTIMAL) {
@@ -409,23 +409,23 @@ std::pair<LpStatus, CeSuper> LpSolver::checkFeasibility(bool inProcessing) {
       resetBasis();
     }
     if (lp.numIterations() == 0) ++stats.NLPNOPIVOT;
-    return {OPTIMAL, CeNull()};
+    return {LpStatus::OPTIMAL, CeNull()};
   }
 
   if (stat == soplex::SPxSolver::Status::ABORT_CYCLING) {
     ++stats.NLPCYCLING;
     resetBasis();
-    return {UNDETERMINED, CeNull()};
+    return {LpStatus::UNDETERMINED, CeNull()};
   }
   if (stat == soplex::SPxSolver::Status::SINGULAR) {
     ++stats.NLPSINGULAR;
     resetBasis();
-    return {UNDETERMINED, CeNull()};
+    return {LpStatus::UNDETERMINED, CeNull()};
   }
   if (stat != soplex::SPxSolver::Status::INFEASIBLE) {
     ++stats.NLPOTHER;
     resetBasis();
-    return {UNDETERMINED, CeNull()};
+    return {LpStatus::UNDETERMINED, CeNull()};
   }
 
   // Infeasible LP :)
@@ -435,14 +435,14 @@ std::pair<LpStatus, CeSuper> LpSolver::checkFeasibility(bool inProcessing) {
   if (!lp.getDualFarkas(lpMultipliers)) {
     ++stats.NLPNOFARKAS;
     resetBasis();
-    return {UNDETERMINED, CeNull()};
+    return {LpStatus::UNDETERMINED, CeNull()};
   }
 
   CeSuper confl = createLinearCombinationFarkas(lpMultipliers);
-  if (!confl) return {UNDETERMINED, CeNull()};
+  if (!confl) return {LpStatus::UNDETERMINED, CeNull()};
   solver.learnConstraint(confl, Origin::FARKAS);
-  if (confl->hasNegativeSlack(solver.getLevel())) return {INFEASIBLE, confl};
-  return {UNDETERMINED, CeNull()};
+  if (confl->hasNegativeSlack(solver.getLevel())) return {LpStatus::INFEASIBLE, confl};
+  return {LpStatus::UNDETERMINED, CeNull()};
 }
 
 void LpSolver::inProcess() {
@@ -450,9 +450,9 @@ void LpSolver::inProcess() {
   std::pair<LpStatus, CeSuper> lpResult = checkFeasibility(true);
   LpStatus lpstat = lpResult.first;
   [[maybe_unused]] CeSuper confl = lpResult.second;
-  assert((lpstat == INFEASIBLE) == (confl && confl->hasNegativeSlack(solver.getLevel())));
+  assert((lpstat == LpStatus::INFEASIBLE) == (confl && confl->hasNegativeSlack(solver.getLevel())));
   // NOTE: we don't handle confl here, as it is added as a learned constraint already.
-  if (lpstat != OPTIMAL) return;
+  if (lpstat != LpStatus::OPTIMAL) return;
   if (!lp.hasSol()) return;
   lp.getPrimal(lpSol);
   assert(lpSol.dim() == (int)lpSolution.size());
@@ -488,11 +488,12 @@ void LpSolver::convertConstraint(const ConstrSimple64& c, soplex::DSVectorReal& 
 }
 
 void LpSolver::addConstraint(CeSuper c, bool removable, bool upperbound, bool lowerbound) {
+  assert(!upperbound || c->orig == Origin::UPPERBOUND);
+  assert(!lowerbound || c->orig == Origin::LOWERBOUND);
   c->saturateAndFixOverflowRational(lpSolution);
   ID id =
       solver.logger ? c->logProofLineWithInfo("LP", stats) : ++solver.crefID;  // TODO: fix this kind of logger check
   if (upperbound || lowerbound) {
-    assert(upperbound != lowerbound);
     boundsToAdd[lowerbound].id = id;
     c->toSimple()->copyTo(boundsToAdd[lowerbound].cs);
   } else {

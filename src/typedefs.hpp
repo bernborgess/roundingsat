@@ -91,11 +91,10 @@ const ActValC actLimitC = 1e30;  // ~1e30 << 2^(2^7)
  *
  * max number of types is 16, as the type is stored with 4 bits in Constr
  */
-enum Origin {
+enum class Origin {
   UNKNOWN,
   FORMULA,
   LEARNED,
-  BOUND,
   COREGUIDED,
   FARKAS,
   LEARNEDFARKAS,

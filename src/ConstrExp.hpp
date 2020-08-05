@@ -41,7 +41,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 namespace rs {
 
-enum AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
+enum class AssertionStatus { NONASSERTING, ASSERTING, FALSIFIED };
 
 // shared_ptr-like wrapper around ConstrExp, ensuring it gets released back to the pool when no longer needed.
 template <typename CE>

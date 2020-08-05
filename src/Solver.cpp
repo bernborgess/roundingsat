@@ -212,7 +212,8 @@ CeSuper Solver::runPropagation(bool onlyUnitPropagation) {
 
         stats.NENCFORMULA += C.getOrigin() == Origin::FORMULA;
         stats.NENCLEARNED += C.getOrigin() == Origin::LEARNED;
-        stats.NENCBOUND += C.getOrigin() == Origin::BOUND;
+        stats.NENCBOUND += (C.getOrigin() == Origin::LOWERBOUND || C.getOrigin() == Origin::UPPERBOUND ||
+                            C.getOrigin() == Origin::HARDENEDBOUND);
         stats.NENCCOREGUIDED += C.getOrigin() == Origin::COREGUIDED;
         stats.NLPENCGOMORY += C.getOrigin() == Origin::GOMORY;
         stats.NLPENCLEARNEDFARKAS += C.getOrigin() == Origin::LEARNEDFARKAS;
@@ -226,7 +227,7 @@ CeSuper Solver::runPropagation(bool onlyUnitPropagation) {
   if (lpSolver) {
     std::pair<LpStatus, CeSuper> lpResult =
         aux::timeCall<std::pair<LpStatus, CeSuper>>([&] { return lpSolver->checkFeasibility(); }, stats.LPTOTALTIME);
-    assert((lpResult.first == INFEASIBLE) == (lpResult.second && lpResult.second->hasNegativeSlack(Level)));
+    assert((lpResult.first == LpStatus::INFEASIBLE) == (lpResult.second && lpResult.second->hasNegativeSlack(Level)));
     return lpResult.second;
   }
   return CeNull();
@@ -319,7 +320,8 @@ CeSuper Solver::analyze(CeSuper conflict) {
 
       stats.NENCFORMULA += reasonC.getOrigin() == Origin::FORMULA;
       stats.NENCLEARNED += reasonC.getOrigin() == Origin::LEARNED;
-      stats.NENCBOUND += reasonC.getOrigin() == Origin::BOUND;
+      stats.NENCBOUND += (reasonC.getOrigin() == Origin::LOWERBOUND || reasonC.getOrigin() == Origin::UPPERBOUND ||
+                          reasonC.getOrigin() == Origin::HARDENEDBOUND);
       stats.NENCCOREGUIDED += reasonC.getOrigin() == Origin::COREGUIDED;
       stats.NLPENCGOMORY += reasonC.getOrigin() == Origin::GOMORY;
       stats.NLPENCLEARNEDFARKAS += reasonC.getOrigin() == Origin::LEARNEDFARKAS;
@@ -444,7 +446,8 @@ CRef Solver::attachConstraint(CeSuper constraint, bool locked) {
 
   stats.NCONSFORMULA += C.getOrigin() == Origin::FORMULA;
   stats.NCONSLEARNED += C.getOrigin() == Origin::LEARNED;
-  stats.NCONSBOUND += C.getOrigin() == Origin::BOUND;
+  stats.NCONSBOUND += (C.getOrigin() == Origin::LOWERBOUND || C.getOrigin() == Origin::UPPERBOUND ||
+                       C.getOrigin() == Origin::HARDENEDBOUND);
   stats.NCONSCOREGUIDED += C.getOrigin() == Origin::COREGUIDED;
   stats.NLPGOMORYCUTS += C.getOrigin() == Origin::GOMORY;
   stats.NLPLEARNEDFARKAS += C.getOrigin() == Origin::LEARNEDFARKAS;
@@ -499,9 +502,6 @@ std::pair<ID, ID> Solver::addInputConstraint(CeSuper ce) {
   assert(ce->orig == Origin::FORMULA || ce->orig == Origin::UPPERBOUND || ce->orig == Origin::LOWERBOUND ||
          ce->orig == Origin::HARDENEDBOUND || ce->orig == Origin::COREGUIDED);
   assert(decisionLevel() == 0);
-  bool upperbound = ce->orig == Origin::UPPERBOUND;
-  bool lowerbound = ce->orig == Origin::LOWERBOUND;
-  if (upperbound || lowerbound || ce->orig == Origin::HARDENEDBOUND) ce->orig = Origin::BOUND;
   ID input = ID_Undef;
   if (logger) input = ce->logAsInput();
   ce->postProcess(Level, Pos, true, stats);
@@ -535,8 +535,8 @@ std::pair<ID, ID> Solver::addInputConstraint(CeSuper ce) {
   if (orig != Origin::FORMULA) {
     external[id] = cr;
   }
-  if (lpSolver && (upperbound || lowerbound || orig == Origin::FORMULA)) {
-    lpSolver->addConstraint(cr, false, upperbound, lowerbound);
+  if (lpSolver && (orig == Origin::FORMULA || orig == Origin::UPPERBOUND || orig == Origin::LOWERBOUND)) {
+    lpSolver->addConstraint(cr, false, orig == Origin::UPPERBOUND, orig == Origin::LOWERBOUND);
   }
   return {input, id};
 }
