@@ -65,7 +65,7 @@ void CandidateCut::initialize(const std::vector<double>& sol) {
   norm = 0;
   for (const Term<long long>& p : simpcons.terms) norm += (double)p.c * (double)p.c;
   norm = std::sqrt(norm);
-  ratSlack = -simpcons.rhs;
+  ratSlack = -static_cast<double>(simpcons.rhs);
   for (Term<long long>& p : simpcons.terms) {
     assert(p.l > 0);  // simpcons is in var-normal form
     ratSlack += (double)p.c * sol[p.l];
@@ -350,7 +350,7 @@ Ce64 LpSolver::rowToConstraint(int row) {
   double rhs = lp.lhsReal(row);
   assert(aux::abs(rhs) != INFTY);
   assert(validVal(rhs));
-  ce->addRhs(rhs);
+  ce->addRhs((long long)rhs);
 
   lpRow.clear();
   lp.getRowVectorReal(row, lpRow);
@@ -483,7 +483,7 @@ void LpSolver::convertConstraint(const ConstrSimple64& c, soplex::DSVectorReal& 
     assert(t.c < INFLPINT);
     row.add(t.l, t.c);
   }
-  rhs = c.rhs;
+  rhs = static_cast<double>(c.rhs);
   assert(validVal(rhs));
 }
 

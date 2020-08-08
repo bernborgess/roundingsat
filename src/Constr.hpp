@@ -283,8 +283,8 @@ struct CountingSafe final : public Constr {
   }
   size_t getMemSize() const { return getMemSize(size()); }
 
-  BigVal degree() const { return *degr; }
-  BigCoef coef(unsigned int i) const { return terms[i].c; }
+  BigVal degree() const { return BigVal(*degr); }
+  BigCoef coef(unsigned int i) const { return BigCoef(terms[i].c); }
   Lit lit(unsigned int i) const { return terms[i].l; }
 
   template <typename SMALL, typename LARGE>
@@ -318,7 +318,7 @@ struct CountingSafe final : public Constr {
   void undoFalsified(int i);
   void resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver);
 
-  CeArb expandTo(ConstrExpPools& cePools) const;
+  CePtr<ConstrExp<CF, DG>> expandTo(ConstrExpPools& cePools) const;
   CeSuper toExpanded(ConstrExpPools& cePools) const;
 
   bool hasCorrectSlack(const Solver& solver);
@@ -337,8 +337,8 @@ struct WatchedSafe final : public Constr {
   }
   size_t getMemSize() const { return getMemSize(size()); }
 
-  BigVal degree() const { return *degr; }
-  BigCoef coef(unsigned int i) const { return aux::abs(terms[i].c); }
+  BigVal degree() const { return BigVal(*degr); }
+  BigCoef coef(unsigned int i) const { return BigCoef(aux::abs(terms[i].c)); }
   Lit lit(unsigned int i) const { return terms[i].l; }
 
   template <typename SMALL, typename LARGE>

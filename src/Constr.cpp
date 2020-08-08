@@ -567,8 +567,8 @@ void CountingSafe<CF, DG>::resolveWith(CeSuper confl, Lit l, IntSet* actSet, Sol
 }
 
 template <typename CF, typename DG>
-CeArb CountingSafe<CF, DG>::expandTo(ConstrExpPools& cePools) const {
-  CeArb result = cePools.takeArb();
+CePtr<ConstrExp<CF, DG>> CountingSafe<CF, DG>::expandTo(ConstrExpPools& cePools) const {
+  CePtr<ConstrExp<CF, DG>> result = cePools.take<CF, DG>();
   result->addRhs(*degr);
   for (size_t i = 0; i < size(); ++i) {
     result->addLhs(terms[i].c, terms[i].l);
@@ -761,33 +761,33 @@ void Constr::print(const Solver& solver) {
 template <typename CF, typename DG>
 bool Counting<CF, DG>::hasCorrectSlack(const Solver& solver) {
   return true;  // comment to run check
-  BigVal slack = -degree();
+  DG slk = -degr;
   for (int i = 0; i < (int)size(); ++i) {
     if (solver.getPos()[toVar(lit(i))] >= solver.qhead || !isFalse(solver.getLevel(), lit(i))) {
-      slack += coef(i);
+      slk += data[i].c;
     }
   }
-  return (slack == this->slack);
+  return (slk == slack);
 }
 
 template <typename CF, typename DG>
 bool Watched<CF, DG>::hasCorrectSlack(const Solver& solver) {
   return true;  // comment to run check
-  BigVal slack = -degree();
+  DG slk = -degr;
   for (int i = 0; i < (int)size(); ++i) {
     if (data[i].c < 0 && (solver.getPos()[toVar(lit(i))] >= solver.qhead || !isFalse(solver.getLevel(), lit(i))))
-      slack += coef(i);
+      slk += aux::abs(data[i].c);
   }
-  return (slack == this->watchslack);
+  return (slk == watchslack);
 }
 
 template <typename CF, typename DG>
 bool CountingSafe<CF, DG>::hasCorrectSlack(const Solver& solver) {
   return true;  // comment to run check
-  BigVal slk = -degree();
+  DG slk = -*degr;
   for (int i = 0; i < (int)size(); ++i) {
     if (solver.getPos()[toVar(lit(i))] >= solver.qhead || !isFalse(solver.getLevel(), lit(i))) {
-      slk += coef(i);
+      slk += terms[i].c;
     }
   }
   return (slk == *slack);
@@ -796,18 +796,18 @@ bool CountingSafe<CF, DG>::hasCorrectSlack(const Solver& solver) {
 template <typename CF, typename DG>
 bool WatchedSafe<CF, DG>::hasCorrectSlack(const Solver& solver) {
   return true;  // comment to run check
-  BigVal slack = -degree();
+  DG slk = -*degr;
   for (int i = 0; i < (int)size(); ++i) {
     if (terms[i].c < 0 && (solver.getPos()[toVar(lit(i))] >= solver.qhead || !isFalse(solver.getLevel(), lit(i))))
-      slack += coef(i);
+      slk += aux::abs(terms[i].c);
   }
-  return (slack == *watchslack);
+  return (slk == *watchslack);
 }
 
 template <typename CF, typename DG>
 bool Watched<CF, DG>::hasCorrectWatches(const Solver& solver) {
   return true;  // comment to run check
-  if (watchslack >= largestCoef()) return true;
+  if (watchslack >= aux::abs(data[0].c)) return true;
   for (int i = 0; i < (int)watchIdx; ++i) assert(!isUnknown(solver.getPos(), lit(i)));
   for (int i = 0; i < (int)size(); ++i) {
     if (!(data[i].c < 0 || isFalse(solver.getLevel(), data[i].l))) {
@@ -822,7 +822,7 @@ bool Watched<CF, DG>::hasCorrectWatches(const Solver& solver) {
 template <typename CF, typename DG>
 bool WatchedSafe<CF, DG>::hasCorrectWatches(const Solver& solver) {
   return true;  // comment to run check
-  if (*watchslack >= largestCoef()) return true;
+  if (*watchslack >= aux::abs(terms[0].c)) return true;
   for (int i = 0; i < (int)watchIdx; ++i) assert(!isUnknown(solver.getPos(), lit(i)));
   for (int i = 0; i < (int)size(); ++i) {
     if (!(terms[i].c < 0 || isFalse(solver.getLevel(), terms[i].l))) {

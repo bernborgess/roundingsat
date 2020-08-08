@@ -128,12 +128,12 @@ void run::run(CeArb objective) {
         objective->copyTo(result);
         Optimization optim(result);
         optim.optimize();
-      } else if (maxVal <= limit96) {
+      } else if (maxVal <= BigVal(limit96)) {
         Ce96 result = solver.cePools.take96();
         objective->copyTo(result);
         Optimization optim(result);
         optim.optimize();
-      } else if (maxVal <= limit128) {
+      } else if (maxVal <= BigVal(limit128)) {
         Ce128 result = solver.cePools.take128();
         objective->copyTo(result);
         Optimization optim(result);

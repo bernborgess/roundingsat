@@ -30,7 +30,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include <boost/multiprecision/cpp_int.hpp>  //  Integer types.
+#include <boost/multiprecision/cpp_int.hpp>
+#if WITHGMP
+#include <boost/multiprecision/gmp.hpp>
+#endif  // WITHGMP
 #include <cassert>
 #include <exception>
 #include <iostream>
@@ -40,10 +43,14 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 namespace rs {
 
+#if WITHGMP
+using int128 = boost::multiprecision::int128_t;  // NOTE: a bit slower than __int128, but plays nice with mpz_int
+using bigint = boost::multiprecision::mpz_int;   // NOTE: requires GMP
+#else
 using int128 = __int128;
-// NOTE: design-wise, boost::multiprecision::int128_t would work too, using a slightly less efficient extra sign bit.
-using int256 = boost::multiprecision::int256_t;
 using bigint = boost::multiprecision::cpp_int;
+#endif  // WITHGMP
+using int256 = boost::multiprecision::int256_t;
 using BigCoef = bigint;
 using BigVal = bigint;
 
@@ -61,11 +68,11 @@ const int resize_factor = 2;
 const int INF = 1e9 + 1;  // 1e9 is the maximum number of variables in the system, anything beyond is infinity
 const long long INFLPINT = 1e15 + 1;  // based on max long range captured by double
 
-const int limit32 = 1e9;               // 2^29-2^30
-const long long limit64 = 2e18;        // 2^60-2^61
-const int128 limit96 = 8e27;           // 2^92-2^93, so 46 bits is less than half
-const int128 limit128 = 32e36;         // 2^124-2^125, so 62 bits is less than half
-const int256 limit256 = int256(1e76);  // 2^252-2^253, so 126 bits is less than half
+const int limit32 = 1e9;         // 2^29-2^30
+const long long limit64 = 2e18;  // 2^60-2^61
+const double limit96 = 8e27;     // 2^92-2^93, so 46 bits is less than half
+const double limit128 = 32e36;   // 2^124-2^125, so 62 bits is less than half
+const double limit256 = 1e76;    // 2^252-2^253, so 126 bits is less than half
 const int conflLimit32 = 14;
 const int conflLimit64 = 30;
 const int conflLimit96 = 46;

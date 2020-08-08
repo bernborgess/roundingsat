@@ -191,6 +191,10 @@ inline bigint abs(const bigint& x) {
   return boost::multiprecision::abs(x);
 }
 template <>
+inline boost::multiprecision::int128_t abs(const boost::multiprecision::int128_t& x) {
+  return boost::multiprecision::abs(x);
+}
+template <>
 inline int256 abs(const int256& x) {
   return boost::multiprecision::abs(x);
 }
@@ -204,6 +208,11 @@ inline bigint gcd(const bigint& x, const bigint& y) {
   return boost::multiprecision::gcd(x, y);
 }
 template <>
+inline boost::multiprecision::int128_t gcd(const boost::multiprecision::int128_t& x,
+                                           const boost::multiprecision::int128_t& y) {
+  return boost::multiprecision::gcd(x, y);
+}
+template <>
 inline int256 gcd(const int256& x, const int256& y) {
   return boost::multiprecision::gcd(x, y);
 }
@@ -214,6 +223,11 @@ T lcm(const T& x, const T& y) {
 }
 template <>
 inline bigint lcm(const bigint& x, const bigint& y) {
+  return boost::multiprecision::lcm(x, y);
+}
+template <>
+inline boost::multiprecision::int128_t lcm(const boost::multiprecision::int128_t& x,
+                                           const boost::multiprecision::int128_t& y) {
   return boost::multiprecision::lcm(x, y);
 }
 template <>
@@ -233,6 +247,11 @@ inline unsigned msb(const bigint& x) {
   return boost::multiprecision::msb(x);
 }
 template <>
+inline unsigned msb(const boost::multiprecision::int128_t& x) {
+  assert(x > 0);
+  return boost::multiprecision::msb(x);
+}
+template <>
 inline unsigned msb(const int256& x) {
   assert(x > 0);
   return boost::multiprecision::msb(x);
@@ -244,6 +263,10 @@ T pow(const T& x, unsigned y) {
 }
 template <>
 inline bigint pow(const bigint& x, unsigned y) {
+  return boost::multiprecision::pow(x, y);
+}
+template <>
+inline boost::multiprecision::int128_t pow(const boost::multiprecision::int128_t& x, unsigned y) {
   return boost::multiprecision::pow(x, y);
 }
 template <>
@@ -266,28 +289,32 @@ inline void timeCall(const std::function<void(void)>& f, double& to) {
 }
 
 template <typename T>
-bool fitsIn([[maybe_unused]] bigint x) {
+bool fits([[maybe_unused]] const bigint& x) {
   return false;
 }
 template <>
-inline bool fitsIn<int>(bigint x) {
+inline bool fits<int>(const bigint& x) {
   return aux::abs(x) <= bigint(limit32);
 }
 template <>
-inline bool fitsIn<long long>(bigint x) {
+inline bool fits<long long>(const bigint& x) {
   return aux::abs(x) <= bigint(limit64);
 }
 template <>
-inline bool fitsIn<int128>(bigint x) {
+inline bool fits<int128>(const bigint& x) {
   return aux::abs(x) <= bigint(limit128);
 }
 template <>
-inline bool fitsIn<int256>(bigint x) {
+inline bool fits<int256>(const bigint& x) {
   return aux::abs(x) <= bigint(limit256);
 }
 template <>
-inline bool fitsIn<bigint>([[maybe_unused]] bigint x) {
+inline bool fits<bigint>([[maybe_unused]] const bigint& x) {
   return true;
+}
+template <typename T, typename S>
+bool fitsIn([[maybe_unused]] const S& x) {
+  return fits<T>(bigint(x));
 }
 
 }  // namespace aux

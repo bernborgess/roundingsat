@@ -4,6 +4,8 @@ project(RoundingSat2)
 set(CMAKE_CXX_STANDARD 17)
 find_package(Boost REQUIRED)
 
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake/Modules/")
+
 if (NOT CMAKE_BUILD_TYPE)
     message(WARNING "Please use -DCMAKE_BUILD_TYPE=[build_type] where [build_type] is one of: Debug, Release, RelWithDebInfo and MinSizeRel")
 endif()
@@ -20,12 +22,20 @@ set(soplex "OFF"
 set(soplex_pkg "${PROJECT_SOURCE_DIR}/soplex-5.0.1.tgz"
     CACHE STRING "SoPlex package, download at https://soplex.zib.de/download.php?fname=soplex-5.0.1.tgz")
 
+set(gmp "OFF"
+        CACHE STRING "Use GMP instead of Boost's builtin multiple precision integer.")
+
 set(testruns_timeout 1
     CACHE STRING "Timeout of individual test runs.")
 
 IF(soplex)
     # provides libsoplex and ${SOPLEX_INCLUDE_DIRS}
     include(${PROJECT_SOURCE_DIR}/cmake/soplex_build_and_load.cmake)
+endif()
+
+if(gmp)
+    find_package(GMP REQUIRED)
+    include_directories(${GMP_INCLUDE_DIR})
 endif()
 
 if(${build_static})
@@ -97,6 +107,11 @@ target_include_directories(roundingsat PRIVATE ${PROJECT_SOURCE_DIR}/src/ ${SOPL
 IF(soplex)
     target_link_libraries(roundingsat libsoplex)
     target_compile_definitions(roundingsat PUBLIC WITHSOPLEX)
+endif()
+
+IF(gmp)
+    target_link_libraries(roundingsat gmp gmpxx)
+    target_compile_definitions(roundingsat PUBLIC WITHGMP)
 endif()
 
 FIND_PROGRAM(CLANG_FORMAT "clang-format")

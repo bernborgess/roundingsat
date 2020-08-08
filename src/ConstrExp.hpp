@@ -310,12 +310,12 @@ struct ConstrExp final : public ConstrExpSuper {
       rhs *= thismult;
       for (Var v : vars) coefs[v] *= thismult;
     }
-    rhs += (LARGE)cmult * (LARGE)c->rhs;
-    degree += (LARGE)cmult * (LARGE)c->degree;
+    rhs += static_cast<LARGE>(cmult) * static_cast<LARGE>(c->rhs);
+    degree += static_cast<LARGE>(cmult) * static_cast<LARGE>(c->degree);
     for (Var v : c->vars) {
       assert(v < (Var)coefs.size());
       assert(v > 0);
-      SMALL val = static_cast<SMALL>(cmult * c->coefs[v]);
+      SMALL val = cmult * static_cast<SMALL>(c->coefs[v]);
       if (!used[v]) {
         assert(coefs[v] == 0);
         vars.push_back(v);
