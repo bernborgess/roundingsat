@@ -160,7 +160,10 @@ struct ConstrExpSuper {
   virtual void heuristicWeakening(const IntVecIt& level, const std::vector<int>& pos, Stats& sts) = 0;
 
   virtual bool simplifyToCardinality(bool equivalencePreserving) = 0;
+  virtual void simplifyToClause() = 0;
   virtual bool isCardinality() const = 0;
+  virtual int getCardinalityDegree() const = 0;
+  virtual void simplifyToMinLengthCardinality() = 0;
   virtual bool isClause() const = 0;
   virtual void sortInDecreasingCoefOrder() = 0;
   virtual bool isSortedInDecreasingCoefOrder() const = 0;
@@ -362,6 +365,9 @@ struct ConstrExp final : public ConstrExpSuper {
   // @post: preserves order of vars
   bool simplifyToCardinality(bool equivalencePreserving);
   bool isCardinality() const;
+  int getCardinalityDegree() const;
+  void simplifyToMinLengthCardinality();
+  void simplifyToClause();
   bool isClause() const;
 
   void sortInDecreasingCoefOrder();

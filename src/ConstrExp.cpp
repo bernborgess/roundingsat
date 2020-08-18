@@ -865,6 +865,65 @@ bool ConstrExp<SMALL, LARGE>::isCardinality() const {
 }
 
 template <typename SMALL, typename LARGE>
+int ConstrExp<SMALL, LARGE>::getCardinalityDegree() const {
+  assert(isSortedInDecreasingCoefOrder());
+  assert(hasNoZeroes());
+  LARGE coefsum = -degree;
+  int i = 0;
+  for (; i < (int)vars.size() && coefsum < 0; ++i) {
+    coefsum += aux::abs(coefs[vars[i]]);
+  }
+  return i;
+}
+
+template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::simplifyToMinLengthCardinality() {
+  assert(isSaturated());
+  assert(isSortedInDecreasingCoefOrder());
+  assert(hasNoZeroes());
+  LARGE weakenedDegree = degree;
+  int i = vars.size() - 1;
+  for (; i >= 0 && vars[i] < weakenedDegree; --i) {
+    weakenedDegree -= aux::abs(coefs[vars[i]]);  // simulate weakening
+  }
+  // i is the number of auxiliary vars introduced by the final cardinality constraint
+  while (i + getCardinalityDegree() < (int)vars.size()) {
+    int finalvars = i + getCardinalityDegree();
+    while ((int)vars.size() > finalvars) {
+      Var v = vars.back();
+      weaken(v);
+      assert(coefs[v] == 0);
+      vars.pop_back();
+      used[v] = false;
+    }
+  }
+  int carddegree = getCardinalityDegree();
+  assert((int)vars.size() == i + getCardinalityDegree());
+  if (carddegree > 0) {
+    divideRoundUp(vars[0]);  // TODO: not ok
+  }
+  assert(isCardinality());
+}
+
+// @post: preserves order of vars
+template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::simplifyToClause() {
+  assert(isSaturated());
+  assert(isSortedInDecreasingCoefOrder());
+  assert(hasNoZeroes());
+  while (vars.size() > 0 && aux::abs(coefs[vars.back()]) < degree) {
+    Var v = vars.back();
+    weaken(v);
+    assert(coefs[v] == 0);
+    vars.pop_back();
+    used[v] = false;
+  }
+  if (vars.size() > 0) divideRoundUp(vars[0]);
+  assert(vars.size() == 0 || degree <= 1);
+  assert(isClause());
+}
+
+template <typename SMALL, typename LARGE>
 bool ConstrExp<SMALL, LARGE>::isClause() const {
   return degree == 1;
 }

@@ -225,9 +225,11 @@ struct Options {
   BoolOption cgLazy{"cg-lazy", "Use lazy extension during core-guided search", 1};
   ValOption<int> cgBoosted{"cg-boost", "Seconds of core-boosted search before switching to linear search", 10,
                            "0 =< int", [](const int& x) -> bool { return x >= 0; }};
-  BoolOption cgIndCores{"cg-indcores", "Use independent cores for core-guided search", 1};
-  BoolOption cgStrat{"cg-strat", "Use stratification for core-guided search", 1};
+  BoolOption cgIndCores{"cg-indcores", "Use independent cores for core-guided search", 0};
+  BoolOption cgStrat{"cg-strat", "Use stratification for core-guided search", 0};
   BoolOption cgFixedPhase{"cg-fixedphase", "Fix the phase to the incumbent solution during linear optimization", 1};
+  EnumOption cgReduction{
+      "cg-cardreduct", "Core-guided reduction to cardinality", "minauxvars", {"clause", "minauxvars", "bestbound"}};
 
   const std::vector<Option*> options = {
       &help,           &printSol,      &verbosity,     &proofLog,      &optMode,
@@ -237,7 +239,7 @@ struct Options {
       &gomoryCutLimit, &maxCutCos,     &slackdiv,      &weakenFull,    &weakenNonImplying,
       &bumpOnlyFalse,  &bumpCanceling, &bumpLits,      &bitsOverflow,  &bitsReduced,
       &bitsLearned,    &bitsInput,     &cgLazy,        &cgBoosted,     &cgIndCores,
-      &cgStrat,        &cgFixedPhase,
+      &cgStrat,        &cgFixedPhase,  &cgReduction,
   };
   std::unordered_map<std::string, Option*> name2opt;
 

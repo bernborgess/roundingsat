@@ -146,6 +146,24 @@ class Optimization {
     if (lastLowerBound == ID_Unsat) quit::exit_UNSAT(solver, upper_bound);
   }
 
+  Ce32 reduceToCardinality(CeSuper core) {
+    core->sortInDecreasingCoefOrder();
+
+    CeSuper card = core->reduce(solver.cePools);
+    if (options.cgReduction.is("clause")) {
+      card->simplifyToClause();
+    } else if (options.cgReduction.is("minauxvars")) {
+      card->simplifyToMinLengthCardinality();
+    } else {
+      assert(false);
+      return solver.cePools.take32();
+    }
+
+    Ce32 result = solver.cePools.take32();
+    card->copyTo(result);
+    return result;
+  }
+
   void handleInconsistency(CeSuper core) {
     // take care of derived unit lits
     for (Var v : reformObj->vars) {
@@ -171,10 +189,8 @@ class Optimization {
       quit::exit_UNSAT(solver, upper_bound);
     }
     // figure out an appropriate core
-    core->simplifyToCardinality(false);
-    if (!core->isClause()) ++stats.NCORECARDINALITIES;
-    Ce32 cardCore = solver.cePools.take32();
-    core->copyTo(cardCore);
+    Ce32 cardCore = reduceToCardinality(core);
+    if (!cardCore->isClause()) ++stats.NCORECARDINALITIES;
     assert(cardCore->hasNoZeroes());
     for (Var v : cardCore->vars) {
       assert(assumps.has(-cardCore->getLit(v)));
