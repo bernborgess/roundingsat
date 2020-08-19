@@ -146,13 +146,14 @@ class Optimization {
     if (lastLowerBound == ID_Unsat) quit::exit_UNSAT(solver, upper_bound);
   }
 
-  Ce32 reduceToCardinality(CeSuper core) {
-    core->sortInDecreasingCoefOrder();
-
+  Ce32 reduceToCardinality(const CeSuper& core) {
     CeSuper card = core->reduce(solver.cePools);
     if (options.cgReduction.is("clause")) {
+      card->sortInDecreasingCoefOrder();
       card->simplifyToClause();
     } else if (options.cgReduction.is("minauxvars")) {
+      card->sortInDecreasingCoefOrder(
+          [&](Var v1, Var v2) { return aux::abs(reformObj->coefs[v1]) > aux::abs(reformObj->coefs[v2]); });
       card->simplifyToMinLengthCardinality();
     } else {
       assert(false);

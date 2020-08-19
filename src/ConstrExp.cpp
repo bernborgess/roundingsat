@@ -883,12 +883,12 @@ void ConstrExp<SMALL, LARGE>::simplifyToMinLengthCardinality() {
   assert(hasNoZeroes());
   LARGE weakenedDegree = degree;
   int i = vars.size() - 1;
-  for (; i >= 0 && vars[i] < weakenedDegree; --i) {
-    weakenedDegree -= aux::abs(coefs[vars[i]]);  // simulate weakening
+  for (; i >= 0 && aux::abs(coefs[vars[i]]) < weakenedDegree; --i) {  // simulate full weakening
+    weakenedDegree -= aux::abs(coefs[vars[i]]);
   }
   // i is the number of auxiliary vars introduced by the final cardinality constraint
-  while (i + getCardinalityDegree() < (int)vars.size()) {
-    int finalvars = i + getCardinalityDegree();
+  int finalvars = i + getCardinalityDegree();
+  while (finalvars < (int)vars.size()) {
     while ((int)vars.size() > finalvars) {
       Var v = vars.back();
       weaken(v);
@@ -896,12 +896,11 @@ void ConstrExp<SMALL, LARGE>::simplifyToMinLengthCardinality() {
       vars.pop_back();
       used[v] = false;
     }
+    finalvars = i + getCardinalityDegree();
   }
-  int carddegree = getCardinalityDegree();
-  assert((int)vars.size() == i + getCardinalityDegree());
-  if (carddegree > 0) {
-    divideRoundUp(vars[0]);  // TODO: not ok
-  }
+  assert((int)vars.size() == finalvars);
+  saturate();
+  simplifyToCardinality(false);
   assert(isCardinality());
 }
 
@@ -918,7 +917,7 @@ void ConstrExp<SMALL, LARGE>::simplifyToClause() {
     vars.pop_back();
     used[v] = false;
   }
-  if (vars.size() > 0) divideRoundUp(vars[0]);
+  if (vars.size() > 0) divideRoundUp(aux::abs(coefs[vars[0]]));
   assert(vars.size() == 0 || degree <= 1);
   assert(isClause());
 }
@@ -929,8 +928,11 @@ bool ConstrExp<SMALL, LARGE>::isClause() const {
 }
 
 template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::sortInDecreasingCoefOrder() {
-  std::sort(vars.begin(), vars.end(), [&](Var v1, Var v2) { return aux::abs(coefs[v1]) > aux::abs(coefs[v2]); });
+void ConstrExp<SMALL, LARGE>::sortInDecreasingCoefOrder(const std::function<bool(Var, Var)>& tiebreaker) {
+  std::sort(vars.begin(), vars.end(), [&](Var v1, Var v2) {
+    return aux::abs(coefs[v1]) > aux::abs(coefs[v2]) ||
+           (aux::abs(coefs[v1]) == aux::abs(coefs[v2]) && tiebreaker(v1, v2));
+  });
 }
 
 template <typename SMALL, typename LARGE>

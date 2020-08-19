@@ -165,7 +165,9 @@ struct ConstrExpSuper {
   virtual int getCardinalityDegree() const = 0;
   virtual void simplifyToMinLengthCardinality() = 0;
   virtual bool isClause() const = 0;
-  virtual void sortInDecreasingCoefOrder() = 0;
+  virtual void sortInDecreasingCoefOrder(const std::function<bool(Var, Var)>& tiebreaker = [](Var, Var) {
+    return false;
+  }) = 0;
   virtual bool isSortedInDecreasingCoefOrder() const = 0;
 
   virtual ID logAsInput() = 0;
@@ -370,7 +372,7 @@ struct ConstrExp final : public ConstrExpSuper {
   void simplifyToClause();
   bool isClause() const;
 
-  void sortInDecreasingCoefOrder();
+  void sortInDecreasingCoefOrder(const std::function<bool(Var, Var)>& tiebreaker = [](Var, Var) { return false; });
   bool isSortedInDecreasingCoefOrder() const;
 
   ID logAsInput();
