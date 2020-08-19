@@ -115,7 +115,7 @@ struct ConstrExpSuper {
   virtual void copyTo(Ce128 ce) const = 0;
   virtual void copyTo(CeArb ce) const = 0;
 
-  virtual CeSuper reduce(ConstrExpPools& ce) const = 0;
+  virtual CeSuper clone(ConstrExpPools& ce) const = 0;
   virtual CRef toConstr(ConstraintAllocator& ca, bool locked, ID id) const = 0;
   virtual std::unique_ptr<ConstrSimpleSuper> toSimple() const = 0;
 
@@ -130,6 +130,7 @@ struct ConstrExpSuper {
   virtual bool hasLit(Lit l) const = 0;
 
   virtual void weaken(Var v) = 0;
+  virtual void weakenLast() = 0;
 
   virtual bool hasNegativeSlack(const IntVecIt& level) const = 0;
   virtual bool hasNegativeSlack(const IntSet& assumptions) const = 0;
@@ -169,6 +170,7 @@ struct ConstrExpSuper {
     return false;
   }) = 0;
   virtual bool isSortedInDecreasingCoefOrder() const = 0;
+  virtual void sort(const std::function<bool(Var, Var)>& comp) = 0;
 
   virtual ID logAsInput() = 0;
   virtual ID logProofLine() = 0;
@@ -241,7 +243,7 @@ struct ConstrExp final : public ConstrExpSuper {
   void copyTo(Ce128 ce) const { copyTo_(ce); }
   void copyTo(CeArb ce) const { copyTo_(ce); }
 
-  CeSuper reduce(ConstrExpPools& ce) const;
+  CeSuper clone(ConstrExpPools& ce) const;
   CRef toConstr(ConstraintAllocator& ca, bool locked, ID id) const;
   std::unique_ptr<ConstrSimpleSuper> toSimple() const;
 
@@ -266,6 +268,7 @@ struct ConstrExp final : public ConstrExpSuper {
   void addLhs(const SMALL& cf, Lit l);  // TODO: Term?
   void weaken(const SMALL& m, Var v);
   void weaken(Var v);
+  void weakenLast();
 
   LARGE getSlack(const IntVecIt& level) const;
   bool hasNegativeSlack(const IntVecIt& level) const;
@@ -368,12 +371,14 @@ struct ConstrExp final : public ConstrExpSuper {
   bool simplifyToCardinality(bool equivalencePreserving);
   bool isCardinality() const;
   int getCardinalityDegree() const;
+  int getCardinalityDegreeWithZeroes();
   void simplifyToMinLengthCardinality();
   void simplifyToClause();
   bool isClause() const;
 
   void sortInDecreasingCoefOrder(const std::function<bool(Var, Var)>& tiebreaker = [](Var, Var) { return false; });
   bool isSortedInDecreasingCoefOrder() const;
+  void sort(const std::function<bool(Var, Var)>& comp);
 
   ID logAsInput();
   ID logProofLine();

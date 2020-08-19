@@ -458,7 +458,7 @@ CRef Solver::attachConstraint(CeSuper constraint, bool locked) {
 
 void Solver::learnConstraint(const CeSuper c, Origin orig) {
   assert(orig == Origin::LEARNED || orig == Origin::FARKAS || orig == Origin::LEARNEDFARKAS || orig == Origin::GOMORY);
-  CeSuper learned = c->reduce(cePools);
+  CeSuper learned = c->clone(cePools);
   learned->orig = orig;
   learned->saturateAndFixOverflow(getLevel(), (bool)options.weakenFull, options.bitsLearned.get(),
                                   options.bitsLearned.get(), 0);
@@ -543,7 +543,7 @@ std::pair<ID, ID> Solver::addInputConstraint(CeSuper ce) {
 
 std::pair<ID, ID> Solver::addConstraint(const CeSuper c, Origin orig) {
   // NOTE: copy to temporary constraint guarantees original constraint is not changed and does not need logger
-  CeSuper ce = c->reduce(cePools);
+  CeSuper ce = c->clone(cePools);
   ce->orig = orig;
   std::pair<ID, ID> result = addInputConstraint(ce);
   return result;

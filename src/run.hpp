@@ -147,17 +147,50 @@ class Optimization {
   }
 
   Ce32 reduceToCardinality(const CeSuper& core) {
-    CeSuper card = core->reduce(solver.cePools);
+    CeSuper card = core->clone(solver.cePools);
     if (options.cgReduction.is("clause")) {
-      card->sortInDecreasingCoefOrder();
+      card->sortInDecreasingCoefOrder(
+          [&](Var v1, Var v2) { return aux::abs(reformObj->coefs[v1]) > aux::abs(reformObj->coefs[v2]); });
       card->simplifyToClause();
     } else if (options.cgReduction.is("minauxvars")) {
       card->sortInDecreasingCoefOrder(
           [&](Var v1, Var v2) { return aux::abs(reformObj->coefs[v1]) > aux::abs(reformObj->coefs[v2]); });
       card->simplifyToMinLengthCardinality();
     } else {
-      assert(false);
-      return solver.cePools.take32();
+      assert(options.cgReduction.is("bestbound"));
+      CeSuper cloneCoefOrder = card->clone(solver.cePools);
+      cloneCoefOrder->sortInDecreasingCoefOrder();
+      card->sort([&](Var v1, Var v2) { return aux::abs(reformObj->coefs[v1]) > aux::abs(reformObj->coefs[v2]); });
+      CeSuper clone = card->clone(solver.cePools);
+      assert(clone->vars.size() > 0);
+      LARGE bestLowerBound = aux::abs(reformObj->coefs[clone->vars.back()]) * cloneCoefOrder->getCardinalityDegree();
+      int bestNbVars = clone->vars.size();
+
+      // find the optimum number of variables to weaken to
+      while (!clone->isTautology()) {
+        SMALL currentObjCoef = aux::abs(reformObj->coefs[clone->vars.back()]);
+        // weaken all lowest objective coefficient literals
+        while (clone->vars.size() > 0 && currentObjCoef == aux::abs(reformObj->coefs[clone->vars.back()])) {
+          Var v = clone->vars.back();
+          clone->weakenLast();
+          cloneCoefOrder->weaken(v);
+        }
+        cloneCoefOrder->removeZeroes();
+        if (clone->vars.size() > 0 &&
+            bestLowerBound < aux::abs(reformObj->coefs[clone->vars.back()]) * cloneCoefOrder->getCardinalityDegree()) {
+          bestNbVars = clone->vars.size();
+          bestLowerBound = aux::abs(reformObj->coefs[clone->vars.back()]) * cloneCoefOrder->getCardinalityDegree();
+        }
+      }
+
+      // weaken to the optimum number of variables and generate cardinality constraint
+      while ((int)card->vars.size() > bestNbVars) {
+        card->weakenLast();
+      }
+      card->saturate();
+      card->sortInDecreasingCoefOrder(
+          [&](Var v1, Var v2) { return aux::abs(reformObj->coefs[v1]) > aux::abs(reformObj->coefs[v2]); });
+      card->simplifyToCardinality(false);
     }
 
     Ce32 result = solver.cePools.take32();

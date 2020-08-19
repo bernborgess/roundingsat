@@ -229,7 +229,7 @@ struct Options {
   BoolOption cgStrat{"cg-strat", "Use stratification for core-guided search", 0};
   BoolOption cgFixedPhase{"cg-fixedphase", "Fix the phase to the incumbent solution during linear optimization", 1};
   EnumOption cgReduction{
-      "cg-cardreduct", "Core-guided reduction to cardinality", "minauxvars", {"clause", "minauxvars", "bestbound"}};
+      "cg-cardreduct", "Core-guided reduction to cardinality", "bestbound", {"clause", "minauxvars", "bestbound"}};
 
   const std::vector<Option*> options = {
       &help,           &printSol,      &verbosity,     &proofLog,      &optMode,
