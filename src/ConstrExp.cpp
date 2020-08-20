@@ -438,13 +438,13 @@ bool ConstrExp<SMALL, LARGE>::hasNoUnits(const IntVecIt& level) const {
 // @post: preserves order of vars
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::removeZeroes() {
-  int j=0;
+  int j = 0;
   for (int i = 0; i < (int)vars.size(); ++i) {
     Var v = vars[i];
     if (coefs[v] == 0) {
-      used[v]=false;
-    }else{
-      vars[j++]=vars[i];
+      used[v] = false;
+    } else {
+      vars[j++] = vars[i];
     }
   }
   vars.resize(j);
@@ -886,6 +886,36 @@ int ConstrExp<SMALL, LARGE>::getCardinalityDegree() const {
     coefsum += aux::abs(coefs[vars[i]]);
   }
   return i;
+}
+
+// @pre: sorted in *IN*creasing coef order, so that we can pop zero coefficient literals
+template <typename SMALL, typename LARGE>
+int ConstrExp<SMALL, LARGE>::getCardinalityDegreeWithZeroes() {
+  LARGE coefsum = -degree;
+  int carddegree = 0;
+  int i = vars.size() - 1;
+  for (; i >= 0 && coefsum < 0; --i) {
+    SMALL c = aux::abs(coefs[vars[i]]);
+    if (c != 0) {
+      coefsum += c;
+      ++carddegree;
+    }
+  }
+  ++i;
+  [[maybe_unused]] int newsize = i + carddegree;
+  int j = i;
+  for (; i < (int)vars.size(); ++i) {
+    Var v = vars[i];
+    if (coefs[v] != 0) {
+      vars[j] = v;
+      ++j;
+    } else {
+      used[v] = false;
+    }
+  }
+  vars.resize(j);
+  assert(newsize == (int)vars.size());
+  return carddegree;
 }
 
 template <typename SMALL, typename LARGE>

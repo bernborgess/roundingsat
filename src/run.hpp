@@ -160,26 +160,26 @@ class Optimization {
       assert(options.cgReduction.is("bestbound"));
       CeSuper cloneCoefOrder = card->clone(solver.cePools);
       cloneCoefOrder->sortInDecreasingCoefOrder();
+      std::reverse(cloneCoefOrder->vars.begin(), cloneCoefOrder->vars.end());  // *IN*creasing coef order
       card->sort([&](Var v1, Var v2) { return aux::abs(reformObj->coefs[v1]) > aux::abs(reformObj->coefs[v2]); });
       CeSuper clone = card->clone(solver.cePools);
       assert(clone->vars.size() > 0);
-      LARGE bestLowerBound = aux::abs(reformObj->coefs[clone->vars.back()]) * cloneCoefOrder->getCardinalityDegree();
+      LARGE bestLowerBound = 0;
       int bestNbVars = clone->vars.size();
 
       // find the optimum number of variables to weaken to
       while (!clone->isTautology()) {
+        int carddegree = cloneCoefOrder->getCardinalityDegreeWithZeroes();
+        if (bestLowerBound < aux::abs(reformObj->coefs[clone->vars.back()]) * carddegree) {
+          bestLowerBound = aux::abs(reformObj->coefs[clone->vars.back()]) * carddegree;
+          bestNbVars = clone->vars.size();
+        }
         SMALL currentObjCoef = aux::abs(reformObj->coefs[clone->vars.back()]);
         // weaken all lowest objective coefficient literals
         while (clone->vars.size() > 0 && currentObjCoef == aux::abs(reformObj->coefs[clone->vars.back()])) {
           Var v = clone->vars.back();
           clone->weakenLast();
           cloneCoefOrder->weaken(v);
-        }
-        cloneCoefOrder->removeZeroes();
-        if (clone->vars.size() > 0 &&
-            bestLowerBound < aux::abs(reformObj->coefs[clone->vars.back()]) * cloneCoefOrder->getCardinalityDegree()) {
-          bestNbVars = clone->vars.size();
-          bestLowerBound = aux::abs(reformObj->coefs[clone->vars.back()]) * cloneCoefOrder->getCardinalityDegree();
         }
       }
 

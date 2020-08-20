@@ -164,6 +164,7 @@ struct ConstrExpSuper {
   virtual void simplifyToClause() = 0;
   virtual bool isCardinality() const = 0;
   virtual int getCardinalityDegree() const = 0;
+  virtual int getCardinalityDegreeWithZeroes() = 0;
   virtual void simplifyToMinLengthCardinality() = 0;
   virtual bool isClause() const = 0;
   virtual void sortInDecreasingCoefOrder(const std::function<bool(Var, Var)>& tiebreaker = [](Var, Var) {
