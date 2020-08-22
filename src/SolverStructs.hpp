@@ -43,7 +43,14 @@ struct CRef {
   std::ostream& operator<<(std::ostream& os) { return os << ofs; }
 };
 const CRef CRef_Undef = {std::numeric_limits<uint32_t>::max()};
-const CRef CRef_Unsat = {std::numeric_limits<uint32_t>::max() - 1};  // TODO: needed?
+
+// TODO: make below methods part of a Solver object that's passed around
+inline bool isTrue(const IntVecIt& level, Lit l) { return level[l] != INF; }
+inline bool isFalse(const IntVecIt& level, Lit l) { return level[-l] != INF; }
+inline bool isUnit(const IntVecIt& level, Lit l) { return level[l] == 0; }
+inline bool isUnknown(const std::vector<int>& pos, Lit l) { return pos[toVar(l)] == INF; }
+inline bool isDecided(const std::vector<CRef>& reasons, Lit l) { return reasons[toVar(l)] == CRef_Undef; }
+inline bool isPropagated(const std::vector<CRef>& reasons, Lit l) { return !isDecided(reasons, l); }
 
 struct Watch {
   CRef cref;

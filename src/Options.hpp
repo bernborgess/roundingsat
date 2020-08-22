@@ -230,6 +230,7 @@ struct Options {
   BoolOption cgFixedPhase{"cg-fixedphase", "Fix the phase to the incumbent solution during linear optimization", 1};
   EnumOption cgReduction{
       "cg-cardreduct", "Core-guided reduction to cardinality", "bestbound", {"clause", "minauxvars", "bestbound"}};
+  BoolOption cgResolveProp{"cg-resprop", "Resolve propagated assumptions when extracting cores", 0};
 
   const std::vector<Option*> options = {
       &help,           &printSol,      &verbosity,     &proofLog,      &optMode,
@@ -239,7 +240,7 @@ struct Options {
       &gomoryCutLimit, &maxCutCos,     &slackdiv,      &weakenFull,    &weakenNonImplying,
       &bumpOnlyFalse,  &bumpCanceling, &bumpLits,      &bitsOverflow,  &bitsReduced,
       &bitsLearned,    &bitsInput,     &cgLazy,        &cgBoosted,     &cgIndCores,
-      &cgStrat,        &cgFixedPhase,  &cgReduction,
+      &cgStrat,        &cgFixedPhase,  &cgReduction,   &cgResolveProp,
   };
   std::unordered_map<std::string, Option*> name2opt;
 

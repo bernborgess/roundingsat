@@ -504,7 +504,6 @@ void LpSolver::addConstraint(CeSuper c, bool removable, bool upperbound, bool lo
 
 void LpSolver::addConstraint(CRef cr, bool removable, bool upperbound, bool lowerbound) {
   assert(cr != CRef_Undef);
-  assert(cr != CRef_Unsat);
   addConstraint(solver.ca[cr].toExpanded(solver.cePools), removable, upperbound, lowerbound);
 }
 

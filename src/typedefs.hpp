@@ -111,12 +111,6 @@ enum class Origin {
   HARDENEDBOUND,
 };
 
-// TODO: make below methods part of a Solver object that's passed around
-inline bool isTrue(const IntVecIt& level, Lit l) { return level[l] != INF; }
-inline bool isFalse(const IntVecIt& level, Lit l) { return level[-l] != INF; }
-inline bool isUnit(const IntVecIt& level, Lit l) { return level[l] == 0; }
-inline bool isUnknown(const std::vector<int>& pos, Lit l) { return pos[toVar(l)] == INF; }
-
 template <typename SMALL, typename LARGE>
 struct ConstrExp;
 using ConstrExp32 = ConstrExp<int, long long>;

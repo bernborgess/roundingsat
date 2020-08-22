@@ -311,7 +311,7 @@ CeSuper Solver::analyze(CeSuper conflict) {
         assert(confl->hasNegativeSlack(Level));
         continue;
       }
-      assert(Reason[toVar(l)] != CRef_Undef);
+      assert(isPropagated(Reason, l));
       Constr& reasonC = ca[Reason[toVar(l)]];
       if (!reasonC.isLocked()) {
         cBumpActivity(reasonC);
@@ -360,10 +360,11 @@ CeSuper Solver::extractCore(CeSuper conflict, const IntSet& assumptions, Lit l_a
   assert(trail_lim.size() > 0);
   for (int i = trail_lim[0]; i < (int)trail.size(); ++i) {
     Lit l = trail[i];
-    if (assumptions.has(l))
+    if (assumptions.has(l) && (isDecided(Reason, l) || !options.cgResolveProp)) {
       decisions.push_back(l);
-    else
+    } else {
       props.push_back(l);
+    }
   }
   backjumpTo(0);
 
@@ -385,7 +386,7 @@ CeSuper Solver::extractCore(CeSuper conflict, const IntSet& assumptions, Lit l_a
     Lit l = trail.back();
     if (confl->hasLit(-l)) {
       if (confl->hasNegativeSlack(assumptions)) break;
-      assert(Reason[toVar(l)] != CRef_Undef);
+      assert(isPropagated(Reason, l));
       Constr& reasonC = ca[Reason[toVar(l)]];
       // TODO: stats? activity?
       reasonC.resolveWith(confl, l, nullptr, *this);
@@ -488,7 +489,6 @@ CeSuper Solver::processLearnedStack() {
       continue;
     }
     CRef cr = attachConstraint(learned, false);
-    assert(cr != CRef_Unsat);
     Constr& C = ca[cr];
     if (assertionLevel < INF)
       recomputeLBD(C);
