@@ -198,7 +198,7 @@ class Optimization {
     return result;
   }
 
-  void handleInconsistency(CeSuper core) {
+  void handleInconsistency(std::vector<CeSuper>& cores) {
     // take care of derived unit lits
     for (Var v : reformObj->vars) {
       if (isUnit(solver.getLevel(), v) || isUnit(solver.getLevel(), -v)) {
@@ -209,31 +209,56 @@ class Optimization {
     reformObj->removeUnitsAndZeroes(solver.getLevel(), solver.getPos(), false);
     [[maybe_unused]] LARGE prev_lower = lower_bound;
     lower_bound = -reformObj->getDegree();
-    assert(core);
-    if (core->isTautology()) {  // only violated unit assumptions were derived
+
+    std::vector<Ce32> cardCores;
+    for (CeSuper& core : cores) {
+      assert(core);
+      if (core->isTautology()) {
+        continue;
+      }
+      if (core->hasNegativeSlack(solver.getLevel())) {
+        assert(solver.decisionLevel() == 0);
+        if (solver.logger) core->logInconsistency(solver.getLevel(), solver.getPos(), stats);
+        quit::exit_UNSAT(solver, upper_bound);
+      }
+      // figure out an appropriate core
+      cardCores.push_back(reduceToCardinality(core));
+    }
+
+    if (cardCores.size() == 0) {
+      // only violated unit assumptions were derived
       assert(lower_bound > prev_lower);
       checkLazyVariables();
       addLowerBound();
       if (!options.cgIndCores) assumps.clear();
       return;
     }
-    if (core->hasNegativeSlack(solver.getLevel())) {
-      assert(solver.decisionLevel() == 0);
-      if (solver.logger) core->logInconsistency(solver.getLevel(), solver.getPos(), stats);
-      quit::exit_UNSAT(solver, upper_bound);
+
+    LARGE bestLowerBound = -1;
+    Ce32& bestCardCore = cardCores[0];
+    for (Ce32 cardCore : cardCores) {
+      assert(cardCore->hasNoZeroes());
+      assert(cardCore->vars.size() > 0);
+      SMALL lowestCoef = aux::abs(reformObj->coefs[cardCore->vars[0]]);
+      for (Var v : cardCore->vars) {
+        if (aux::abs(reformObj->coefs[v]) < lowestCoef) lowestCoef = aux::abs(reformObj->coefs[v]);
+      }
+      LARGE lowerBound = lowestCoef * cardCore->degree;
+      if (lowerBound > bestLowerBound) {
+        bestLowerBound = lowerBound;
+        bestCardCore = cardCore;
+      }
     }
-    // figure out an appropriate core
-    Ce32 cardCore = reduceToCardinality(core);
-    if (!cardCore->isClause()) ++stats.NCORECARDINALITIES;
-    assert(cardCore->hasNoZeroes());
-    for (Var v : cardCore->vars) {
-      assert(assumps.has(-cardCore->getLit(v)));
-      assumps.remove(-cardCore->getLit(v));
+
+    if (!bestCardCore->isClause()) ++stats.NCORECARDINALITIES;
+    for (Var v : bestCardCore->vars) {
+      assert(assumps.has(-bestCardCore->getLit(v)));
+      assumps.remove(-bestCardCore->getLit(v));  // independent cores
     }
 
     // adjust the lower bound
     SMALL mult = 0;
-    for (Var v : cardCore->vars) {
+    for (Var v : bestCardCore->vars) {
       assert(reformObj->getLit(v) != 0);
       if (mult == 0) {
         mult = aux::abs(reformObj->coefs[v]);
@@ -244,36 +269,38 @@ class Optimization {
       }
     }
     assert(mult > 0);
-    lower_bound += cardCore->getDegree() * mult;
+    lower_bound += bestCardCore->getDegree() * mult;
 
-    if (options.cgLazy && cardCore->vars.size() - cardCore->getDegree() > 1) {
+    if (options.cgLazy && bestCardCore->vars.size() - bestCardCore->getDegree() > 1) {
       // add auxiliary variable
       long long newN = solver.getNbVars() + 1;
       solver.setNbVars(newN);
       // reformulate the objective
-      cardCore->invert();
-      reformObj->addUp(cardCore, mult);
-      cardCore->invert();
+      bestCardCore->invert();
+      reformObj->addUp(bestCardCore, mult);
+      bestCardCore->invert();
       reformObj->addLhs(mult, newN);  // add only one variable for now
       assert(lower_bound == -reformObj->getDegree());
       // add first lazy constraint
-      lazyVars.push_back({std::make_unique<LazyVar>(solver, cardCore, newN), mult});
+      lazyVars.push_back({std::make_unique<LazyVar>(solver, bestCardCore, newN), mult});
       lazyVars.back().lv->addAtLeastConstraint();
       lazyVars.back().lv->addAtMostConstraint();
     } else {
       // add auxiliary variables
       long long oldN = solver.getNbVars();
-      long long newN = oldN - static_cast<int>(cardCore->getDegree()) + cardCore->vars.size();
+      long long newN = oldN - static_cast<int>(bestCardCore->getDegree()) + bestCardCore->vars.size();
       solver.setNbVars(newN);
       // reformulate the objective
-      for (Var v = oldN + 1; v <= newN; ++v) cardCore->addLhs(-1, v);
-      cardCore->invert();
-      reformObj->addUp(cardCore, mult);
+      for (Var v = oldN + 1; v <= newN; ++v) bestCardCore->addLhs(-1, v);
+      bestCardCore->invert();
+      reformObj->addUp(bestCardCore, mult);
       assert(lower_bound == -reformObj->getDegree());
       // add channeling constraints
-      if (solver.addConstraint(cardCore, Origin::COREGUIDED).second == ID_Unsat) quit::exit_UNSAT(solver, upper_bound);
-      cardCore->invert();
-      if (solver.addConstraint(cardCore, Origin::COREGUIDED).second == ID_Unsat) quit::exit_UNSAT(solver, upper_bound);
+      if (solver.addConstraint(bestCardCore, Origin::COREGUIDED).second == ID_Unsat)
+        quit::exit_UNSAT(solver, upper_bound);
+      bestCardCore->invert();
+      if (solver.addConstraint(bestCardCore, Origin::COREGUIDED).second == ID_Unsat)
+        quit::exit_UNSAT(solver, upper_bound);
       for (Var v = oldN + 1; v < newN; ++v) {  // add symmetry breaking constraints
         if (solver.addConstraint(ConstrSimple32({{1, v}, {1, -v - 1}}, 1), Origin::COREGUIDED).second == ID_Unsat)
           quit::exit_UNSAT(solver, upper_bound);
@@ -357,7 +384,7 @@ class Optimization {
             if (cf > coeflim && cf < oldCoeflim) coeflim = cf;
           }
         }
-        std::vector<Term<double>> litcoefs;  // using double will lead to faster sort than arbitrary
+        std::vector<Term<double>> litcoefs;  // using double will lead to faster sort than bigint
         litcoefs.reserve(reformObj->vars.size());
         for (Var v : reformObj->vars) {
           assert(reformObj->getLit(v) != 0);
@@ -392,7 +419,7 @@ class Optimization {
       } else if (reply == SolveState::INCONSISTENT) {
         assert(!options.optMode.is("linear"));
         ++stats.NCORES;
-        handleInconsistency(out.core);
+        handleInconsistency(out.cores);
         harden();
         coefLimFlag = -1;
       } else {

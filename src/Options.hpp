@@ -231,6 +231,8 @@ struct Options {
   EnumOption cgReduction{
       "cg-cardreduct", "Core-guided reduction to cardinality", "bestbound", {"clause", "minauxvars", "bestbound"}};
   BoolOption cgResolveProp{"cg-resprop", "Resolve propagated assumptions when extracting cores", 0};
+  BoolOption cgDecisionCore{"cg-decisioncore",
+                            "Extract a second decision core, choose the best resulting cardinality core", 1};
 
   const std::vector<Option*> options = {
       &help,           &printSol,      &verbosity,     &proofLog,      &optMode,
@@ -240,7 +242,7 @@ struct Options {
       &gomoryCutLimit, &maxCutCos,     &slackdiv,      &weakenFull,    &weakenNonImplying,
       &bumpOnlyFalse,  &bumpCanceling, &bumpLits,      &bitsOverflow,  &bitsReduced,
       &bitsLearned,    &bitsInput,     &cgLazy,        &cgBoosted,     &cgIndCores,
-      &cgStrat,        &cgFixedPhase,  &cgReduction,   &cgResolveProp,
+      &cgStrat,        &cgFixedPhase,  &cgReduction,   &cgResolveProp, &cgDecisionCore,
   };
   std::unordered_map<std::string, Option*> name2opt;
 

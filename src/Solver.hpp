@@ -45,7 +45,7 @@ enum class SolveState { SAT, UNSAT, INCONSISTENT, INPROCESSED, RESTARTED };
 
 struct SolveAnswer {
   SolveState state;
-  CeSuper core;
+  std::vector<CeSuper> cores;
   std::vector<Lit>& solution;
 };
 
@@ -132,8 +132,8 @@ class Solver {
    * 	SAT if satisfying assignment found
    * 	INCONSISTENT if no solution extending assumptions exists
    * 	INPROCESSING if solver just finished a cleanup phase
-   * @return SolveAnswer.core:
-   *    an implied constraint C if INCONSISTENT
+   * @return SolveAnswer.cores:
+   *    implied constraints C if INCONSISTENT
    *        if C is a tautology, negated assumptions at root level exist
    *        if C is not a tautology, it is falsified by the assumptions
    * @return SolveAnswer.solution:
@@ -174,7 +174,7 @@ class Solver {
 
   void recomputeLBD(Constr& C);
   CeSuper analyze(CeSuper confl);
-  CeSuper extractCore(CeSuper confl, const IntSet& assumptions, Lit l_assump = 0);
+  std::vector<CeSuper> extractCore(CeSuper confl, const IntSet& assumptions, Lit l_assump = 0);
 
   // ---------------------------------------------------------------------
   // Constraint management

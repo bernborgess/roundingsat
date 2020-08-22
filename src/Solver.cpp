@@ -340,7 +340,7 @@ CeSuper Solver::analyze(CeSuper conflict) {
   return confl;
 }
 
-CeSuper Solver::extractCore(CeSuper conflict, const IntSet& assumptions, Lit l_assump) {
+std::vector<CeSuper> Solver::extractCore(CeSuper conflict, const IntSet& assumptions, Lit l_assump) {
   if (l_assump != 0) {  // l_assump is an assumption propagated to the opposite value
     assert(assumptions.has(l_assump));
     assert(isFalse(Level, l_assump));
@@ -377,34 +377,45 @@ CeSuper Solver::extractCore(CeSuper conflict, const IntSet& assumptions, Lit l_a
   conflict->saturateAndFixOverflow(getLevel(), (bool)options.weakenFull, options.bitsOverflow.get(),
                                    options.bitsReduced.get(), 0);
   assert(conflict->hasNegativeSlack(Level));
-  CeSuper confl = getAnalysisCE(conflict, options.bitsOverflow.get(), cePools);
+  CeSuper core = getAnalysisCE(conflict, options.bitsOverflow.get(), cePools);
   conflict->reset();
+
+  std::vector<CeSuper> result;
 
   // analyze conflict
   while (decisionLevel() > 0) {
     if (asynch_interrupt) throw asynchInterrupt;
     Lit l = trail.back();
-    if (confl->hasLit(-l)) {
-      if (confl->hasNegativeSlack(assumptions)) break;
+    if (core->hasLit(-l)) {
+      if (result.size() == 0 && core->hasNegativeSlack(assumptions)) {  // early termination core
+        result.push_back(core->clone(cePools));
+        if (!options.cgDecisionCore) break;
+      }
+      if (result.size() > 0 && isDecided(Reason, l)) {  // decision core
+        result.push_back(core->clone(cePools));
+        break;
+      }
       assert(isPropagated(Reason, l));
       Constr& reasonC = ca[Reason[toVar(l)]];
       // TODO: stats? activity?
-      reasonC.resolveWith(confl, l, nullptr, *this);
+      reasonC.resolveWith(core, l, nullptr, *this);
     }
     undoOne();
   }
-  assert(confl->hasNegativeSlack(assumptions));
-  assert(!confl->isTautology());
-  assert(confl->isSaturated());
+  assert(core->hasNegativeSlack(assumptions));
+  assert(!core->isTautology());
+  assert(core->isSaturated());
 
   // weaken non-falsifieds
-  for (Var v : confl->vars)
-    if (!assumptions.has(-confl->getLit(v))) confl->weaken(v);
-  confl->postProcess(Level, Pos, true, stats);
-  assert(confl->hasNegativeSlack(assumptions));
+  for (CeSuper& cnfl : result) {
+    for (Var v : cnfl->vars)
+      if (!assumptions.has(-cnfl->getLit(v))) cnfl->weaken(v);
+    cnfl->postProcess(Level, Pos, true, stats);
+    assert(cnfl->hasNegativeSlack(assumptions));
+  }
   backjumpTo(0);
 
-  return confl;
+  return result;
 }
 
 // ---------------------------------------------------------------------
@@ -712,7 +723,7 @@ void Solver::presolve() {
  * 	INCONSISTENT if no solution extending assumptions exists
  * 	INPROCESSING if solver just finished a cleanup phase
  * @return 2:
- *    an implied constraint C if INCONSISTENT
+ *    implied constraints C if INCONSISTENT
  *        if C is a tautology, negated assumptions at root level exist
  *        if C is not a tautology, it is falsified by the assumptions
  * @param assumptions: set of assumptions
@@ -750,7 +761,7 @@ SolveAnswer Solver::solve(const IntSet& assumptions) {
         if (logger) {
           confl->logInconsistency(Level, Pos, stats);
         }
-        return {SolveState::UNSAT, CeNull(), lastSol};
+        return {SolveState::UNSAT, {}, lastSol};
       } else if (decisionLevel() >= (int)assumptions_lim.size()) {
         CeSuper analyzed = aux::timeCall<CeSuper>([&] { return analyze(confl); }, stats.CATIME);
         assert(analyzed);
@@ -761,9 +772,12 @@ SolveAnswer Solver::solve(const IntSet& assumptions) {
         else
           learnConstraint(analyzed, Origin::LEARNED);
       } else {
-        CeSuper result = aux::timeCall<CeSuper>([&] { return extractCore(confl, assumptions); }, stats.CATIME);
-        assert(result);
-        assert(result->hasNegativeSlack(assumptions));
+        std::vector<CeSuper> result =
+            aux::timeCall<std::vector<CeSuper>>([&] { return extractCore(confl, assumptions); }, stats.CATIME);
+        for ([[maybe_unused]] const CeSuper& core : result) {
+          assert(core);
+          assert(core->hasNegativeSlack(assumptions));
+        }
         return {SolveState::INCONSISTENT, result, lastSol};
       }
     } else {  // no conflict
@@ -775,11 +789,11 @@ SolveAnswer Solver::solve(const IntSet& assumptions) {
           reduceDB();
           while (stats.NCONFL >= stats.NCLEANUP * nconfl_to_reduce) nconfl_to_reduce += options.dbCleanInc.get();
           if (lpSolver) aux::timeCall<void>([&] { lpSolver->inProcess(); }, stats.LPTOTALTIME);
-          return {SolveState::INPROCESSED, CeNull(), lastSol};
+          return {SolveState::INPROCESSED, {}, lastSol};
         }
         double rest_base = luby(options.lubyBase.get(), ++stats.NRESTARTS);
         nconfl_to_restart = (long long)rest_base * options.lubyMult.get();
-        //        return {SolveState::RESTARTED, CeNull(), lastSol}; // avoid this overhead for now
+        //        return {SolveState::RESTARTED, {}, lastSol}; // avoid this overhead for now
       }
       Lit next = 0;
       if ((int)assumptions_lim.size() > decisionLevel() + 1) assumptions_lim.resize(decisionLevel() + 1);
@@ -789,11 +803,14 @@ SolveAnswer Solver::solve(const IntSet& assumptions) {
           if (assumptions.has(-l)) {  // found conflicting assumption
             if (isUnit(Level, l)) {   // negated assumption is unit
               backjumpTo(0);
-              return {SolveState::INCONSISTENT, cePools.take32(), lastSol};
+              return {SolveState::INCONSISTENT, {cePools.take32()}, lastSol};
             } else {
-              CeSuper result = extractCore(ca[Reason[toVar(l)]].toExpanded(cePools), assumptions, -l);
-              assert(result);
-              assert(result->hasNegativeSlack(assumptions));
+              std::vector<CeSuper> result = aux::timeCall<std::vector<CeSuper>>(
+                  [&] { return extractCore(ca[Reason[toVar(l)]].toExpanded(cePools), assumptions, -l); }, stats.CATIME);
+              for ([[maybe_unused]] const CeSuper& core : result) {
+                assert(core);
+                assert(core->hasNegativeSlack(assumptions));
+              }
               return {SolveState::INCONSISTENT, result, lastSol};
             }
           }
@@ -821,7 +838,7 @@ SolveAnswer Solver::solve(const IntSet& assumptions) {
         lastSol[0] = 0;
         for (Var v = 1; v <= getNbVars(); ++v) lastSol[v] = isTrue(Level, v) ? v : -v;
         backjumpTo(0);
-        return {SolveState::SAT, CeNull(), lastSol};
+        return {SolveState::SAT, {}, lastSol};
       }
       decide(next);
     }
