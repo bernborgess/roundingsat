@@ -365,11 +365,13 @@ class Optimization {
     }
   }
 
+  enum class CoefLimStatus { START, ENCOUNTEREDSAT, REFINE };
+
   void optimize() {
     size_t upper_time = 0, lower_time = 0;
     SolveState reply = SolveState::SAT;
     SMALL coeflim = options.cgStrat ? reformObj->getLargestCoef() : 0;
-    int coefLimFlag = -1;
+    CoefLimStatus coefLimFlag = CoefLimStatus::START;
     while (true) {
       size_t current_time = stats.getDetTime();
       if (reply != SolveState::INPROCESSED && reply != SolveState::RESTARTED) printObjBounds();
@@ -380,7 +382,7 @@ class Optimization {
            (options.optMode.is("core-boosted") && stats.getRunTime() < options.cgBoosted.get()) ||
            (options.optMode.is("hybrid") && lower_time < upper_time))) {  // use core-guided step by setting assumptions
         reformObj->removeZeroes();
-        if (coefLimFlag == 1) {
+        if (coefLimFlag == CoefLimStatus::REFINE) {
           SMALL oldCoeflim = coeflim;
           coeflim = 0;
           for (Var v : reformObj->vars) {
@@ -399,7 +401,7 @@ class Optimization {
           return t1.c > t2.c || (t1.l < t2.l && t1.c == t2.c);
         });
         for (const Term<double>& t : litcoefs) assumps.add(-reformObj->getLit(t.l));
-        coefLimFlag = 0;
+        coefLimFlag = CoefLimStatus::ENCOUNTEREDSAT;
       }
       assert(upper_bound > lower_bound);
       SolveAnswer out = aux::timeCall<SolveAnswer>([&] { return solver.solve(assumps); },
@@ -419,16 +421,17 @@ class Optimization {
         ++stats.NSOLS;
         handleNewSolution(out.solution);
         harden();
-        if (coefLimFlag == 0) coefLimFlag = 1;
+        if (coefLimFlag == CoefLimStatus::ENCOUNTEREDSAT) coefLimFlag = CoefLimStatus::REFINE;
       } else if (reply == SolveState::INCONSISTENT) {
         assert(!options.optMode.is("linear"));
         ++stats.NCORES;
         handleInconsistency(out.cores);
         harden();
-        coefLimFlag = -1;
+        coefLimFlag = CoefLimStatus::START;
       } else {
         assert(reply == SolveState::INPROCESSED);  // keep looping
-        if (coefLimFlag == 0) coefLimFlag = 1;
+        // coefLimFlag = CoefLimStatus::REFINE;
+        // NOTE: above avoids long non-terminating solve calls due to insufficient assumptions
         assumps.clear();
       }
       if (lower_bound >= upper_bound) {
