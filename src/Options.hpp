@@ -222,7 +222,7 @@ struct Options {
       "bits-input",
       "Bit width of maximum coefficient for input constraints (0 is unlimited, 1 allows only cardinalities)", 0,
       "0 =< int", [](const int& x) -> bool { return x >= 0; }};
-  BoolOption cgLazy{"cg-lazy", "Use lazy extension during core-guided search", 1};
+  EnumOption cgEncoding{"cg-encoding", "Encoding of the extension constraints", "lazy", {"simple", "lazy", "reified"}};
   ValOption<int> cgBoosted{"cg-boost", "Seconds of core-boosted search before switching to linear search", 10,
                            "0 =< int", [](const int& x) -> bool { return x >= 0; }};
   BoolOption cgIndCores{"cg-indcores", "Use independent cores for core-guided search", 0};
@@ -241,7 +241,7 @@ struct Options {
       &lpPivotRatio,   &lpPivotBudget, &lpIntolerance, &addGomoryCuts, &addLearnedCuts,
       &gomoryCutLimit, &maxCutCos,     &slackdiv,      &weakenFull,    &weakenNonImplying,
       &bumpOnlyFalse,  &bumpCanceling, &bumpLits,      &bitsOverflow,  &bitsReduced,
-      &bitsLearned,    &bitsInput,     &cgLazy,        &cgBoosted,     &cgIndCores,
+      &bitsLearned,    &bitsInput,     &cgEncoding,    &cgBoosted,     &cgIndCores,
       &cgStrat,        &cgFixedPhase,  &cgReduction,   &cgResolveProp, &cgDecisionCore,
   };
   std::unordered_map<std::string, Option*> name2opt;

@@ -124,16 +124,20 @@ declare -a arr_modes=(
 "linear"
 "core-guided"
 "core-guided"
+"core-guided"
+"hybrid"
 "hybrid"
 "hybrid"
 )
 
 declare -a arr_lazy=(
-0
-0
-1
-0
-1
+simple
+simple
+lazy
+reified
+simple
+lazy
+reified
 )
 
 declare -a arr_opt=(
@@ -182,8 +186,8 @@ for idx in "${!arr_modes[@]}"; do
             exit 1
         fi
         obj="$(cut -d'*' -f2 <<<$j)"
-        echo "running $binary $formula $options --opt-mode=$mode --cg-lazy=$lazy --proof-log=$logfile"
-        output=`timeout $time $binary $formula $options --opt-mode=$mode --cg-lazy=$lazy --proof-log=$logfile 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
+        echo "running $binary $formula $options --opt-mode=$mode --cg-encoding=$lazy --proof-log=$logfile"
+        output=`timeout $time $binary $formula $options --opt-mode=$mode --cg-encoding=$lazy --proof-log=$logfile 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
         if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
             errors=`expr 1000 + $errors`
             echo "wrong output: $output vs $obj"
@@ -213,8 +217,8 @@ for j in "${arr_opt[@]}"; do
         exit 1
     fi
     obj="$(cut -d'*' -f2 <<<$j)"
-    echo "running $binary $formula $options --opt-mode="hybrid" --cg-lazy=1"
-    output=`timeout $time $binary $formula $options --opt-mode="hybrid" --cg-lazy=1 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
+    echo "running $binary $formula $options --opt-mode="hybrid" --cg-encoding=1"
+    output=`timeout $time $binary $formula $options --opt-mode="hybrid" --cg-encoding=1 2>&1 | awk '/^o|UNSATISFIABLE|.*Assertion.*/ {print $2}'`
     if [ "$output" != "" ] && [ "$output" != "$obj" ]; then
         errors=`expr 1000 + $errors`
         echo "wrong output: $output vs $obj"

@@ -41,22 +41,21 @@ extern Solver solver;
 
 struct LazyVar {
   Solver& solver;
-  const int n;
+  int remainingVars;
   Var currentVar;
   ID atLeastID = ID_Undef;
   ID atMostID = ID_Undef;
   ConstrSimple32 atLeast;  // X >= k + y1 + ... + yi
-  ConstrSimple32 atMost;   // X =< k + y1 + ... + yi-1 + (1+n-k-i)yi
+  ConstrSimple32 atMost;   // k + y1 + ... + yi-1 + (1+n-k-i)yi >= X
 
   LazyVar(Solver& slvr, const Ce32 cardCore, Var startVar);
   ~LazyVar();
 
-  int remainingVars();
-  void addVar(Var v);
-  ID addAtLeastConstraint();
-  ID addAtMostConstraint();
+  void addVar(Var v, bool reified);
+  ID addAtLeastConstraint(bool reified);
+  ID addAtMostConstraint(bool reified);
   ID addSymBreakingConstraint(Var prevvar) const;
-  ID addFinalAtMost();
+  ID addFinalAtMost(bool reified);
 };
 
 std::ostream& operator<<(std::ostream& o, const std::shared_ptr<LazyVar> lv);
@@ -108,11 +107,12 @@ class Optimization {
   }
 
   void checkLazyVariables() {
+    bool reified = options.cgEncoding.is("reified");
     for (int i = 0; i < (int)lazyVars.size(); ++i) {
       LazyVar& lv = *lazyVars[i].lv;
       if (reformObj->getLit(lv.currentVar) == 0) {
         if (isUnit(solver.getLevel(), -lv.currentVar)) {  // binary constraints make all new auxiliary variables unit
-          if (lv.addFinalAtMost() == ID_Unsat) {
+          if (lv.addFinalAtMost(reified) == ID_Unsat) {
             quit::exit_UNSAT(solver, upper_bound);
           }
           aux::swapErase(lazyVars, i--);  // fully expanded, no need to keep in memory
@@ -120,14 +120,14 @@ class Optimization {
           long long newN = solver.getNbVars() + 1;
           solver.setNbVars(newN);
           Var oldvar = lv.currentVar;
-          lv.addVar(newN);
+          lv.addVar(newN, reified);
           // reformulate the objective
           reformObj->addLhs(lazyVars[i].m, newN);
           // add necessary lazy constraints
-          if (lv.addAtLeastConstraint() == ID_Unsat || lv.addAtMostConstraint() == ID_Unsat ||
+          if (lv.addAtLeastConstraint(reified) == ID_Unsat || lv.addAtMostConstraint(reified) == ID_Unsat ||
               lv.addSymBreakingConstraint(oldvar) == ID_Unsat) {
             quit::exit_UNSAT(solver, upper_bound);
-          } else if (lv.remainingVars() == 0) {
+          } else if (lv.remainingVars == 0) {
             aux::swapErase(lazyVars, i--);  // fully expanded, no need to keep in memory
           }
         }
@@ -271,21 +271,7 @@ class Optimization {
     assert(mult > 0);
     lower_bound += bestCardCore->getDegree() * mult;
 
-    if (options.cgLazy && bestCardCore->vars.size() - bestCardCore->getDegree() > 1) {
-      // add auxiliary variable
-      long long newN = solver.getNbVars() + 1;
-      solver.setNbVars(newN);
-      // reformulate the objective
-      bestCardCore->invert();
-      reformObj->addUp(bestCardCore, mult);
-      bestCardCore->invert();
-      reformObj->addLhs(mult, newN);  // add only one variable for now
-      assert(lower_bound == -reformObj->getDegree());
-      // add first lazy constraint
-      lazyVars.push_back({std::make_unique<LazyVar>(solver, bestCardCore, newN), mult});
-      lazyVars.back().lv->addAtLeastConstraint();
-      lazyVars.back().lv->addAtMostConstraint();
-    } else {
+    if (options.cgEncoding.is("simple") || bestCardCore->vars.size() - bestCardCore->getDegree() <= 1) {
       // add auxiliary variables
       long long oldN = solver.getNbVars();
       long long newN = oldN - static_cast<int>(bestCardCore->getDegree()) + bestCardCore->vars.size();
@@ -305,6 +291,21 @@ class Optimization {
         if (solver.addConstraint(ConstrSimple32({{1, v}, {1, -v - 1}}, 1), Origin::COREGUIDED).second == ID_Unsat)
           quit::exit_UNSAT(solver, upper_bound);
       }
+    } else {
+      bool reified = options.cgEncoding.is("reified");
+      // add auxiliary variable
+      long long newN = solver.getNbVars() + 1;
+      solver.setNbVars(newN);
+      // reformulate the objective
+      bestCardCore->invert();
+      reformObj->addUp(bestCardCore, mult);
+      bestCardCore->invert();
+      reformObj->addLhs(mult, newN);  // add only one variable for now
+      assert(lower_bound == -reformObj->getDegree());
+      // add first lazy constraint
+      lazyVars.push_back({std::make_unique<LazyVar>(solver, bestCardCore, newN), mult});
+      lazyVars.back().lv->addAtLeastConstraint(reified);
+      lazyVars.back().lv->addAtMostConstraint(reified);
     }
     checkLazyVariables();
     addLowerBound();

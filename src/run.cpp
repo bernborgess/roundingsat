@@ -36,7 +36,8 @@ namespace rs {
 
 Solver run::solver;
 
-run::LazyVar::LazyVar(Solver& slvr, const Ce32 cardCore, Var startVar) : solver(slvr), n(cardCore->vars.size()) {
+run::LazyVar::LazyVar(Solver& slvr, const Ce32 cardCore, Var startVar)
+    : solver(slvr), remainingVars(cardCore->vars.size() - cardCore->getDegree()) {
   assert(cardCore->isCardinality());
   cardCore->toSimple()->copyTo(atLeast);
   atLeast.toNormalFormLit();
@@ -46,7 +47,10 @@ run::LazyVar::LazyVar(Solver& slvr, const Ce32 cardCore, Var startVar) : solver(
   for (auto& t : atLeast.terms) {
     atMost.terms.emplace_back(-t.c, t.l);
   }
-  addVar(startVar);
+  currentVar = startVar;
+  atLeast.terms.emplace_back(-1, startVar);
+  atMost.terms.emplace_back(remainingVars, startVar);
+  --remainingVars;
 }
 
 run::LazyVar::~LazyVar() {
@@ -54,27 +58,34 @@ run::LazyVar::~LazyVar() {
   solver.dropExternal(atMostID, false, false);
 }
 
-int run::LazyVar::remainingVars() { return n + n - atLeast.rhs - atLeast.terms.size(); }
-
-void run::LazyVar::addVar(Var v) {
+void run::LazyVar::addVar(Var v, bool reified) {
   currentVar = v;
-  atLeast.terms.emplace_back(-1, v);
-  atMost.terms.emplace_back(1, v);
+  if (reified) {
+    Term<int>& last = atLeast.terms.back();
+    last = {last.c - 1, v};
+    --atMost.rhs;
+    Term<int>& last2 = atMost.terms.back();
+    last2 = {remainingVars, v};
+  } else {
+    atLeast.terms.emplace_back(-1, v);
+    Term<int>& last = atMost.terms.back();
+    last = {1, last.l};
+    atMost.terms.emplace_back(remainingVars, v);
+  }
+  --remainingVars;
 }
 
-ID run::LazyVar::addAtLeastConstraint() {
+ID run::LazyVar::addAtLeastConstraint(bool reified) {
   assert(atLeast.terms.back().l == currentVar);
-  solver.dropExternal(atLeastID, false, false);  // TODO: should be erasable
+  solver.dropExternal(atLeastID, !reified, false);
   atLeastID = solver.addConstraint(atLeast, Origin::COREGUIDED).second;
   return atLeastID;
 }
 
-ID run::LazyVar::addAtMostConstraint() {
+ID run::LazyVar::addAtMostConstraint(bool reified) {
   assert(atMost.terms.back().l == currentVar);
-  solver.dropExternal(atMostID, false, false);  // TODO: should be erasable
-  atMost.terms.back().c += remainingVars();
+  solver.dropExternal(atMostID, !reified, false);
   atMostID = solver.addConstraint(atMost, Origin::COREGUIDED).second;
-  atMost.terms.back().c = 1;
   return atMostID;
 }
 
@@ -84,9 +95,11 @@ ID run::LazyVar::addSymBreakingConstraint(Var prevvar) const {
   return solver.addConstraint(ConstrSimple32({{1, prevvar}, {1, -currentVar}}, 1), Origin::COREGUIDED).second;
 }
 
-ID run::LazyVar::addFinalAtMost() {
-  solver.dropExternal(atMostID, false, false);  // TODO: should be erasable
-  assert(atMost.terms.back().c == 1);
+ID run::LazyVar::addFinalAtMost(bool reified) {
+  solver.dropExternal(atMostID, !reified, false);
+  Term<int>& last = atMost.terms.back();
+  assert(atMost.terms.back().c == remainingVars + 1);
+  last = {1, last.l};
   atMostID = solver.addConstraint(atMost, Origin::COREGUIDED).second;
   return atMostID;
 }
