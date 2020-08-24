@@ -188,8 +188,11 @@ class Optimization {
         card->weakenLast();
       }
       card->saturate();
+      // sort in decreasing coef order to minimize number of auxiliary variables, but break ties so that *large*
+      // objective coefficient literals are removed first, as the smallest objective coefficients are the ones that
+      // will be eliminated from the objective function. Thanks Stephan!
       card->sortInDecreasingCoefOrder(
-          [&](Var v1, Var v2) { return aux::abs(reformObj->coefs[v1]) > aux::abs(reformObj->coefs[v2]); });
+          [&](Var v1, Var v2) { return aux::abs(reformObj->coefs[v1]) < aux::abs(reformObj->coefs[v2]); });
       card->simplifyToCardinality(false);
     }
 
