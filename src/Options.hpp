@@ -227,7 +227,7 @@ struct Options {
                            "0 =< int", [](const int& x) -> bool { return x >= 0; }};
   BoolOption cgIndCores{"cg-indcores", "Use independent cores for core-guided search", 0};
   BoolOption cgStrat{"cg-strat", "Use stratification for core-guided search", 0};
-  BoolOption cgFixedPhase{"cg-fixedphase", "Fix the phase to the incumbent solution during linear optimization", 1};
+  BoolOption cgFixedPhase{"cg-fixedphase", "Fix the phase to the incumbent solution during linear optimization", 0};
   EnumOption cgReduction{
       "cg-cardreduct", "Core-guided reduction to cardinality", "bestbound", {"clause", "minauxvars", "bestbound"}};
   BoolOption cgResolveProp{"cg-resprop", "Resolve propagated assumptions when extracting cores", 0};
