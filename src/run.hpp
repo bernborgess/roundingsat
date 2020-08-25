@@ -41,14 +41,15 @@ extern Solver solver;
 
 struct LazyVar {
   Solver& solver;
-  int remainingVars;
+  int lowerBound;
+  int upperBound;
   Var currentVar;
   ID atLeastID = ID_Undef;
   ID atMostID = ID_Undef;
   ConstrSimple32 atLeast;  // X >= k + y1 + ... + yi
   ConstrSimple32 atMost;   // k + y1 + ... + yi-1 + (1+n-k-i)yi >= X
 
-  LazyVar(Solver& slvr, const Ce32 cardCore, Var startVar);
+  LazyVar(Solver& slvr, const Ce32 cardCore, int cardUpperBound, Var startVar);
   ~LazyVar();
 
   void addVar(Var v, bool reified);
@@ -56,6 +57,8 @@ struct LazyVar {
   ID addAtMostConstraint(bool reified);
   ID addSymBreakingConstraint(Var prevvar) const;
   ID addFinalAtMost(bool reified);
+  int remainingVars() const;
+  void setUpperBound(int cardUpperBound);
 };
 
 std::ostream& operator<<(std::ostream& o, const std::shared_ptr<LazyVar> lv);
@@ -111,7 +114,10 @@ class Optimization {
     for (int i = 0; i < (int)lazyVars.size(); ++i) {
       LazyVar& lv = *lazyVars[i].lv;
       if (reformObj->getLit(lv.currentVar) == 0) {
-        if (isUnit(solver.getLevel(), -lv.currentVar)) {  // binary constraints make all new auxiliary variables unit
+        int cardCoreUpper = static_cast<int>(std::min<LARGE>(lv.upperBound, upper_bound / lazyVars[i].m));
+        lv.setUpperBound(cardCoreUpper);
+        if (lv.remainingVars() == 0 ||
+            isUnit(solver.getLevel(), -lv.currentVar)) {  // binary constraints make all new auxiliary variables unit
           if (lv.addFinalAtMost(reified) == ID_Unsat) {
             quit::exit_UNSAT(solver, upper_bound);
           }
@@ -127,7 +133,7 @@ class Optimization {
           if (lv.addAtLeastConstraint(reified) == ID_Unsat || lv.addAtMostConstraint(reified) == ID_Unsat ||
               lv.addSymBreakingConstraint(oldvar) == ID_Unsat) {
             quit::exit_UNSAT(solver, upper_bound);
-          } else if (lv.remainingVars == 0) {
+          } else if (lv.remainingVars() == 0) {
             aux::swapErase(lazyVars, i--);  // fully expanded, no need to keep in memory
           }
         }
@@ -274,10 +280,12 @@ class Optimization {
     assert(mult > 0);
     lower_bound += bestCardCore->getDegree() * mult;
 
+    int cardCoreUpper = static_cast<int>(std::min<LARGE>(bestCardCore->vars.size(), upper_bound / mult));
+
     if (options.cgEncoding.is("simple") || bestCardCore->vars.size() - bestCardCore->getDegree() <= 1) {
       // add auxiliary variables
       long long oldN = solver.getNbVars();
-      long long newN = oldN - static_cast<int>(bestCardCore->getDegree()) + bestCardCore->vars.size();
+      long long newN = oldN - static_cast<int>(bestCardCore->getDegree()) + cardCoreUpper;
       solver.setNbVars(newN);
       // reformulate the objective
       for (Var v = oldN + 1; v <= newN; ++v) bestCardCore->addLhs(-1, v);
@@ -306,7 +314,7 @@ class Optimization {
       reformObj->addLhs(mult, newN);  // add only one variable for now
       assert(lower_bound == -reformObj->getDegree());
       // add first lazy constraint
-      lazyVars.push_back({std::make_unique<LazyVar>(solver, bestCardCore, newN), mult});
+      lazyVars.push_back({std::make_unique<LazyVar>(solver, bestCardCore, cardCoreUpper, newN), mult});
       lazyVars.back().lv->addAtLeastConstraint(reified);
       lazyVars.back().lv->addAtMostConstraint(reified);
     }

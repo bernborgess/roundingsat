@@ -36,8 +36,8 @@ namespace rs {
 
 Solver run::solver;
 
-run::LazyVar::LazyVar(Solver& slvr, const Ce32 cardCore, Var startVar)
-    : solver(slvr), remainingVars(cardCore->vars.size() - cardCore->getDegree()) {
+run::LazyVar::LazyVar(Solver& slvr, const Ce32 cardCore, int cardUpperBound, Var startVar)
+    : solver(slvr), lowerBound(cardCore->getDegree()), upperBound(cardUpperBound) {
   assert(cardCore->isCardinality());
   cardCore->toSimple()->copyTo(atLeast);
   atLeast.toNormalFormLit();
@@ -49,13 +49,20 @@ run::LazyVar::LazyVar(Solver& slvr, const Ce32 cardCore, Var startVar)
   }
   currentVar = startVar;
   atLeast.terms.emplace_back(-1, startVar);
-  atMost.terms.emplace_back(remainingVars, startVar);
-  --remainingVars;
+  atMost.terms.emplace_back(remainingVars(), startVar);
+  ++lowerBound;
 }
 
 run::LazyVar::~LazyVar() {
   solver.dropExternal(atLeastID, false, false);
   solver.dropExternal(atMostID, false, false);
+}
+
+int run::LazyVar::remainingVars() const { return upperBound - lowerBound; }
+
+void run::LazyVar::setUpperBound(int cardUpperBound) {
+  assert(upperBound >= cardUpperBound);
+  upperBound = cardUpperBound;
 }
 
 void run::LazyVar::addVar(Var v, bool reified) {
@@ -65,14 +72,14 @@ void run::LazyVar::addVar(Var v, bool reified) {
     last = {last.c - 1, v};
     --atMost.rhs;
     Term<int>& last2 = atMost.terms.back();
-    last2 = {remainingVars, v};
+    last2 = {remainingVars(), v};
   } else {
     atLeast.terms.emplace_back(-1, v);
     Term<int>& last = atMost.terms.back();
     last = {1, last.l};
-    atMost.terms.emplace_back(remainingVars, v);
+    atMost.terms.emplace_back(remainingVars(), v);
   }
-  --remainingVars;
+  ++lowerBound;
 }
 
 ID run::LazyVar::addAtLeastConstraint(bool reified) {
@@ -98,7 +105,7 @@ ID run::LazyVar::addSymBreakingConstraint(Var prevvar) const {
 ID run::LazyVar::addFinalAtMost(bool reified) {
   solver.dropExternal(atMostID, !reified, false);
   Term<int>& last = atMost.terms.back();
-  assert(atMost.terms.back().c == remainingVars + 1);
+  assert(atMost.terms.back().c == remainingVars() + 1);
   last = {1, last.l};
   atMostID = solver.addConstraint(atMost, Origin::COREGUIDED).second;
   return atMostID;
