@@ -98,6 +98,9 @@ class Optimization {
     }
   };
 
+  LARGE normalizedLowerBound() { return lower_bound + origObj->getDegree(); }
+  LARGE normalizedUpperBound() { return upper_bound + origObj->getDegree(); }
+
   void printObjBounds() {
     if (options.verbosity.get() == 0) return;
     std::cout << "c bounds ";
@@ -114,7 +117,8 @@ class Optimization {
     for (int i = 0; i < (int)lazyVars.size(); ++i) {
       LazyVar& lv = *lazyVars[i].lv;
       if (reformObj->getLit(lv.currentVar) == 0) {
-        int cardCoreUpper = static_cast<int>(std::min<LARGE>(lv.upperBound, upper_bound / lazyVars[i].m));
+        int cardCoreUpper = static_cast<int>(std::min<LARGE>(lv.upperBound, normalizedUpperBound() / lazyVars[i].m));
+        assert(cardCoreUpper >= 0);
         lv.setUpperBound(cardCoreUpper);
         if (lv.remainingVars() == 0 ||
             isUnit(solver.getLevel(), -lv.currentVar)) {  // binary constraints make all new auxiliary variables unit
@@ -280,7 +284,8 @@ class Optimization {
     assert(mult > 0);
     lower_bound += bestCardCore->getDegree() * mult;
 
-    int cardCoreUpper = static_cast<int>(std::min<LARGE>(bestCardCore->vars.size(), upper_bound / mult));
+    int cardCoreUpper = static_cast<int>(std::min<LARGE>(bestCardCore->vars.size(), normalizedUpperBound() / mult));
+    assert(cardCoreUpper >= 0);
 
     if (options.cgEncoding.is("simple") || bestCardCore->vars.size() - bestCardCore->getDegree() <= 1) {
       // add auxiliary variables
