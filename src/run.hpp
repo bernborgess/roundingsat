@@ -365,12 +365,12 @@ class Optimization {
     }
   }
 
-  enum class CoefLimStatus { START, ENCOUNTEREDSAT, REFINE };
-
   void optimize() {
     size_t upper_time = 0, lower_time = 0;
     SolveState reply = SolveState::SAT;
     SMALL coeflim = options.cgStrat ? reformObj->getLargestCoef() : 0;
+
+    enum class CoefLimStatus { START, ENCOUNTEREDSAT, REFINE };
     CoefLimStatus coefLimFlag = CoefLimStatus::START;
     while (true) {
       size_t current_time = stats.getDetTime();
@@ -382,12 +382,26 @@ class Optimization {
            (options.optMode.is("core-boosted") && stats.getRunTime() < options.cgBoosted.get()) ||
            (options.optMode.is("hybrid") && lower_time < upper_time))) {  // use core-guided step by setting assumptions
         reformObj->removeZeroes();
-        if (coefLimFlag == CoefLimStatus::REFINE) {
-          SMALL oldCoeflim = coeflim;
-          coeflim = 0;
+        if (coeflim > 0 && coefLimFlag == CoefLimStatus::REFINE) {
+          // find a new coeflim
+          reformObj->sortInDecreasingCoefOrder();
+          int numLargerCoefs = 0;
+          int numLargerUniqueCoefs = 0;
+          SMALL prevCoef = -1;
+          bool changed = false;
           for (Var v : reformObj->vars) {
-            SMALL cf = aux::abs(reformObj->coefs[v]);
-            if (cf > coeflim && cf < oldCoeflim) coeflim = cf;
+            SMALL coef = aux::abs(reformObj->coefs[v]);
+            ++numLargerCoefs;
+            numLargerUniqueCoefs += prevCoef != coef;
+            prevCoef = coef;
+            if (coeflim > coef && numLargerCoefs / numLargerUniqueCoefs > 1.25) {
+              changed = true;
+              coeflim = coef;
+              break;
+            }
+          }
+          if (!changed) {
+            coeflim = 0;
           }
         }
         std::vector<Term<double>> litcoefs;  // using double will lead to faster sort than bigint
