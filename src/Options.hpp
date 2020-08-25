@@ -233,6 +233,7 @@ struct Options {
   BoolOption cgResolveProp{"cg-resprop", "Resolve propagated assumptions when extracting cores", 0};
   BoolOption cgDecisionCore{"cg-decisioncore",
                             "Extract a second decision core, choose the best resulting cardinality core", 1};
+  BoolOption cgCoreUpper{"cg-coreupper", "Exploit upper bound on cardinality cores", 1};
 
   const std::vector<Option*> options = {
       &help,           &printSol,      &verbosity,     &proofLog,      &optMode,
@@ -243,6 +244,7 @@ struct Options {
       &bumpOnlyFalse,  &bumpCanceling, &bumpLits,      &bitsOverflow,  &bitsReduced,
       &bitsLearned,    &bitsInput,     &cgEncoding,    &cgBoosted,     &cgIndCores,
       &cgStrat,        &cgFixedPhase,  &cgReduction,   &cgResolveProp, &cgDecisionCore,
+      &cgCoreUpper,
   };
   std::unordered_map<std::string, Option*> name2opt;
 

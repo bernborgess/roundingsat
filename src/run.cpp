@@ -37,7 +37,7 @@ namespace rs {
 Solver run::solver;
 
 run::LazyVar::LazyVar(Solver& slvr, const Ce32 cardCore, int cardUpperBound, Var startVar)
-    : solver(slvr), lowerBound(cardCore->getDegree()), coveredVars(cardUpperBound) {
+    : solver(slvr), coveredVars(cardCore->getDegree()), upperBound(cardUpperBound) {
   assert(cardCore->isCardinality());
   cardCore->toSimple()->copyTo(atLeast);
   atLeast.toNormalFormLit();
@@ -50,7 +50,7 @@ run::LazyVar::LazyVar(Solver& slvr, const Ce32 cardCore, int cardUpperBound, Var
   currentVar = startVar;
   atLeast.terms.emplace_back(-1, startVar);
   atMost.terms.emplace_back(remainingVars(), startVar);
-  ++lowerBound;
+  ++coveredVars;
 }
 
 run::LazyVar::~LazyVar() {
@@ -58,11 +58,11 @@ run::LazyVar::~LazyVar() {
   solver.dropExternal(atMostID, false, false);
 }
 
-int run::LazyVar::remainingVars() const { return coveredVars - lowerBound; }
+int run::LazyVar::remainingVars() const { return upperBound - coveredVars; }
 
 void run::LazyVar::setUpperBound(int cardUpperBound) {
-  assert(coveredVars >= cardUpperBound);
-  coveredVars = cardUpperBound;
+  assert(upperBound >= cardUpperBound);
+  upperBound = cardUpperBound;
 }
 
 void run::LazyVar::addVar(Var v, bool reified) {
@@ -79,7 +79,7 @@ void run::LazyVar::addVar(Var v, bool reified) {
     last = {1, last.l};
     atMost.terms.emplace_back(remainingVars(), v);
   }
-  ++lowerBound;
+  ++coveredVars;
 }
 
 ID run::LazyVar::addAtLeastConstraint(bool reified) {

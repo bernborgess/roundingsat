@@ -41,8 +41,8 @@ extern Solver solver;
 
 struct LazyVar {
   Solver& solver;
-  int lowerBound;
   int coveredVars;
+  int upperBound;
   Var currentVar;
   ID atLeastID = ID_Undef;
   ID atMostID = ID_Undef;
@@ -117,8 +117,11 @@ class Optimization {
     for (int i = 0; i < (int)lazyVars.size(); ++i) {
       LazyVar& lv = *lazyVars[i].lv;
       if (reformObj->getLit(lv.currentVar) == 0) {
-        int cardCoreUpper = static_cast<int>(std::min<LARGE>(
-            lv.coveredVars, normalizedUpperBound() / lazyVars[i].m));  // NOTE: integer division rounds down
+        int cardCoreUpper = lv.upperBound;
+        if (options.cgCoreUpper) {
+          cardCoreUpper = static_cast<int>(std::min<LARGE>(cardCoreUpper, normalizedUpperBound() / lazyVars[i].m));
+          // NOTE: integer division rounds down
+        }
         assert(cardCoreUpper >= 0);
         lv.setUpperBound(cardCoreUpper);
         if (lv.remainingVars() == 0 ||
@@ -257,9 +260,9 @@ class Optimization {
       for (Var v : cardCore->vars) {
         if (aux::abs(reformObj->coefs[v]) < lowestCoef) lowestCoef = aux::abs(reformObj->coefs[v]);
       }
-      LARGE lowerBound = lowestCoef * cardCore->degree;
-      if (lowerBound > bestLowerBound) {
-        bestLowerBound = lowerBound;
+      LARGE coveredVars = lowestCoef * cardCore->degree;
+      if (coveredVars > bestLowerBound) {
+        bestLowerBound = coveredVars;
         bestCardCore = cardCore;
       }
     }
@@ -285,8 +288,11 @@ class Optimization {
     assert(mult > 0);
     lower_bound += bestCardCore->getDegree() * mult;
 
-    int cardCoreUpper = static_cast<int>(std::min<LARGE>(
-        bestCardCore->vars.size(), normalizedUpperBound() / mult));  // NOTE: integer division rounds down
+    int cardCoreUpper = bestCardCore->vars.size();
+    if (options.cgCoreUpper) {
+      cardCoreUpper = static_cast<int>(std::min<LARGE>(cardCoreUpper, normalizedUpperBound() / mult));
+      // NOTE: integer division rounds down
+    }
     assert(cardCoreUpper >= 0);
 
     if (options.cgEncoding.is("simple") || bestCardCore->vars.size() - bestCardCore->getDegree() <= 1) {
