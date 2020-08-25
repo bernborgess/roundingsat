@@ -42,7 +42,7 @@ extern Solver solver;
 struct LazyVar {
   Solver& solver;
   int lowerBound;
-  int upperBound;
+  int coveredVars;
   Var currentVar;
   ID atLeastID = ID_Undef;
   ID atMostID = ID_Undef;
@@ -117,7 +117,8 @@ class Optimization {
     for (int i = 0; i < (int)lazyVars.size(); ++i) {
       LazyVar& lv = *lazyVars[i].lv;
       if (reformObj->getLit(lv.currentVar) == 0) {
-        int cardCoreUpper = static_cast<int>(std::min<LARGE>(lv.upperBound, normalizedUpperBound() / lazyVars[i].m));
+        int cardCoreUpper = static_cast<int>(std::min<LARGE>(
+            lv.coveredVars, normalizedUpperBound() / lazyVars[i].m));  // NOTE: integer division rounds down
         assert(cardCoreUpper >= 0);
         lv.setUpperBound(cardCoreUpper);
         if (lv.remainingVars() == 0 ||
@@ -284,7 +285,8 @@ class Optimization {
     assert(mult > 0);
     lower_bound += bestCardCore->getDegree() * mult;
 
-    int cardCoreUpper = static_cast<int>(std::min<LARGE>(bestCardCore->vars.size(), normalizedUpperBound() / mult));
+    int cardCoreUpper = static_cast<int>(std::min<LARGE>(
+        bestCardCore->vars.size(), normalizedUpperBound() / mult));  // NOTE: integer division rounds down
     assert(cardCoreUpper >= 0);
 
     if (options.cgEncoding.is("simple") || bestCardCore->vars.size() - bestCardCore->getDegree() <= 1) {
@@ -384,7 +386,7 @@ class Optimization {
     SMALL coeflim = options.cgStrat ? reformObj->getLargestCoef() : 0;
 
     enum class CoefLimStatus { START, ENCOUNTEREDSAT, REFINE };
-    CoefLimStatus coefLimFlag = CoefLimStatus::START;
+    CoefLimStatus coefLimFlag = CoefLimStatus::REFINE;
     while (true) {
       size_t current_time = stats.getDetTime();
       if (reply != SolveState::INPROCESSED && reply != SolveState::RESTARTED) printObjBounds();

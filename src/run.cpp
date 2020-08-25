@@ -37,7 +37,7 @@ namespace rs {
 Solver run::solver;
 
 run::LazyVar::LazyVar(Solver& slvr, const Ce32 cardCore, int cardUpperBound, Var startVar)
-    : solver(slvr), lowerBound(cardCore->getDegree()), upperBound(cardUpperBound) {
+    : solver(slvr), lowerBound(cardCore->getDegree()), coveredVars(cardUpperBound) {
   assert(cardCore->isCardinality());
   cardCore->toSimple()->copyTo(atLeast);
   atLeast.toNormalFormLit();
@@ -58,11 +58,11 @@ run::LazyVar::~LazyVar() {
   solver.dropExternal(atMostID, false, false);
 }
 
-int run::LazyVar::remainingVars() const { return upperBound - lowerBound; }
+int run::LazyVar::remainingVars() const { return coveredVars - lowerBound; }
 
 void run::LazyVar::setUpperBound(int cardUpperBound) {
-  assert(upperBound >= cardUpperBound);
-  upperBound = cardUpperBound;
+  assert(coveredVars >= cardUpperBound);
+  coveredVars = cardUpperBound;
 }
 
 void run::LazyVar::addVar(Var v, bool reified) {
