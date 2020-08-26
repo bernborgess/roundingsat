@@ -625,7 +625,7 @@ void Solver::reduceDB() {
       if (isUnit(Level, C.lit(j))) eval += C.coef(j);
     if (eval >= 0)
       removeConstraint(C, true);  // remove constraints satisfied at root
-    else if (!C.isLocked()) {
+    else if (!options.keepAll && !C.isLocked()) {
       if (C.size() > 2 && C.lbd() > 2) learnts.push_back(cr);  // Keep all binary clauses and short LBDs
       if (C.size() <= 2 || C.lbd() <= 3) ++promisingLearnts;
       ++totalLearnts;

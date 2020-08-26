@@ -228,6 +228,7 @@ struct Options {
   BoolOption cgIndCores{"cg-indcores", "Use independent cores for core-guided search", 1};
   BoolOption cgStrat{"cg-strat", "Use stratification for core-guided search", 1};
   BoolOption cgFixedPhase{"cg-fixedphase", "Fix the phase to the incumbent solution during linear optimization", 1};
+  BoolOption keepAll{"keepall", "Keep all learned constraints in the database indefinitely", 0};
 
   const std::vector<Option*> options = {
       &help,           &printSol,      &verbosity,     &proofLog,      &optMode,
@@ -237,7 +238,7 @@ struct Options {
       &gomoryCutLimit, &maxCutCos,     &slackdiv,      &weakenFull,    &weakenNonImplying,
       &bumpOnlyFalse,  &bumpCanceling, &bumpLits,      &bitsOverflow,  &bitsReduced,
       &bitsLearned,    &bitsInput,     &cgLazy,        &cgBoosted,     &cgIndCores,
-      &cgStrat,        &cgFixedPhase,
+      &cgStrat,        &cgFixedPhase,  &keepAll,
   };
   std::unordered_map<std::string, Option*> name2opt;
 
