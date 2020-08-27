@@ -381,33 +381,41 @@ std::vector<CeSuper> Solver::extractCore(CeSuper conflict, const IntSet& assumpt
   conflict->reset();
 
   std::vector<CeSuper> result;
-
+  int resolvesteps = l_assump == 0;  // if l==0, we already had some resolve steps in conflict analysis
   // analyze conflict
+  if (core->hasNegativeSlack(assumptions)) {  // early termination core
+    result.push_back(core->clone(cePools));
+    if (resolvesteps > 0) learnConstraint(result.back(), Origin::LEARNED);
+    resolvesteps = 0;
+  }
   while (decisionLevel() > 0) {
     if (asynch_interrupt) throw asynchInterrupt;
+    if (!options.cgDecisionCore && result.size() > 0) break;
     Lit l = trail.back();
     if (core->hasLit(-l)) {
-      if (result.size() == 0 && core->hasNegativeSlack(assumptions)) {  // early termination core
-        result.push_back(core->clone(cePools));
-        if (!options.cgDecisionCore) break;
-      }
-      if (result.size() > 0 && isDecided(Reason, l)) {  // decision core
-        result.push_back(core->clone(cePools));
-        break;
-      }
-      assert(isPropagated(Reason, l));
+      if (isDecided(Reason, l)) break;  // no more propagated literals
       Constr& reasonC = ca[Reason[toVar(l)]];
       // TODO: stats? activity?
       reasonC.resolveWith(core, l, nullptr, *this);
+      ++resolvesteps;
+      if (result.size() == 0 && core->hasNegativeSlack(assumptions)) {  // early termination core
+        result.push_back(core->clone(cePools));
+        if (resolvesteps > 0) learnConstraint(result.back(), Origin::LEARNED);
+        resolvesteps = 0;
+      }
     }
     undoOne();
   }
-  assert(core->hasNegativeSlack(assumptions));
-  assert(!core->isTautology());
-  assert(core->isSaturated());
+  if (options.cgDecisionCore && resolvesteps > 0) {  // decision core
+    result.push_back(core->clone(cePools));
+    learnConstraint(result.back(), Origin::LEARNED);
+  }
 
   // weaken non-falsifieds
   for (CeSuper& cnfl : result) {
+    assert(cnfl->hasNegativeSlack(assumptions));
+    assert(!cnfl->isTautology());
+    assert(cnfl->isSaturated());
     for (Var v : cnfl->vars)
       if (!assumptions.has(-cnfl->getLit(v))) cnfl->weaken(v);
     cnfl->postProcess(Level, Pos, true, stats);
