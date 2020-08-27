@@ -160,7 +160,8 @@ class Optimization {
     if (lastLowerBound == ID_Unsat) quit::exit_UNSAT(solver, upper_bound);
   }
 
-  Ce32 reduceToCardinality(const CeSuper& core) {
+  std::pair<Ce32, int> reduceToCardinality(const CeSuper& core) {
+    int bestNbBlocksRemoved = 0;
     CeSuper card = core->clone(solver.cePools);
     if (options.cgReduction.is("clause")) {
       card->sortInDecreasingCoefOrder(
@@ -182,15 +183,18 @@ class Optimization {
       int bestNbVars = clone->vars.size();
 
       // find the optimum number of variables to weaken to
+      int nbBlocksRemoved = 0;
       while (!clone->isTautology()) {
         int carddegree = cloneCoefOrder->getCardinalityDegreeWithZeroes();
         if (bestLowerBound < aux::abs(reformObj->coefs[clone->vars.back()]) * carddegree) {
           bestLowerBound = aux::abs(reformObj->coefs[clone->vars.back()]) * carddegree;
           bestNbVars = clone->vars.size();
+          bestNbBlocksRemoved = nbBlocksRemoved;
         }
         SMALL currentObjCoef = aux::abs(reformObj->coefs[clone->vars.back()]);
         // weaken all lowest objective coefficient literals
         while (clone->vars.size() > 0 && currentObjCoef == aux::abs(reformObj->coefs[clone->vars.back()])) {
+          ++nbBlocksRemoved;
           Var v = clone->vars.back();
           clone->weakenLast();
           cloneCoefOrder->weaken(v);
@@ -212,7 +216,7 @@ class Optimization {
 
     Ce32 result = solver.cePools.take32();
     card->copyTo(result);
-    return result;
+    return {result, bestNbBlocksRemoved};
   }
 
   void handleInconsistency(std::vector<CeSuper>& cores) {
@@ -227,7 +231,7 @@ class Optimization {
     [[maybe_unused]] LARGE prev_lower = lower_bound;
     lower_bound = -reformObj->getDegree();
 
-    std::vector<Ce32> cardCores;
+    std::vector<std::pair<Ce32, int>> cardCores;
     for (CeSuper& core : cores) {
       assert(core);
       if (core->isTautology()) {
@@ -244,6 +248,7 @@ class Optimization {
 
     if (cardCores.size() == 0) {
       // only violated unit assumptions were derived
+      ++stats.UNITCORES;
       assert(lower_bound > prev_lower);
       checkLazyVariables();
       addLowerBound();
@@ -251,23 +256,37 @@ class Optimization {
       return;
     }
 
+    stats.SINGLECORES += cardCores.size() == 1;
+
     LARGE bestLowerBound = -1;
-    Ce32& bestCardCore = cardCores[0];
-    for (Ce32 cardCore : cardCores) {
+    Ce32& bestCardCore = cardCores[0].first;
+    int bestBlocksRemoved = 0;
+    for (int i = 0; i < (int)cardCores.size(); ++i) {
+      Ce32 cardCore = cardCores[i].first;
       assert(cardCore->hasNoZeroes());
       assert(cardCore->vars.size() > 0);
       SMALL lowestCoef = aux::abs(reformObj->coefs[cardCore->vars[0]]);
       for (Var v : cardCore->vars) {
         if (aux::abs(reformObj->coefs[v]) < lowestCoef) lowestCoef = aux::abs(reformObj->coefs[v]);
       }
-      LARGE coveredVars = lowestCoef * cardCore->degree;
-      if (coveredVars > bestLowerBound) {
-        bestLowerBound = coveredVars;
+      LARGE lowerBound = lowestCoef * cardCore->degree;
+      if (i == 1) {
+        stats.NOCOREBEST += lowerBound == bestLowerBound;
+        stats.FIRSTCOREBEST += lowerBound < bestLowerBound;
+        stats.DECCOREBEST += lowerBound > bestLowerBound;
+      }
+      if (lowerBound > bestLowerBound) {
+        bestLowerBound = lowerBound;
         bestCardCore = cardCore;
+        bestBlocksRemoved = cardCores[i].second;
       }
     }
 
-    if (!bestCardCore->isClause()) ++stats.NCORECARDINALITIES;
+    stats.REMOVEDBLOCKS += bestBlocksRemoved;
+    stats.NCORECARDINALITIES += !bestCardCore->isClause();
+    stats.COREDEGSUM += bestCardCore->getDegree();
+    stats.CORESLACKSUM += bestCardCore->vars.size() - bestCardCore->getDegree();
+
     for (Var v : bestCardCore->vars) {
       assert(assumps.has(-bestCardCore->getLit(v)));
       assumps.remove(-bestCardCore->getLit(v));  // independent cores
