@@ -161,8 +161,10 @@ struct Stats {
     printf("c CG first core best %lld\n", FIRSTCOREBEST);
     printf("c CG decision core best %lld\n", DECCOREBEST);
     printf("c CG core reduction tie %lld\n", NOCOREBEST);
-    printf("c CG core degree average %.2f\n", COREDEGSUM / (double)(NCORES - UNITCORES));
-    printf("c CG core slack average %.2f\n", CORESLACKSUM / (double)(NCORES - UNITCORES));
+    printf("c CG core degree average %.2f\n",
+           (NCORES - UNITCORES) == 0 ? 0 : COREDEGSUM / (double)(NCORES - UNITCORES));
+    printf("c CG core slack average %.2f\n",
+           (NCORES - UNITCORES) == 0 ? 0 : CORESLACKSUM / (double)(NCORES - UNITCORES));
   }
 };
 
