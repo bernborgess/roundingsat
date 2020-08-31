@@ -458,7 +458,7 @@ class Optimization {
         coefLimFlag = CoefLimStatus::ENCOUNTEREDSAT;
       }
       assert(upper_bound > lower_bound);
-      std::cout << "c nAssumptions for solve: " << assumps.size() << " @ " << stats.getTime() << " s\n";
+      // std::cout << "c nAssumptions for solve: " << assumps.size() << " @ " << stats.getTime() << " s\n";
       SolveAnswer out = aux::timeCall<SolveAnswer>([&] { return solver.solve(assumps); },
                                                    assumps.isEmpty() ? stats.SOLVETIME : stats.SOLVETIMECG);
       reply = out.state;
