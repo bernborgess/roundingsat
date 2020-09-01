@@ -836,7 +836,7 @@ SolveAnswer Solver::solve(const IntSet& assumptions) {
           break;
         }
       }
-      if (next == 0) next = pickBranchLit(assumptions.isEmpty() && options.cgFixedPhase);
+      if (next == 0) next = pickBranchLit(assumptions.isEmpty() && options.cgSolutionPhase);
       if (next == 0) {
         assert(order_heap.empty());
         assert((int)trail.size() == getNbVars());

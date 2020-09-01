@@ -227,7 +227,8 @@ struct Options {
                            "0 =< int", [](const int& x) -> bool { return x >= 0; }};
   BoolOption cgIndCores{"cg-indcores", "Use independent cores for core-guided search", 0};
   BoolOption cgStrat{"cg-strat", "Use stratification for core-guided search", 1};
-  BoolOption cgFixedPhase{"cg-fixedphase", "Fix the phase to the incumbent solution during linear optimization", 1};
+  BoolOption cgSolutionPhase{"cg-solutionphase", "Fix the phase to the incumbent solution during linear optimization",
+                             1};
   EnumOption cgReduction{
       "cg-cardreduct", "Core-guided reduction to cardinality", "bestbound", {"clause", "minauxvars", "bestbound"}};
   BoolOption cgResolveProp{"cg-resprop", "Resolve propagated assumptions when extracting cores", 0};
@@ -236,14 +237,14 @@ struct Options {
   BoolOption cgCoreUpper{"cg-coreupper", "Exploit upper bound on cardinality cores", 1};
 
   const std::vector<Option*> options = {
-      &help,           &printSol,      &verbosity,     &proofLog,      &optMode,
-      &lubyBase,       &lubyMult,      &varDecay,      &clauseDecay,   &dbCleanInc,
-      &propCounting,   &propClause,    &propCard,      &propIdx,       &propSup,
-      &lpPivotRatio,   &lpPivotBudget, &lpIntolerance, &addGomoryCuts, &addLearnedCuts,
-      &gomoryCutLimit, &maxCutCos,     &slackdiv,      &weakenFull,    &weakenNonImplying,
-      &bumpOnlyFalse,  &bumpCanceling, &bumpLits,      &bitsOverflow,  &bitsReduced,
-      &bitsLearned,    &bitsInput,     &cgEncoding,    &cgBoosted,     &cgIndCores,
-      &cgStrat,        &cgFixedPhase,  &cgReduction,   &cgResolveProp, &cgDecisionCore,
+      &help,           &printSol,        &verbosity,     &proofLog,      &optMode,
+      &lubyBase,       &lubyMult,        &varDecay,      &clauseDecay,   &dbCleanInc,
+      &propCounting,   &propClause,      &propCard,      &propIdx,       &propSup,
+      &lpPivotRatio,   &lpPivotBudget,   &lpIntolerance, &addGomoryCuts, &addLearnedCuts,
+      &gomoryCutLimit, &maxCutCos,       &slackdiv,      &weakenFull,    &weakenNonImplying,
+      &bumpOnlyFalse,  &bumpCanceling,   &bumpLits,      &bitsOverflow,  &bitsReduced,
+      &bitsLearned,    &bitsInput,       &cgEncoding,    &cgBoosted,     &cgIndCores,
+      &cgStrat,        &cgSolutionPhase, &cgReduction,   &cgResolveProp, &cgDecisionCore,
       &cgCoreUpper,
   };
   std::unordered_map<std::string, Option*> name2opt;
