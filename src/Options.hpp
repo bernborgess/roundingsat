@@ -159,7 +159,7 @@ struct Options {
                            [](const int& x) -> bool { return x >= 0; }};
   ValOption<std::string> proofLog{"proof-log", "Filename for the proof logs, left unspecified disables proof logging",
                                   "", "/path/to/file", [](const std::string&) -> bool { return true; }};
-  EnumOption optMode{"opt-mode", "Optimization mode", "hybrid", {"linear", "core-guided", "core-boosted", "hybrid"}};
+  EnumOption optMode{"opt-mode", "Optimization mode", "hybrid", {"linear", "coreguided", "coreboosted", "hybrid"}};
   ValOption<double> lubyBase{"luby-base", "Base of the Luby restart sequence", 2, "1 =< float",
                              [](double x) -> bool { return 1 <= x; }};
   ValOption<int> lubyMult{"luby-mult", "Multiplier of the Luby restart sequence", 100, "1 =< int",
@@ -222,7 +222,8 @@ struct Options {
       "bits-input",
       "Bit width of maximum coefficient for input constraints (0 is unlimited, 1 allows only cardinalities)", 0,
       "0 =< int", [](const int& x) -> bool { return x >= 0; }};
-  EnumOption cgEncoding{"cg-encoding", "Encoding of the extension constraints", "lazy", {"simple", "lazy", "reified"}};
+  EnumOption cgEncoding{
+      "cg-encoding", "Encoding of the extension constraints", "lazysum", {"sum", "lazysum", "reified"}};
   ValOption<int> cgBoosted{"cg-boost", "Seconds of core-boosted search before switching to linear search", 10,
                            "0 =< int", [](const int& x) -> bool { return x >= 0; }};
   BoolOption cgIndCores{"cg-indcores", "Use independent cores for core-guided search", 0};
@@ -230,7 +231,7 @@ struct Options {
   BoolOption cgSolutionPhase{"cg-solutionphase", "Fix the phase to the incumbent solution during linear optimization",
                              1};
   EnumOption cgReduction{
-      "cg-cardreduct", "Core-guided reduction to cardinality", "bestbound", {"clause", "minauxvars", "bestbound"}};
+      "cg-cardreduct", "Core-guided reduction to cardinality", "bestbound", {"clause", "minslack", "bestbound"}};
   BoolOption cgResolveProp{"cg-resprop", "Resolve propagated assumptions when extracting cores", 0};
   BoolOption cgDecisionCore{"cg-decisioncore",
                             "Extract a second decision core, choose the best resulting cardinality core", 1};

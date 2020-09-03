@@ -122,21 +122,21 @@ done
 
 declare -a arr_modes=(
 linear
-core-guided
-core-guided
-core-guided
+coreguided
+coreguided
+coreguided
 hybrid
 hybrid
 hybrid
 )
 
 declare -a arr_lazy=(
-simple
-simple
-lazy
+sum
+sum
+lazysum
 reified
-simple
-lazy
+sum
+lazysum
 reified
 )
 
