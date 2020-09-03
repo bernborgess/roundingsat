@@ -489,7 +489,6 @@ void LpSolver::convertConstraint(const ConstrSimple64& c, soplex::DSVectorReal& 
 
 void LpSolver::addConstraint(CeSuper c, bool removable, bool upperbound, bool lowerbound) {
   assert(!upperbound || c->orig == Origin::UPPERBOUND);
-  assert(!lowerbound || c->orig == Origin::LOWERBOUND);
   c->saturateAndFixOverflowRational(lpSolution);
   ID id =
       solver.logger ? c->logProofLineWithInfo("LP", stats) : ++solver.crefID;  // TODO: fix this kind of logger check

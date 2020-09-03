@@ -41,7 +41,7 @@ namespace rs {
 
 struct Logger;
 
-enum class SolveState { SAT, UNSAT, INCONSISTENT, INPROCESSED, RESTARTED };
+enum class SolveState { SAT, UNSAT, INPROCESSED, RESTARTED };
 
 struct SolveAnswer {
   SolveState state;
@@ -126,21 +126,7 @@ class Solver {
   int getNbConstraints() const { return constraints.size(); }
   CeSuper getIthConstraint(int i) { return ca[constraints[i]].toExpanded(cePools); }
 
-  /**
-   * @return SolveAnswer.state:
-   * 	UNSAT if root inconsistency detected
-   * 	SAT if satisfying assignment found
-   * 	INCONSISTENT if no solution extending assumptions exists
-   * 	INPROCESSING if solver just finished a cleanup phase
-   * @return SolveAnswer.cores:
-   *    implied constraints C if INCONSISTENT
-   *        if C is a tautology, negated assumptions at root level exist
-   *        if C is not a tautology, it is falsified by the assumptions
-   * @return SolveAnswer.solution:
-   *    the satisfying assignment if SAT
-   * @param assumptions: set of assumptions
-   */
-  SolveAnswer solve(const IntSet& assumptions);
+  SolveAnswer solve();
 
  private:
   void presolve();
@@ -174,7 +160,6 @@ class Solver {
 
   void recomputeLBD(Constr& C);
   CeSuper analyze(CeSuper confl);
-  std::vector<CeSuper> extractCore(CeSuper confl, const IntSet& assumptions, Lit l_assump = 0);
 
   // ---------------------------------------------------------------------
   // Constraint management
@@ -196,7 +181,7 @@ class Solver {
 
   double luby(double y, int i) const;
   bool checkSAT();
-  Lit pickBranchLit(bool lastSolPhase);
+  Lit pickBranchLit();
 };
 
 }  // namespace rs

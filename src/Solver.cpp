@@ -61,9 +61,6 @@ void Solver::setNbVars(long long nvars, bool orig) {
   if (orig) {
     orig_n = n;
     stats.NORIGVARS = n;
-    stats.NAUXVARS = 0;
-  } else {
-    stats.NAUXVARS = n - orig_n;
   }
 }
 
@@ -212,9 +209,7 @@ CeSuper Solver::runPropagation(bool onlyUnitPropagation) {
 
         stats.NENCFORMULA += C.getOrigin() == Origin::FORMULA;
         stats.NENCLEARNED += C.getOrigin() == Origin::LEARNED;
-        stats.NENCBOUND += (C.getOrigin() == Origin::LOWERBOUND || C.getOrigin() == Origin::UPPERBOUND ||
-                            C.getOrigin() == Origin::HARDENEDBOUND);
-        stats.NENCCOREGUIDED += C.getOrigin() == Origin::COREGUIDED;
+        stats.NENCBOUND += (C.getOrigin() == Origin::UPPERBOUND);
         stats.NLPENCGOMORY += C.getOrigin() == Origin::GOMORY;
         stats.NLPENCLEARNEDFARKAS += C.getOrigin() == Origin::LEARNEDFARKAS;
         stats.NLPENCFARKAS += C.getOrigin() == Origin::FARKAS;
@@ -320,9 +315,7 @@ CeSuper Solver::analyze(CeSuper conflict) {
 
       stats.NENCFORMULA += reasonC.getOrigin() == Origin::FORMULA;
       stats.NENCLEARNED += reasonC.getOrigin() == Origin::LEARNED;
-      stats.NENCBOUND += (reasonC.getOrigin() == Origin::LOWERBOUND || reasonC.getOrigin() == Origin::UPPERBOUND ||
-                          reasonC.getOrigin() == Origin::HARDENEDBOUND);
-      stats.NENCCOREGUIDED += reasonC.getOrigin() == Origin::COREGUIDED;
+      stats.NENCBOUND += (reasonC.getOrigin() == Origin::UPPERBOUND);
       stats.NLPENCGOMORY += reasonC.getOrigin() == Origin::GOMORY;
       stats.NLPENCLEARNEDFARKAS += reasonC.getOrigin() == Origin::LEARNEDFARKAS;
       stats.NLPENCFARKAS += reasonC.getOrigin() == Origin::FARKAS;
@@ -338,92 +331,6 @@ CeSuper Solver::analyze(CeSuper conflict) {
   actSet.clear();
 
   return confl;
-}
-
-std::vector<CeSuper> Solver::extractCore(CeSuper conflict, const IntSet& assumptions, Lit l_assump) {
-  if (l_assump != 0) {  // l_assump is an assumption propagated to the opposite value
-    assert(assumptions.has(l_assump));
-    assert(isFalse(Level, l_assump));
-    int pos = Pos[toVar(l_assump)];
-    while ((int)trail.size() > pos) undoOne();
-    assert(isUnknown(Pos, l_assump));
-    decide(l_assump);
-  }
-
-  // Set all assumptions in front of the trail, all propagations later. This makes it easy to do decision learning.
-  // For this, we first copy the trail, then backjump to 0, then rebuild the trail.
-  // Otherwise, reordering the trail messes up the slacks of the watched constraints (see undoOne()).
-  std::vector<Lit> decisions;  // holds the decisions
-  decisions.reserve(decisionLevel());
-  std::vector<Lit> props;  // holds the propagations
-  props.reserve(trail.size());
-  assert(trail_lim.size() > 0);
-  for (int i = trail_lim[0]; i < (int)trail.size(); ++i) {
-    Lit l = trail[i];
-    if (assumptions.has(l) && (isDecided(Reason, l) || !options.cgResolveProp)) {
-      decisions.push_back(l);
-    } else {
-      props.push_back(l);
-    }
-  }
-  backjumpTo(0);
-
-  for (Lit l : decisions) decide(l);
-  for (Lit l : props) propagate(l, Reason[toVar(l)]);
-
-  assert(conflict->hasNegativeSlack(Level));
-  stats.NADDEDLITERALS += conflict->vars.size();
-  conflict->removeUnitsAndZeroes(Level, Pos);
-  conflict->saturateAndFixOverflow(getLevel(), (bool)options.weakenFull, options.bitsOverflow.get(),
-                                   options.bitsReduced.get(), 0);
-  assert(conflict->hasNegativeSlack(Level));
-  CeSuper core = getAnalysisCE(conflict, options.bitsOverflow.get(), cePools);
-  conflict->reset();
-
-  std::vector<CeSuper> result;
-  int resolvesteps = l_assump == 0;  // if l==0, we already had some resolve steps in conflict analysis
-  // analyze conflict
-  if (core->hasNegativeSlack(assumptions)) {  // early termination core
-    result.push_back(core->clone(cePools));
-    if (resolvesteps > 0) learnConstraint(result.back(), Origin::LEARNED);
-    resolvesteps = 0;
-  }
-  while (decisionLevel() > 0) {
-    if (asynch_interrupt) throw asynchInterrupt;
-    if (!options.cgDecisionCore && result.size() > 0) break;
-    Lit l = trail.back();
-    if (core->hasLit(-l)) {
-      if (isDecided(Reason, l)) break;  // no more propagated literals
-      Constr& reasonC = ca[Reason[toVar(l)]];
-      // TODO: stats? activity?
-      reasonC.resolveWith(core, l, nullptr, *this);
-      ++resolvesteps;
-      if (result.size() == 0 && core->hasNegativeSlack(assumptions)) {  // early termination core
-        result.push_back(core->clone(cePools));
-        if (resolvesteps > 0) learnConstraint(result.back(), Origin::LEARNED);
-        resolvesteps = 0;
-      }
-    }
-    undoOne();
-  }
-  if (options.cgDecisionCore && resolvesteps > 0) {  // decision core
-    result.push_back(core->clone(cePools));
-    learnConstraint(result.back(), Origin::LEARNED);
-  }
-
-  // weaken non-falsifieds
-  for (CeSuper& cnfl : result) {
-    assert(cnfl->hasNegativeSlack(assumptions));
-    assert(!cnfl->isTautology());
-    assert(cnfl->isSaturated());
-    for (Var v : cnfl->vars)
-      if (!assumptions.has(-cnfl->getLit(v))) cnfl->weaken(v);
-    cnfl->postProcess(Level, Pos, true, stats);
-    assert(cnfl->hasNegativeSlack(assumptions));
-  }
-  backjumpTo(0);
-
-  return result;
 }
 
 // ---------------------------------------------------------------------
@@ -466,9 +373,7 @@ CRef Solver::attachConstraint(CeSuper constraint, bool locked) {
 
   stats.NCONSFORMULA += C.getOrigin() == Origin::FORMULA;
   stats.NCONSLEARNED += C.getOrigin() == Origin::LEARNED;
-  stats.NCONSBOUND += (C.getOrigin() == Origin::LOWERBOUND || C.getOrigin() == Origin::UPPERBOUND ||
-                       C.getOrigin() == Origin::HARDENEDBOUND);
-  stats.NCONSCOREGUIDED += C.getOrigin() == Origin::COREGUIDED;
+  stats.NCONSBOUND += (C.getOrigin() == Origin::UPPERBOUND);
   stats.NLPGOMORYCUTS += C.getOrigin() == Origin::GOMORY;
   stats.NLPLEARNEDFARKAS += C.getOrigin() == Origin::LEARNEDFARKAS;
   stats.NLPFARKAS += C.getOrigin() == Origin::FARKAS;
@@ -518,8 +423,7 @@ CeSuper Solver::processLearnedStack() {
 }
 
 std::pair<ID, ID> Solver::addInputConstraint(CeSuper ce) {
-  assert(ce->orig == Origin::FORMULA || ce->orig == Origin::UPPERBOUND || ce->orig == Origin::LOWERBOUND ||
-         ce->orig == Origin::HARDENEDBOUND || ce->orig == Origin::COREGUIDED);
+  assert(ce->orig == Origin::FORMULA || ce->orig == Origin::UPPERBOUND);
   assert(decisionLevel() == 0);
   ID input = ID_Undef;
   if (logger) input = ce->logAsInput();
@@ -554,8 +458,8 @@ std::pair<ID, ID> Solver::addInputConstraint(CeSuper ce) {
   if (orig != Origin::FORMULA) {
     external[id] = cr;
   }
-  if (lpSolver && (orig == Origin::FORMULA || orig == Origin::UPPERBOUND || orig == Origin::LOWERBOUND)) {
-    lpSolver->addConstraint(cr, false, orig == Origin::UPPERBOUND, orig == Origin::LOWERBOUND);
+  if (lpSolver && (orig == Origin::FORMULA || orig == Origin::UPPERBOUND)) {
+    lpSolver->addConstraint(cr, false, orig == Origin::UPPERBOUND, false);
   }
   return {input, id};
 }
@@ -705,7 +609,7 @@ bool Solver::checkSAT() {
   return true;
 }
 
-Lit Solver::pickBranchLit(bool lastSolPhase) {
+Lit Solver::pickBranchLit() {
   Var next = 0;
   // Activity based decision:
   while (next == 0 || !isUnknown(Pos, next)) {
@@ -716,7 +620,7 @@ Lit Solver::pickBranchLit(bool lastSolPhase) {
   }
   assert(phase[0] == 0);
   assert(lastSol[0] == 0);
-  return (lastSolPhase && (int)lastSol.size() > next) ? lastSol[next] : phase[next];
+  return phase[next];
 }
 
 void Solver::presolve() {
@@ -724,25 +628,10 @@ void Solver::presolve() {
   if (lpSolver) aux::timeCall<void>([&] { lpSolver->inProcess(); }, stats.LPTOTALTIME);
 }
 
-/**
- * @return 1:
- * 	UNSAT if root inconsistency detected
- * 	SAT if satisfying assignment found
- * 	INCONSISTENT if no solution extending assumptions exists
- * 	INPROCESSING if solver just finished a cleanup phase
- * @return 2:
- *    implied constraints C if INCONSISTENT
- *        if C is a tautology, negated assumptions at root level exist
- *        if C is not a tautology, it is falsified by the assumptions
- * @param assumptions: set of assumptions
- * @param solution: if SAT, full variable assignment satisfying all constraints, otherwise untouched
- */
 // TODO: use a coroutine / yield instead of a SolveState return value
-SolveAnswer Solver::solve(const IntSet& assumptions) {
-  backjumpTo(0);  // ensures assumptions are reset
+SolveAnswer Solver::solve() {
+  backjumpTo(0);
   if (firstRun) presolve();
-  std::vector<int> assumptions_lim = {0};
-  assumptions_lim.reserve((int)assumptions.size() + 1);
   bool runLP = false;
   while (true) {
     if (asynch_interrupt) throw asynchInterrupt;
@@ -770,7 +659,7 @@ SolveAnswer Solver::solve(const IntSet& assumptions) {
           confl->logInconsistency(Level, Pos, stats);
         }
         return {SolveState::UNSAT, {}, lastSol};
-      } else if (decisionLevel() >= (int)assumptions_lim.size()) {
+      } else {
         CeSuper analyzed = aux::timeCall<CeSuper>([&] { return analyze(confl); }, stats.CATIME);
         assert(analyzed);
         assert(analyzed->hasNegativeSlack(getLevel()));
@@ -779,14 +668,6 @@ SolveAnswer Solver::solve(const IntSet& assumptions) {
           learnConstraint(analyzed, Origin::LEARNEDFARKAS);  // TODO: ugly hack
         else
           learnConstraint(analyzed, Origin::LEARNED);
-      } else {
-        std::vector<CeSuper> result =
-            aux::timeCall<std::vector<CeSuper>>([&] { return extractCore(confl, assumptions); }, stats.CATIME);
-        for ([[maybe_unused]] const CeSuper& core : result) {
-          assert(core);
-          assert(core->hasNegativeSlack(assumptions));
-        }
-        return {SolveState::INCONSISTENT, result, lastSol};
       }
     } else {  // no conflict
       if (nconfl_to_restart <= 0) {
@@ -803,40 +684,7 @@ SolveAnswer Solver::solve(const IntSet& assumptions) {
         nconfl_to_restart = (long long)rest_base * options.lubyMult.get();
         //        return {SolveState::RESTARTED, {}, lastSol}; // avoid this overhead for now
       }
-      Lit next = 0;
-      if ((int)assumptions_lim.size() > decisionLevel() + 1) assumptions_lim.resize(decisionLevel() + 1);
-      if (assumptions_lim.back() < (int)assumptions.size()) {
-        for (int i = (decisionLevel() == 0 ? 0 : trail_lim.back()); i < (int)trail.size(); ++i) {
-          Lit l = trail[i];
-          if (assumptions.has(-l)) {  // found conflicting assumption
-            if (isUnit(Level, l)) {   // negated assumption is unit
-              backjumpTo(0);
-              return {SolveState::INCONSISTENT, {cePools.take32()}, lastSol};
-            } else {
-              std::vector<CeSuper> result = aux::timeCall<std::vector<CeSuper>>(
-                  [&] { return extractCore(ca[Reason[toVar(l)]].toExpanded(cePools), assumptions, -l); }, stats.CATIME);
-              for ([[maybe_unused]] const CeSuper& core : result) {
-                assert(core);
-                assert(core->hasNegativeSlack(assumptions));
-              }
-              return {SolveState::INCONSISTENT, result, lastSol};
-            }
-          }
-        }
-      }
-      while (assumptions_lim.back() < (int)assumptions.size()) {
-        assert(decisionLevel() == (int)assumptions_lim.size() - 1);
-        Lit l_assump = assumptions.keys[assumptions_lim.back()];
-        assert(!isFalse(Level, l_assump));  // otherwise above check should have caught this
-        if (isTrue(Level, l_assump)) {      // assumption already propagated
-          ++assumptions_lim.back();
-        } else {  // unassigned assumption
-          next = l_assump;
-          assumptions_lim.push_back(assumptions_lim.back() + 1);
-          break;
-        }
-      }
-      if (next == 0) next = pickBranchLit(assumptions.isEmpty() && options.cgSolutionPhase);
+      Lit next = pickBranchLit();
       if (next == 0) {
         assert(order_heap.empty());
         assert((int)trail.size() == getNbVars());

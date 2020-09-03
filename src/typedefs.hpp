@@ -90,11 +90,10 @@ const ActValC actLimitC = 1e30;  // ~1e30 << 2^(2^7)
  * UNKNOWN: uninitialized value
  * FORMULA: original input formula constraints
  * LEARNED: learned from regular conflict analysis
- * BOUND: upper and lower bounds on the objective function
- * COREGUIDED: extension constraints from coreguided optimization
  * FARKAS: LP solver infeasibility witness
  * LEARNEDFARKAS: constraint learned from conflict analysis on FARKAS
  * GOMORY: Gomory cut
+ * UPPERBOUND: upper and lower bounds on the objective function
  *
  * max number of types is 16, as the type is stored with 4 bits in Constr
  */
@@ -102,13 +101,10 @@ enum class Origin {
   UNKNOWN,
   FORMULA,
   LEARNED,
-  COREGUIDED,
   FARKAS,
   LEARNEDFARKAS,
   GOMORY,
   UPPERBOUND,
-  LOWERBOUND,
-  HARDENEDBOUND,
 };
 
 template <typename SMALL, typename LARGE>

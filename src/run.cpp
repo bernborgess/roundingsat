@@ -36,90 +36,9 @@ namespace rs {
 
 Solver run::solver;
 
-run::LazyVar::LazyVar(Solver& slvr, const Ce32 cardCore, int cardUpperBound, Var startVar)
-    : solver(slvr), coveredVars(cardCore->getDegree()), upperBound(cardUpperBound) {
-  assert(cardCore->isCardinality());
-  cardCore->toSimple()->copyTo(atLeast);
-  atLeast.toNormalFormLit();
-  assert(atLeast.rhs == cardCore->getDegree());
-  atMost.rhs = -atLeast.rhs;
-  atMost.terms.reserve(atLeast.terms.size());
-  for (auto& t : atLeast.terms) {
-    atMost.terms.emplace_back(-t.c, t.l);
-  }
-  currentVar = startVar;
-  atLeast.terms.emplace_back(-1, startVar);
-  atMost.terms.emplace_back(remainingVars(), startVar);
-  ++coveredVars;
-}
-
-run::LazyVar::~LazyVar() {
-  solver.dropExternal(atLeastID, false, false);
-  solver.dropExternal(atMostID, false, false);
-}
-
-int run::LazyVar::remainingVars() const { return upperBound - coveredVars; }
-
-void run::LazyVar::setUpperBound(int cardUpperBound) {
-  assert(upperBound >= cardUpperBound);
-  upperBound = cardUpperBound;
-}
-
-void run::LazyVar::addVar(Var v, bool reified) {
-  currentVar = v;
-  if (reified) {
-    Term<int>& last = atLeast.terms.back();
-    last = {last.c - 1, v};
-    --atMost.rhs;
-    Term<int>& last2 = atMost.terms.back();
-    last2 = {remainingVars(), v};
-  } else {
-    atLeast.terms.emplace_back(-1, v);
-    Term<int>& last = atMost.terms.back();
-    last = {1, last.l};
-    atMost.terms.emplace_back(remainingVars(), v);
-  }
-  ++coveredVars;
-}
-
-ID run::LazyVar::addAtLeastConstraint(bool reified) {
-  assert(atLeast.terms.back().l == currentVar);
-  solver.dropExternal(atLeastID, !reified, false);
-  atLeastID = solver.addConstraint(atLeast, Origin::COREGUIDED).second;
-  return atLeastID;
-}
-
-ID run::LazyVar::addAtMostConstraint(bool reified) {
-  assert(atMost.terms.back().l == currentVar);
-  solver.dropExternal(atMostID, !reified, false);
-  atMostID = solver.addConstraint(atMost, Origin::COREGUIDED).second;
-  return atMostID;
-}
-
-ID run::LazyVar::addSymBreakingConstraint(Var prevvar) const {
-  assert(prevvar < currentVar);
-  // y-- + ~y >= 1 (equivalent to y-- >= y)
-  return solver.addConstraint(ConstrSimple32({{1, prevvar}, {1, -currentVar}}, 1), Origin::COREGUIDED).second;
-}
-
-ID run::LazyVar::addFinalAtMost(bool reified) {
-  solver.dropExternal(atMostID, !reified, false);
-  Term<int>& last = atMost.terms.back();
-  assert(atMost.terms.back().c == remainingVars() + 1);
-  last = {1, last.l};
-  atMostID = solver.addConstraint(atMost, Origin::COREGUIDED).second;
-  return atMostID;
-}
-
-std::ostream& run::operator<<(std::ostream& o, const std::shared_ptr<LazyVar> lv) {
-  o << lv->atLeast << "\n" << lv->atMost;
-  return o;
-}
-
 void run::decide() {
   while (true) {
-    SolveState reply = aux::timeCall<SolveState>([&] { return solver.solve(IntSet()).state; }, stats.SOLVETIME);
-    assert(reply != SolveState::INCONSISTENT);
+    SolveState reply = aux::timeCall<SolveState>([&] { return solver.solve().state; }, stats.SOLVETIME);
     if (reply == SolveState::SAT)
       quit::exit_SAT(solver);
     else if (reply == SolveState::UNSAT)

@@ -45,13 +45,13 @@ struct Stats {
   bigint EXTERNDEGREESUM = 0, LEARNEDDEGREESUM = 0;
   long long NCLAUSESEXTERN = 0, NCARDINALITIESEXTERN = 0, NGENERALSEXTERN = 0;
   long long NCLAUSESLEARNED = 0, NCARDINALITIESLEARNED = 0, NGENERALSLEARNED = 0;
-  long long NGCD = 0, NCARDDETECT = 0, NCORECARDINALITIES = 0, NCORES = 0, NSOLS = 0;
+  long long NGCD = 0, NCARDDETECT = 0, NSOLS = 0;
   long long NWEAKENEDNONIMPLYING = 0, NWEAKENEDNONIMPLIED = 0;
   long long NRESTARTS = 0, NCLEANUP = 0;
   double STARTTIME = 0;
-  long long NORIGVARS = 0, NAUXVARS = 0;
-  long long NCONSFORMULA = 0, NCONSLEARNED = 0, NCONSBOUND = 0, NCONSCOREGUIDED = 0;
-  long long NENCFORMULA = 0, NENCLEARNED = 0, NENCBOUND = 0, NENCCOREGUIDED;
+  long long NORIGVARS = 0;
+  long long NCONSFORMULA = 0, NCONSLEARNED = 0, NCONSBOUND = 0;
+  long long NENCFORMULA = 0, NENCLEARNED = 0, NENCBOUND = 0;
 
   long long NLPADDEDROWS = 0, NLPDELETEDROWS = 0;
   long long NLPPIVOTSINTERNAL = 0, NLPPIVOTSROOT = 0, NLPNOPIVOT = 0, NLPRESETBASIS = 0;
@@ -61,15 +61,12 @@ struct Stats {
   long long NLPGOMORYCUTS = 0, NLPLEARNEDCUTS = 0, NLPLEARNEDFARKAS = 0, NLPDELETEDCUTS = 0;
   long long NLPENCGOMORY = 0, NLPENCFARKAS = 0, NLPENCLEARNEDFARKAS = 0;
 
-  long long UNITCORES = 0, SINGLECORES = 0, REMOVEDBLOCKS = 0, FIRSTCOREBEST = 0, DECCOREBEST = 0, NOCOREBEST = 0,
-            COREDEGSUM = 0, CORESLACKSUM = 0;
-
-  double SOLVETIME = 0, SOLVETIMECG = 0, CATIME = 0, PROPTIME = 0;
+  double SOLVETIME = 0, CATIME = 0, PROPTIME = 0;
   double RUNSTARTTIME = 0;
 
   inline double getTime() const { return aux::cpuTime() - STARTTIME; }
   inline double getRunTime() const { return aux::cpuTime() - RUNSTARTTIME; }
-  inline double getSolveTime() const { return SOLVETIME + SOLVETIMECG; }
+  inline double getSolveTime() const { return SOLVETIME; }
 
   inline long long getDetTime() const {
     return 1 + NADDEDLITERALS + NWATCHLOOKUPS + NWATCHLOOKUPSBJ + NWATCHCHECKS + NPROPCHECKS + NPROP + NTRAILPOPS +
@@ -81,7 +78,6 @@ struct Stats {
     printf("c deterministic time %lld %.2e\n", getDetTime(), (double)getDetTime());
     printf("c optimization time %g s\n", getRunTime() - getSolveTime());
     printf("c total solve time %g s\n", getSolveTime());
-    printf("c core-guided solve time %g s\n", SOLVETIMECG);
     printf("c propagation time %g s\n", PROPTIME);
     printf("c conflict analysis time %g s\n", CATIME);
     printf("c propagations %lld\n", NPROP);
@@ -122,11 +118,9 @@ struct Stats {
     printf("c formula constraints %lld\n", NCONSFORMULA);
     printf("c learned constraints %lld\n", NCONSLEARNED);
     printf("c bound constraints %lld\n", NCONSBOUND);
-    printf("c core-guided constraints %lld\n", NCONSCOREGUIDED);
     printf("c encountered formula constraints %lld\n", NENCFORMULA);
     printf("c encountered learned constraints %lld\n", NENCLEARNED);
     printf("c encountered bound constraints %lld\n", NENCBOUND);
-    printf("c encountered core-guided constraints %lld\n", NENCCOREGUIDED);
     printf("c LP total time %g s\n", LPTOTALTIME);
     printf("c LP solve time %g s\n", LPSOLVETIME);
     printf("c LP constraints added %lld\n", NLPADDEDROWS);
@@ -151,20 +145,6 @@ struct Stats {
     printf("c LP encountered Gomory constraints %lld\n", NLPENCGOMORY);
     printf("c LP encountered Farkas constraints %lld\n", NLPENCFARKAS);
     printf("c LP encountered learned Farkas constraints %lld\n", NLPENCLEARNEDFARKAS);
-    printf("c CG auxiliary variables introduced %lld\n", NAUXVARS);
-    printf("c CG solutions found %lld\n", NSOLS);
-    printf("c CG cores constructed %lld\n", NCORES);
-    printf("c CG core cardinality constraints returned %lld\n", NCORECARDINALITIES);
-    printf("c CG unit cores %lld\n", UNITCORES);
-    printf("c CG single cores %lld\n", SINGLECORES);
-    printf("c CG blocks removed during cardinality reduction %lld\n", REMOVEDBLOCKS);
-    printf("c CG first core best %lld\n", FIRSTCOREBEST);
-    printf("c CG decision core best %lld\n", DECCOREBEST);
-    printf("c CG core reduction tie %lld\n", NOCOREBEST);
-    printf("c CG core degree average %.2f\n",
-           (NCORES - UNITCORES) == 0 ? 0 : COREDEGSUM / (double)(NCORES - UNITCORES));
-    printf("c CG core slack average %.2f\n",
-           (NCORES - UNITCORES) == 0 ? 0 : CORESLACKSUM / (double)(NCORES - UNITCORES));
   }
 };
 
