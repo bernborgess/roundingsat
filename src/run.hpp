@@ -167,7 +167,7 @@ class Optimization {
       card->sortInDecreasingCoefOrder(
           [&](Var v1, Var v2) { return aux::abs(reformObj->coefs[v1]) > aux::abs(reformObj->coefs[v2]); });
       card->simplifyToClause();
-    } else if (options.cgReduction.is("minauxvars")) {
+    } else if (options.cgReduction.is("minslack")) {
       card->sortInDecreasingCoefOrder(
           [&](Var v1, Var v2) { return aux::abs(reformObj->coefs[v1]) > aux::abs(reformObj->coefs[v2]); });
       card->simplifyToMinLengthCardinality();
@@ -314,7 +314,7 @@ class Optimization {
     }
     assert(cardCoreUpper >= 0);
 
-    if (options.cgEncoding.is("simple") || bestCardCore->vars.size() - bestCardCore->getDegree() <= 1) {
+    if (options.cgEncoding.is("sum") || bestCardCore->vars.size() - bestCardCore->getDegree() <= 1) {
       // add auxiliary variables
       long long oldN = solver.getNbVars();
       long long newN = oldN - static_cast<int>(bestCardCore->getDegree()) + cardCoreUpper;
@@ -418,8 +418,8 @@ class Optimization {
 
       // NOTE: only if assumptions are empty will they be refilled
       if (assumps.isEmpty() &&
-          (options.optMode.is("core-guided") ||
-           (options.optMode.is("core-boosted") && stats.getRunTime() < options.cgBoosted.get()) ||
+          (options.optMode.is("coreguided") ||
+           (options.optMode.is("coreboosted") && stats.getRunTime() < options.cgBoosted.get()) ||
            (options.optMode.is("hybrid") && lower_time < upper_time))) {  // use core-guided step by setting assumptions
         reformObj->removeZeroes();
         if (coeflim > 0 && coefLimFlag == CoefLimStatus::REFINE) {
