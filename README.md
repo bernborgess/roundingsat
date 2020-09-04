@@ -4,28 +4,63 @@ RoundingSat is a pseudo-Boolean SAT solver for optimization and decision problem
 
 ## Compilation
 
-The solver currently consists of a single file which can be compiled on Linux. It uses some c++11 constructs, as well as the non-standard `__int128` integer type. With modern compilers, the following commands should do the trick:
+In the root directory of RoundingSat:
 
-    g++ -o roundingsat roundingsat.cc -O3 -DNDEBUG
+    cd build
+    cmake -DCMAKE_BUILD_TYPE=Release ..
+    make
 
-or
+For a debug build:
 
-    clang++ -o roundingsat roundingsat.cc -O3 -DNDEBUG
+    cd build_debug
+    cmake -DCMAKE_BUILD_TYPE=Debug ..
+    make
 
-Older compilers may require the `-std=c++11` option.
+For more builds, similar build directories can be created.
+
+## Dependencies
+
+- C++17 (i.e., a reasonably recent compiler)
+- Boost library: https://www.boost.org
+- Optionally: SoPlex LP solver (see below)
+
+## SoPlex
+
+RoundingSat supports an integration with the LP solver SoPlex to improve its search routine.
+For this, first download SoPlex at https://soplex.zib.de/download.php?fname=soplex-5.0.1.tgz and place the downloaded file in the root directory of RoundingSat.
+Next, follow the above build process, but configure with the cmake option `-Dsoplex=ON`:
+
+    cd build
+    cmake -DCMAKE_BUILD_TYPE=Release -Dsoplex=ON ..
+    make
+
+The location of the SoPlex package can be configured with the cmake option `-Dsoplex_pkg=<location>`.
 
 ## Usage
 
-For the input formats, see [here](InputFormats.md).
+RoundingSat takes as input a linear Boolean formula / 0-1 integer linear program, and outputs a(n optimal) solution or reports that none exists.
+Either pipe the formula to RoundingSat
 
-Download OPB files:
+    cat test/instances/opb/opt/stein15.opb | build/roundingsat
 
-    curl http://www.cril.univ-artois.fr/PB12/bench12/PB12-DEC-SMALLINT-LIN.tar | tar xv
-    
-Try on an example instance which is solved quickly:
+or pass the file as a parameter
 
-    bzcat ./PB12/normalized-PB12/DEC-SMALLINT-LIN/sroussel/ShortestPathBA/normalized-BeauxArts_K76.opb.bz2 | ./roundingsat
+    build/roundingsat test/instances/opb/opt/stein15.opb
 
-## Citation
+RoundingSat supports three input formats:
+- pseudo-Boolean PBO format (only linear objective and constraints)
+- DIMACS CNF (conjunctive normal form)
+- Weighted CNF
 
-[Elffers and Nordström, 2018] J. Elffers and J. Nordström. Divide and Conquer: Towards Faster Pseudo-Boolean Solving. *IJCAI 2018*, 1291-1299.
+For a description of these input formats, see [here](InputFormats.md).
+
+## Citations
+
+Origin paper with a focus on cutting planes conflict analysis:  
+**[EN18]** J. Elffers, J. Nordström. Divide and Conquer: Towards Faster Pseudo-Boolean Solving. *IJCAI 2018*, 1291-1299.
+
+Integration with SoPlex:  
+**[DGN20]** J. Devriendt, A. Gleixner, J. Nordström. Learn to Relax: Integrating 0-1 Integer Linear Programming with Pseudo-Boolean Conflict-Driven Search. *CPAIOR 2020 / Constraints journal* (accepted).
+
+Watched propagation:  
+**[D20]** J. Devriendt. Watched Propagation for 0-1 Integer Linear Constraints. *CP 2020* (accepted)
