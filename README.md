@@ -1,6 +1,18 @@
 # RoundingSat
 
-RoundingSat is a pseudo-Boolean SAT solver for optimization and decision problems.
+## The pseudo-Boolean solver powered by proof complexity!
+
+RoundingSat solves decision and optimization problems formulated as 0-1 integer linear programs.
+
+## Features
+
+- Native conflict analysis over 0-1 integer linear constraints, constructing full-blown cutting planes proofs.
+- Highly efficient watched propagation routines.
+- Generation of machine-checkable certificates of optimality and unsatisfiability.
+- Seamless use of multiple precision arithmetic.
+- Optional integration with the SoPlex LP solver.
+
+All of these combine to make RoundingSat the world's fastest pseudo-Boolean solver.
 
 ## Compilation
 
