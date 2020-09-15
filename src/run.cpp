@@ -105,7 +105,6 @@ ID run::LazyVar::addSymBreakingConstraint(Var prevvar) const {
 ID run::LazyVar::addFinalAtMost(bool reified) {
   solver.dropExternal(atMostID, !reified, false);
   Term<int>& last = atMost.terms.back();
-  assert(atMost.terms.back().c == remainingVars() + 1);
   last = {1, last.l};
   atMostID = solver.addConstraint(atMost, Origin::COREGUIDED).second;
   return atMostID;
