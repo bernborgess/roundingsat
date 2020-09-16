@@ -420,7 +420,9 @@ class Optimization {
       if (assumps.isEmpty() &&
           (options.optMode.is("coreguided") ||
            (options.optMode.is("coreboosted") && stats.getRunTime() < options.cgBoosted.get()) ||
-           (options.optMode.is("hybrid") && lower_time < upper_time))) {  // use core-guided step by setting assumptions
+           (options.optMode.is("hybrid") &&
+            lower_time <
+                options.cgHybrid.get() * (upper_time + lower_time)))) {  // use core-guided step by setting assumptions
         reformObj->removeZeroes();
         if (coeflim > 0 && coefLimFlag == CoefLimStatus::REFINE) {
           // find a new coeflim

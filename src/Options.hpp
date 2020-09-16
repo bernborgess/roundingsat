@@ -226,6 +226,8 @@ struct Options {
       "cg-encoding", "Encoding of the extension constraints", "lazysum", {"sum", "lazysum", "reified"}};
   ValOption<int> cgBoosted{"cg-boost", "Seconds of core-boosted search before switching to linear search", 10,
                            "0 =< int", [](const int& x) -> bool { return x >= 0; }};
+  ValOption<float> cgHybrid{"cg-hybrid", "ratio of core-guided search to linear search during hybrid optimization", 0.5,
+                            "0 =< float =< 1", [](const double& x) -> bool { return x >= 0 && x <= 1; }};
   BoolOption cgIndCores{"cg-indcores", "Use independent cores for core-guided search", 0};
   BoolOption cgStrat{"cg-strat", "Use stratification for core-guided search", 1};
   BoolOption cgSolutionPhase{"cg-solutionphase", "Fix the phase to the incumbent solution during linear optimization",
@@ -238,15 +240,15 @@ struct Options {
   BoolOption cgCoreUpper{"cg-coreupper", "Exploit upper bound on cardinality cores", 1};
 
   const std::vector<Option*> options = {
-      &help,           &printSol,        &verbosity,     &proofLog,      &optMode,
-      &lubyBase,       &lubyMult,        &varDecay,      &clauseDecay,   &dbCleanInc,
-      &propCounting,   &propClause,      &propCard,      &propIdx,       &propSup,
-      &lpPivotRatio,   &lpPivotBudget,   &lpIntolerance, &addGomoryCuts, &addLearnedCuts,
-      &gomoryCutLimit, &maxCutCos,       &slackdiv,      &weakenFull,    &weakenNonImplying,
-      &bumpOnlyFalse,  &bumpCanceling,   &bumpLits,      &bitsOverflow,  &bitsReduced,
-      &bitsLearned,    &bitsInput,       &cgEncoding,    &cgBoosted,     &cgIndCores,
-      &cgStrat,        &cgSolutionPhase, &cgReduction,   &cgResolveProp, &cgDecisionCore,
-      &cgCoreUpper,
+      &help,           &printSol,      &verbosity,       &proofLog,      &optMode,
+      &lubyBase,       &lubyMult,      &varDecay,        &clauseDecay,   &dbCleanInc,
+      &propCounting,   &propClause,    &propCard,        &propIdx,       &propSup,
+      &lpPivotRatio,   &lpPivotBudget, &lpIntolerance,   &addGomoryCuts, &addLearnedCuts,
+      &gomoryCutLimit, &maxCutCos,     &slackdiv,        &weakenFull,    &weakenNonImplying,
+      &bumpOnlyFalse,  &bumpCanceling, &bumpLits,        &bitsOverflow,  &bitsReduced,
+      &bitsLearned,    &bitsInput,     &cgEncoding,      &cgBoosted,     &cgHybrid,
+      &cgIndCores,     &cgStrat,       &cgSolutionPhase, &cgReduction,   &cgResolveProp,
+      &cgDecisionCore, &cgCoreUpper,
   };
   std::unordered_map<std::string, Option*> name2opt;
 
