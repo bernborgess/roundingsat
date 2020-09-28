@@ -653,11 +653,8 @@ void Solver::reduceDB() {
       isReason = Reason[toVar(C.lit(i))] == cr;
     }
     if (isReason) continue;
-    BigVal eval = -C.degree();
-    for (int j = 0; j < (int)C.size() && eval < 0; ++j)
-      if (isUnit(Level, C.lit(j))) eval += C.coef(j);
-    if (eval >= 0)
-      removeConstraint(C, true);  // remove constraints satisfied at root
+    if (C.isSatisfiedAtRoot(Level))
+      removeConstraint(C, true);
     else if (!C.isLocked()) {
       if (C.size() > 2 && C.lbd() > 2) learnts.push_back(cr);  // Keep all binary clauses and short LBDs
       if (C.size() <= 2 || C.lbd() <= 3) ++promisingLearnts;

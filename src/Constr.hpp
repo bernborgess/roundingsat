@@ -80,6 +80,7 @@ struct Constr {  // internal solver constraint optimized for fast propagation
   virtual void resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver) = 0;
 
   virtual CeSuper toExpanded(ConstrExpPools& cePools) const = 0;
+  virtual bool isSatisfiedAtRoot(const IntVecIt& level) const = 0;
 
   std::ostream& operator<<(std::ostream& o) {
     for (size_t i = 0; i < size(); ++i) {
@@ -126,6 +127,7 @@ struct Clause final : public Constr {
   void resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver);
 
   CeSuper toExpanded(ConstrExpPools& cePools) const;
+  bool isSatisfiedAtRoot(const IntVecIt& level) const;
 };
 
 struct Cardinality final : public Constr {
@@ -169,6 +171,7 @@ struct Cardinality final : public Constr {
   void resolveWith(CeSuper confl, Lit l, IntSet* actSet, Solver& solver);
 
   CeSuper toExpanded(ConstrExpPools& cePools) const;
+  bool isSatisfiedAtRoot(const IntVecIt& level) const;
 };
 
 template <typename CF, typename DG>
@@ -216,6 +219,7 @@ struct Counting final : public Constr {
 
   CePtr<ConstrExp<CF, DG>> expandTo(ConstrExpPools& cePools) const;
   CeSuper toExpanded(ConstrExpPools& cePools) const;
+  bool isSatisfiedAtRoot(const IntVecIt& level) const;
 
   bool hasCorrectSlack(const Solver& solver);
 };
@@ -265,6 +269,7 @@ struct Watched final : public Constr {
 
   CePtr<ConstrExp<CF, DG>> expandTo(ConstrExpPools& cePools) const;
   CeSuper toExpanded(ConstrExpPools& cePools) const;
+  bool isSatisfiedAtRoot(const IntVecIt& level) const;
 
   bool hasCorrectSlack(const Solver& solver);
   bool hasCorrectWatches(const Solver& solver);
@@ -320,6 +325,7 @@ struct CountingSafe final : public Constr {
 
   CePtr<ConstrExp<CF, DG>> expandTo(ConstrExpPools& cePools) const;
   CeSuper toExpanded(ConstrExpPools& cePools) const;
+  bool isSatisfiedAtRoot(const IntVecIt& level) const;
 
   bool hasCorrectSlack(const Solver& solver);
 };
@@ -374,6 +380,7 @@ struct WatchedSafe final : public Constr {
 
   CePtr<ConstrExp<CF, DG>> expandTo(ConstrExpPools& cePools) const;
   CeSuper toExpanded(ConstrExpPools& cePools) const;
+  bool isSatisfiedAtRoot(const IntVecIt& level) const;
 
   bool hasCorrectSlack(const Solver& solver);
   bool hasCorrectWatches(const Solver& solver);
