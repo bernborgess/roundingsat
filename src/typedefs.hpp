@@ -146,25 +146,27 @@ struct Cardinality;
 template <typename CF, typename DG>
 struct Counting;
 using Counting32 = Counting<int, long long>;
-using Counting64 = Counting<long long, int128>;
-using Counting96 = Counting<int128, int128>;
+// using Counting64 = Counting<long long, int128>;
+// using Counting96 = Counting<int128, int128>;
+// using CountingArb = Counting<bigint, bigint>;
 
 template <typename CF, typename DG>
 struct Watched;
 using Watched32 = Watched<int, long long>;
-using Watched64 = Watched<long long, int128>;
-using Watched96 = Watched<int128, int128>;
+// using Watched64 = Watched<long long, int128>;
+// using Watched96 = Watched<int128, int128>;
+// using WatchedArb = Watched<bigint, bigint>;
 
 template <typename CF, typename DG>
 struct CountingSafe;
-using CountingSafe32 = CountingSafe<int, long long>;
+// using CountingSafe32 = CountingSafe<int, long long>;
 using CountingSafe64 = CountingSafe<long long, int128>;
 using CountingSafe96 = CountingSafe<int128, int128>;
 using CountingSafeArb = CountingSafe<bigint, bigint>;
 
 template <typename CF, typename DG>
 struct WatchedSafe;
-using WatchedSafe32 = WatchedSafe<int, long long>;
+// using WatchedSafe32 = WatchedSafe<int, long long>;
 using WatchedSafe64 = WatchedSafe<long long, int128>;
 using WatchedSafe96 = WatchedSafe<int128, int128>;
 using WatchedSafeArb = WatchedSafe<bigint, bigint>;
