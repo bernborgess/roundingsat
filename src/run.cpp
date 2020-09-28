@@ -117,7 +117,7 @@ std::ostream& run::operator<<(std::ostream& o, const std::shared_ptr<LazyVar> lv
 
 void run::decide() {
   while (true) {
-    SolveState reply = aux::timeCall<SolveState>([&] { return solver.solve(IntSet()).state; }, stats.SOLVETIME);
+    SolveState reply = aux::timeCall<SolveState>([&] { return solver.solve().state; }, stats.SOLVETIME);
     assert(reply != SolveState::INCONSISTENT);
     if (reply == SolveState::SAT)
       quit::exit_SAT(solver);

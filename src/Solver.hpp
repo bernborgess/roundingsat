@@ -106,6 +106,8 @@ class Solver {
   std::shared_ptr<LpSolver> lpSolver;
   std::vector<std::unique_ptr<ConstrSimpleSuper>> learnedStack;
 
+  IntSet assumptions;
+
  public:
   Solver();
   void init();  // call after having read options
@@ -126,6 +128,9 @@ class Solver {
   int getNbConstraints() const { return constraints.size(); }
   CeSuper getIthConstraint(int i) { return ca[constraints[i]].toExpanded(cePools); }
 
+  void setAssumptions(const IntSet& assumps);
+  const IntSet& getAssumptions() { return assumptions; }
+
   /**
    * @return SolveAnswer.state:
    * 	UNSAT if root inconsistency detected
@@ -138,9 +143,9 @@ class Solver {
    *        if C is not a tautology, it is falsified by the assumptions
    * @return SolveAnswer.solution:
    *    the satisfying assignment if SAT
-   * @param assumptions: set of assumptions
    */
-  SolveAnswer solve(const IntSet& assumptions);
+  // TODO: use a coroutine / yield instead of a SolveAnswer return value
+  SolveAnswer solve();
 
  private:
   void presolve();

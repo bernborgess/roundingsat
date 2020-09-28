@@ -36,6 +36,7 @@ namespace rs {
 
 struct IntSet {  // TODO: template to long long, int128, ...?
  private:
+  std::vector<int> keys;
   std::vector<int> _index = {-1};
   std::vector<int>::iterator index = _index.begin();
   static constexpr int _unused_() { return -1; }
@@ -51,12 +52,23 @@ struct IntSet {  // TODO: template to long long, int128, ...?
   }
 
  public:
-  std::vector<int> keys;
-
   IntSet() {}
   IntSet(int size, const std::vector<int>& ints) {
     resize(size);
     for (int i : ints) add(i);
+  }
+  IntSet(const IntSet& other) {
+    keys = other.keys;
+    _index = other._index;
+    index = _index.begin() + _index.size() / 2;
+  }
+  IntSet& operator=(const IntSet& other) {
+    if (&other == this) return *this;
+    clear();
+    for (int k : other.getKeys()) {
+      add(k);
+    }
+    return *this;
   }
 
   void resize(int size) { aux::resizeIntMap(_index, index, size, resize_factor, _unused_()); }
@@ -68,6 +80,8 @@ struct IntSet {  // TODO: template to long long, int128, ...?
     for (int k : keys) index[k] = _unused_();
     keys.clear();
   }
+
+  const std::vector<int>& getKeys() const { return keys; }
 
   bool has(int key) const { return _index.size() > (unsigned int)2 * std::abs(key) && index[key] != _unused_(); }
 

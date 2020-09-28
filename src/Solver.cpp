@@ -333,7 +333,7 @@ CeSuper Solver::analyze(CeSuper conflict) {
     undoOne();
   }
   assert(confl->hasNegativeSlack(Level));
-  for (Lit l : actSet.keys)
+  for (Lit l : actSet.getKeys())
     if (l != 0) vBumpActivity(toVar(l));
   actSet.clear();
 
@@ -599,6 +599,14 @@ void Solver::dropExternal(ID id, bool erasable, bool forceDelete) {
 }
 
 // ---------------------------------------------------------------------
+// Assumptions
+
+void Solver::setAssumptions(const IntSet& assumps) {
+  assumptions = assumps;
+  backjumpTo(0);
+}
+
+// ---------------------------------------------------------------------
 // Garbage collection
 
 // We assume in the garbage collection method that reduceDB() is the
@@ -724,21 +732,7 @@ void Solver::presolve() {
   if (lpSolver) aux::timeCall<void>([&] { lpSolver->inProcess(); }, stats.LPTOTALTIME);
 }
 
-/**
- * @return 1:
- * 	UNSAT if root inconsistency detected
- * 	SAT if satisfying assignment found
- * 	INCONSISTENT if no solution extending assumptions exists
- * 	INPROCESSING if solver just finished a cleanup phase
- * @return 2:
- *    implied constraints C if INCONSISTENT
- *        if C is a tautology, negated assumptions at root level exist
- *        if C is not a tautology, it is falsified by the assumptions
- * @param assumptions: set of assumptions
- * @param solution: if SAT, full variable assignment satisfying all constraints, otherwise untouched
- */
-// TODO: use a coroutine / yield instead of a SolveState return value
-SolveAnswer Solver::solve(const IntSet& assumptions) {
+SolveAnswer Solver::solve() {
   backjumpTo(0);  // ensures assumptions are reset
   if (firstRun) presolve();
   std::vector<int> assumptions_lim = {0};
@@ -826,7 +820,7 @@ SolveAnswer Solver::solve(const IntSet& assumptions) {
       }
       while (assumptions_lim.back() < (int)assumptions.size()) {
         assert(decisionLevel() == (int)assumptions_lim.size() - 1);
-        Lit l_assump = assumptions.keys[assumptions_lim.back()];
+        Lit l_assump = assumptions.getKeys()[assumptions_lim.back()];
         assert(!isFalse(Level, l_assump));  // otherwise above check should have caught this
         if (isTrue(Level, l_assump)) {      // assumption already propagated
           ++assumptions_lim.back();

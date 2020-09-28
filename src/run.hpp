@@ -461,8 +461,12 @@ class Optimization {
       }
       assert(upper_bound > lower_bound);
       // std::cout << "c nAssumptions for solve: " << assumps.size() << " @ " << stats.getTime() << " s\n";
-      SolveAnswer out = aux::timeCall<SolveAnswer>([&] { return solver.solve(assumps); },
-                                                   assumps.isEmpty() ? stats.SOLVETIME : stats.SOLVETIMECG);
+      SolveAnswer out = aux::timeCall<SolveAnswer>(
+          [&] {
+            solver.setAssumptions(assumps);
+            return solver.solve();
+          },
+          assumps.isEmpty() ? stats.SOLVETIME : stats.SOLVETIMECG);
       reply = out.state;
       if (reply == SolveState::RESTARTED) continue;
       if (reply == SolveState::UNSAT) {
