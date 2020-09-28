@@ -612,7 +612,6 @@ void Solver::setAssumptions(const IntSet& assumps) {
 // We assume in the garbage collection method that reduceDB() is the
 // only place where constraints are deleted.
 void Solver::garbage_collect() {
-  assert(decisionLevel() == 0);  // so we don't need to update the pointer of Reason<CRef>
   if (options.verbosity.get() > 0) puts("c GARBAGE COLLECT");
 
   ca.wasted = 0;
@@ -628,8 +627,12 @@ void Solver::garbage_collect() {
     crefmap[offset] = cr;
   }
 #define update_ptr(cr) cr = crefmap[cr.ofs];
-  for (Lit l = -n; l <= n; l++)
+  for (Lit l = -n; l <= n; ++l) {
     for (size_t i = 0; i < adj[l].size(); i++) update_ptr(adj[l][i].cref);
+  }
+  for (Var v = 1; v <= n; ++v) {
+    if (Reason[v] != CRef_Undef) update_ptr(Reason[v]);
+  }
   for (auto& ext : external) update_ptr(ext.second);
 #undef update_ptr
 }
@@ -637,8 +640,6 @@ void Solver::garbage_collect() {
 // We assume in the garbage collection method that reduceDB() is the
 // only place where constraints are removed from memory.
 void Solver::reduceDB() {
-  assert(decisionLevel() == 0);
-
   std::vector<CRef> learnts;
   learnts.reserve(constraints.size() / 2);
 
@@ -647,6 +648,11 @@ void Solver::reduceDB() {
   for (CRef& cr : constraints) {
     Constr& C = ca[cr];
     if (C.isMarkedForDelete() || external.count(C.id)) continue;
+    bool isReason = false;
+    for (unsigned int i = 0; i < C.size() && !isReason; ++i) {
+      isReason = Reason[toVar(C.lit(i))] == cr;
+    }
+    if (isReason) continue;
     BigVal eval = -C.degree();
     for (int j = 0; j < (int)C.size() && eval < 0; ++j)
       if (isUnit(Level, C.lit(j))) eval += C.coef(j);
@@ -733,7 +739,6 @@ void Solver::presolve() {
 }
 
 SolveAnswer Solver::solve() {
-  backjumpTo(0);  // ensures assumptions are reset
   if (firstRun) presolve();
   std::vector<int> assumptions_lim = {0};
   assumptions_lim.reserve((int)assumptions.size() + 1);
@@ -785,17 +790,17 @@ SolveAnswer Solver::solve() {
     } else {  // no conflict
       if (nconfl_to_restart <= 0) {
         backjumpTo(0);
-        if (stats.NCONFL >= (stats.NCLEANUP + 1) * nconfl_to_reduce) {
-          ++stats.NCLEANUP;
-          if (options.verbosity.get() > 0) puts("c INPROCESSING");
-          reduceDB();
-          while (stats.NCONFL >= stats.NCLEANUP * nconfl_to_reduce) nconfl_to_reduce += options.dbCleanInc.get();
-          if (lpSolver) aux::timeCall<void>([&] { lpSolver->inProcess(); }, stats.LPTOTALTIME);
-          return {SolveState::INPROCESSED, {}, lastSol};
-        }
         double rest_base = luby(options.lubyBase.get(), ++stats.NRESTARTS);
         nconfl_to_restart = (long long)rest_base * options.lubyMult.get();
         //        return {SolveState::RESTARTED, {}, lastSol}; // avoid this overhead for now
+      }
+      if (stats.NCONFL >= (stats.NCLEANUP + 1) * nconfl_to_reduce) {
+        if (options.verbosity.get() > 0) puts("c INPROCESSING");
+        ++stats.NCLEANUP;
+        reduceDB();
+        while (stats.NCONFL >= stats.NCLEANUP * nconfl_to_reduce) nconfl_to_reduce += options.dbCleanInc.get();
+        if (lpSolver) aux::timeCall<void>([&] { lpSolver->inProcess(); }, stats.LPTOTALTIME);
+        return {SolveState::INPROCESSED, {}, lastSol};
       }
       Lit next = 0;
       if ((int)assumptions_lim.size() > decisionLevel() + 1) assumptions_lim.resize(decisionLevel() + 1);

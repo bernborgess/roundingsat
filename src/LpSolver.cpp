@@ -446,7 +446,7 @@ std::pair<LpStatus, CeSuper> LpSolver::checkFeasibility(bool inProcessing) {
 }
 
 void LpSolver::inProcess() {
-  assert(solver.decisionLevel() == 0);
+  solver.backjumpTo(0);
   std::pair<LpStatus, CeSuper> lpResult = checkFeasibility(true);
   LpStatus lpstat = lpResult.first;
   [[maybe_unused]] CeSuper confl = lpResult.second;
