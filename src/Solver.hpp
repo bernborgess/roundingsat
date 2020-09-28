@@ -45,7 +45,7 @@ enum class SolveState { SAT, UNSAT, INCONSISTENT, INPROCESSED, RESTARTED };
 
 struct SolveAnswer {
   SolveState state;
-  CeSuper core;
+  std::vector<CeSuper> cores;
   std::vector<Lit>& solution;
 };
 
@@ -106,6 +106,8 @@ class Solver {
   std::shared_ptr<LpSolver> lpSolver;
   std::vector<std::unique_ptr<ConstrSimpleSuper>> learnedStack;
 
+  IntSet assumptions;
+
  public:
   Solver();
   void init();  // call after having read options
@@ -126,21 +128,24 @@ class Solver {
   int getNbConstraints() const { return constraints.size(); }
   CeSuper getIthConstraint(int i) { return ca[constraints[i]].toExpanded(cePools); }
 
+  void setAssumptions(const IntSet& assumps);
+  const IntSet& getAssumptions() { return assumptions; }
+
   /**
    * @return SolveAnswer.state:
    * 	UNSAT if root inconsistency detected
    * 	SAT if satisfying assignment found
    * 	INCONSISTENT if no solution extending assumptions exists
    * 	INPROCESSING if solver just finished a cleanup phase
-   * @return SolveAnswer.core:
-   *    an implied constraint C if INCONSISTENT
+   * @return SolveAnswer.cores:
+   *    implied constraints C if INCONSISTENT
    *        if C is a tautology, negated assumptions at root level exist
    *        if C is not a tautology, it is falsified by the assumptions
    * @return SolveAnswer.solution:
    *    the satisfying assignment if SAT
-   * @param assumptions: set of assumptions
    */
-  SolveAnswer solve(const IntSet& assumptions);
+  // TODO: use a coroutine / yield instead of a SolveAnswer return value
+  SolveAnswer solve();
 
  private:
   void presolve();
@@ -174,7 +179,7 @@ class Solver {
 
   void recomputeLBD(Constr& C);
   CeSuper analyze(CeSuper confl);
-  CeSuper extractCore(CeSuper confl, const IntSet& assumptions, Lit l_assump = 0);
+  std::vector<CeSuper> extractCore(CeSuper confl, const IntSet& assumptions, Lit l_assump = 0);
 
   // ---------------------------------------------------------------------
   // Constraint management

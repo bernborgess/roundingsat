@@ -42,7 +42,7 @@ ConstrExp<SMALL, LARGE>::ConstrExp(ConstrExpPool<ConstrExp<SMALL, LARGE>>& cep) 
 }
 
 template <typename SMALL, typename LARGE>
-CeSuper ConstrExp<SMALL, LARGE>::reduce(ConstrExpPools& cePools) const {
+CeSuper ConstrExp<SMALL, LARGE>::clone(ConstrExpPools& cePools) const {
   LARGE maxVal = getCutoffVal();
   if (maxVal <= limit32) {
     Ce32 result = cePools.take32();
@@ -381,6 +381,15 @@ void ConstrExp<SMALL, LARGE>::weaken(Var v) {  // fully weaken v
 }
 
 template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::weakenLast() {
+  if (vars.size() > 0) {
+    weaken(vars.back());
+    used[vars.back()] = false;
+    vars.pop_back();
+  }
+}
+
+template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::logIfUnit(Lit l, const SMALL& c, const IntVecIt& level, const std::vector<int>& pos) {
   if (isUnit(level, l))
     proofBuffer << (l < 0 ? "x" : "~x") << toVar(l) << " " << proofMult(c) << "+ ";
@@ -426,16 +435,19 @@ bool ConstrExp<SMALL, LARGE>::hasNoUnits(const IntVecIt& level) const {
   return true;
 }
 
-// @post: mutates order of vars
+// @post: preserves order of vars
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::removeZeroes() {
+  int j = 0;
   for (int i = 0; i < (int)vars.size(); ++i) {
     Var v = vars[i];
     if (coefs[v] == 0) {
-      remove(v);
-      aux::swapErase(vars, i--);
+      used[v] = false;
+    } else {
+      vars[j++] = vars[i];
     }
   }
+  vars.resize(j);
 }
 
 template <typename SMALL, typename LARGE>
@@ -865,13 +877,97 @@ bool ConstrExp<SMALL, LARGE>::isCardinality() const {
 }
 
 template <typename SMALL, typename LARGE>
+int ConstrExp<SMALL, LARGE>::getCardinalityDegree() const {
+  assert(isSortedInDecreasingCoefOrder());
+  assert(hasNoZeroes());
+  LARGE coefsum = -degree;
+  int i = 0;
+  for (; i < (int)vars.size() && coefsum < 0; ++i) {
+    coefsum += aux::abs(coefs[vars[i]]);
+  }
+  return i;
+}
+
+// @pre: sorted in *IN*creasing coef order, so that we can pop zero coefficient literals
+template <typename SMALL, typename LARGE>
+int ConstrExp<SMALL, LARGE>::getCardinalityDegreeWithZeroes() {
+  LARGE coefsum = -degree;
+  int carddegree = 0;
+  int i = vars.size() - 1;
+  for (; i >= 0 && coefsum < 0; --i) {
+    SMALL c = aux::abs(coefs[vars[i]]);
+    if (c != 0) {
+      coefsum += c;
+      ++carddegree;
+    }
+  }
+  ++i;
+  [[maybe_unused]] int newsize = i + carddegree;
+  int j = i;
+  for (; i < (int)vars.size(); ++i) {
+    Var v = vars[i];
+    if (coefs[v] != 0) {
+      vars[j] = v;
+      ++j;
+    } else {
+      used[v] = false;
+    }
+  }
+  vars.resize(j);
+  assert(newsize == (int)vars.size());
+  return carddegree;
+}
+
+template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::simplifyToMinLengthCardinality() {
+  assert(isSaturated());
+  assert(isSortedInDecreasingCoefOrder());
+  assert(hasNoZeroes());
+  LARGE weakenedDegree = degree;
+  int i = vars.size() - 1;
+  for (; i >= 0 && aux::abs(coefs[vars[i]]) < weakenedDegree; --i) {  // simulate full weakening
+    weakenedDegree -= aux::abs(coefs[vars[i]]);
+  }
+  // i is the number of auxiliary vars introduced by the final cardinality constraint
+  // weaken until the constraint length is the cardinality degree + i
+  int finalvars = i + getCardinalityDegree();
+  while (finalvars < (int)vars.size()) {
+    while ((int)vars.size() > finalvars) {
+      weakenLast();
+    }
+    finalvars = i + getCardinalityDegree();
+  }
+  assert((int)vars.size() == finalvars);
+  saturate();
+  simplifyToCardinality(false);
+  assert(isCardinality());
+}
+
+// @post: preserves order of vars
+template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::simplifyToClause() {
+  assert(isSaturated());
+  assert(isSortedInDecreasingCoefOrder());
+  assert(hasNoZeroes());
+  while (vars.size() > 0 && aux::abs(coefs[vars.back()]) < degree) {
+    weakenLast();
+  }
+  if (vars.size() > 0) divideRoundUp(aux::abs(coefs[vars[0]]));
+  assert(vars.size() == 0 || degree <= 1);
+  assert(isClause());
+}
+
+template <typename SMALL, typename LARGE>
 bool ConstrExp<SMALL, LARGE>::isClause() const {
   return degree == 1;
 }
 
 template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::sortInDecreasingCoefOrder() {
-  std::sort(vars.begin(), vars.end(), [&](Var v1, Var v2) { return aux::abs(coefs[v1]) > aux::abs(coefs[v2]); });
+void ConstrExp<SMALL, LARGE>::sortInDecreasingCoefOrder(const std::function<bool(Var, Var)>& tiebreaker) {
+  std::sort(vars.begin(), vars.end(), [&](Var v1, Var v2) {
+    return aux::abs(coefs[v1]) > aux::abs(coefs[v2]) ||
+           (aux::abs(coefs[v1]) == aux::abs(coefs[v2]) && tiebreaker(v1, v2));
+  });
 }
 
 template <typename SMALL, typename LARGE>
@@ -879,6 +975,13 @@ bool ConstrExp<SMALL, LARGE>::isSortedInDecreasingCoefOrder() const {
   for (int i = 1; i < (int)vars.size(); ++i)
     if (aux::abs(coefs[vars[i - 1]]) < aux::abs(coefs[vars[i]])) return false;
   return true;
+}
+
+template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::sort(const std::function<bool(Var, Var)>& comp) {
+  std::sort(vars.begin(), vars.end(), [&](Var v1, Var v2) {
+    return comp(v1, v2) || (!comp(v2, v1) && aux::abs(coefs[v1]) > aux::abs(coefs[v2]));
+  });
 }
 
 template <typename SMALL, typename LARGE>

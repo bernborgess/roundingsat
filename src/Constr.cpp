@@ -141,6 +141,13 @@ CeSuper Clause::toExpanded(ConstrExpPools& cePools) const {
   return result;
 }
 
+bool Clause::isSatisfiedAtRoot(const IntVecIt& level) const {
+  for (int i = 0; i < (int)size(); ++i) {
+    if (isUnit(level, data[i])) return true;
+  }
+  return false;
+}
+
 void Cardinality::initializeWatches(CRef cr, Solver& solver) {
   auto& Level = solver.Level;
   [[maybe_unused]] auto& Pos = solver.Pos;
@@ -249,6 +256,13 @@ CeSuper Cardinality::toExpanded(ConstrExpPools& cePools) const {
   return result;
 }
 
+bool Cardinality::isSatisfiedAtRoot(const IntVecIt& level) const {
+  int eval = -degr;
+  for (int i = 0; i < (int)size() && eval < 0; ++i)
+    if (isUnit(level, data[i])) ++eval;
+  return eval >= 0;
+}
+
 template <typename CF, typename DG>
 void Counting<CF, DG>::initializeWatches(CRef cr, Solver& solver) {
   auto& Level = solver.Level;
@@ -341,6 +355,14 @@ CePtr<ConstrExp<CF, DG>> Counting<CF, DG>::expandTo(ConstrExpPools& cePools) con
 template <typename CF, typename DG>
 CeSuper Counting<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
   return expandTo(cePools);
+}
+
+template <typename CF, typename DG>
+bool Counting<CF, DG>::isSatisfiedAtRoot(const IntVecIt& level) const {
+  DG eval = -degr;
+  for (int i = 0; i < (int)size() && eval < 0; ++i)
+    if (isUnit(level, data[i].l)) eval += data[i].c;
+  return eval >= 0;
 }
 
 template <typename CF, typename DG>
@@ -486,6 +508,14 @@ CeSuper Watched<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
 }
 
 template <typename CF, typename DG>
+bool Watched<CF, DG>::isSatisfiedAtRoot(const IntVecIt& level) const {
+  DG eval = -degr;
+  for (int i = 0; i < (int)size() && eval < 0; ++i)
+    if (isUnit(level, data[i].l)) eval += aux::abs(data[i].c);
+  return eval >= 0;
+}
+
+template <typename CF, typename DG>
 void CountingSafe<CF, DG>::initializeWatches(CRef cr, Solver& solver) {
   auto& Level = solver.Level;
   auto& Pos = solver.Pos;
@@ -581,6 +611,14 @@ CePtr<ConstrExp<CF, DG>> CountingSafe<CF, DG>::expandTo(ConstrExpPools& cePools)
 template <typename CF, typename DG>
 CeSuper CountingSafe<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
   return expandTo(cePools);
+}
+
+template <typename CF, typename DG>
+bool CountingSafe<CF, DG>::isSatisfiedAtRoot(const IntVecIt& level) const {
+  DG eval = -*degr;
+  for (int i = 0; i < (int)size() && eval < 0; ++i)
+    if (isUnit(level, terms[i].l)) eval += terms[i].c;
+  return eval >= 0;
 }
 
 template <typename CF, typename DG>
@@ -725,6 +763,14 @@ CePtr<ConstrExp<CF, DG>> WatchedSafe<CF, DG>::expandTo(ConstrExpPools& cePools) 
 template <typename CF, typename DG>
 CeSuper WatchedSafe<CF, DG>::toExpanded(ConstrExpPools& cePools) const {
   return expandTo(cePools);
+}
+
+template <typename CF, typename DG>
+bool WatchedSafe<CF, DG>::isSatisfiedAtRoot(const IntVecIt& level) const {
+  DG eval = -*degr;
+  for (int i = 0; i < (int)size() && eval < 0; ++i)
+    if (isUnit(level, terms[i].l)) eval += aux::abs(terms[i].c);
+  return eval >= 0;
 }
 
 // TODO: keep below test methods?

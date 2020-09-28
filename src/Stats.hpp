@@ -61,6 +61,9 @@ struct Stats {
   long long NLPGOMORYCUTS = 0, NLPLEARNEDCUTS = 0, NLPLEARNEDFARKAS = 0, NLPDELETEDCUTS = 0;
   long long NLPENCGOMORY = 0, NLPENCFARKAS = 0, NLPENCLEARNEDFARKAS = 0;
 
+  long long UNITCORES = 0, SINGLECORES = 0, REMOVEDBLOCKS = 0, FIRSTCOREBEST = 0, DECCOREBEST = 0, NOCOREBEST = 0,
+            COREDEGSUM = 0, CORESLACKSUM = 0;
+
   double SOLVETIME = 0, SOLVETIMECG = 0, CATIME = 0, PROPTIME = 0;
   double RUNSTARTTIME = 0;
 
@@ -106,10 +109,6 @@ struct Stats {
     printf("c weakened non-implied lits %lld\n", NWEAKENEDNONIMPLIED);
     printf("c weakened non-implying lits %lld\n", NWEAKENEDNONIMPLYING);
     printf("c original variables %lld\n", NORIGVARS);
-    printf("c auxiliary variables introduced %lld\n", NAUXVARS);
-    printf("c solutions found %lld\n", NSOLS);
-    printf("c cores constructed %lld\n", NCORES);
-    printf("c core cardinality constraints returned %lld\n", NCORECARDINALITIES);
     printf("c clausal propagations %lld\n", NPROPCLAUSE);
     printf("c cardinality propagations %lld\n", NPROPCARD);
     printf("c watched propagations %lld\n", NPROPWATCH);
@@ -120,6 +119,14 @@ struct Stats {
     printf("c propagation checks %lld\n", NPROPCHECKS);
     printf("c constraint additions %lld\n", NADDEDLITERALS);
     printf("c trail pops %lld\n", NTRAILPOPS);
+    printf("c formula constraints %lld\n", NCONSFORMULA);
+    printf("c learned constraints %lld\n", NCONSLEARNED);
+    printf("c bound constraints %lld\n", NCONSBOUND);
+    printf("c core-guided constraints %lld\n", NCONSCOREGUIDED);
+    printf("c encountered formula constraints %lld\n", NENCFORMULA);
+    printf("c encountered learned constraints %lld\n", NENCLEARNED);
+    printf("c encountered bound constraints %lld\n", NENCBOUND);
+    printf("c encountered core-guided constraints %lld\n", NENCCOREGUIDED);
     printf("c LP total time %g s\n", LPTOTALTIME);
     printf("c LP solve time %g s\n", LPSOLVETIME);
     printf("c LP constraints added %lld\n", NLPADDEDROWS);
@@ -141,17 +148,23 @@ struct Stats {
     printf("c LP Gomory cuts %lld\n", NLPGOMORYCUTS);
     printf("c LP learned cuts %lld\n", NLPLEARNEDCUTS);
     printf("c LP deleted cuts %lld\n", NLPDELETEDCUTS);
-    printf("c formula constraints %lld\n", NCONSFORMULA);
-    printf("c learned constraints %lld\n", NCONSLEARNED);
-    printf("c bound constraints %lld\n", NCONSBOUND);
-    printf("c core-guided constraints %lld\n", NCONSCOREGUIDED);
-    printf("c encountered formula constraints %lld\n", NENCFORMULA);
-    printf("c encountered learned constraints %lld\n", NENCLEARNED);
-    printf("c encountered bound constraints %lld\n", NENCBOUND);
-    printf("c encountered core-guided constraints %lld\n", NENCCOREGUIDED);
     printf("c LP encountered Gomory constraints %lld\n", NLPENCGOMORY);
     printf("c LP encountered Farkas constraints %lld\n", NLPENCFARKAS);
     printf("c LP encountered learned Farkas constraints %lld\n", NLPENCLEARNEDFARKAS);
+    printf("c CG auxiliary variables introduced %lld\n", NAUXVARS);
+    printf("c CG solutions found %lld\n", NSOLS);
+    printf("c CG cores constructed %lld\n", NCORES);
+    printf("c CG core cardinality constraints returned %lld\n", NCORECARDINALITIES);
+    printf("c CG unit cores %lld\n", UNITCORES);
+    printf("c CG single cores %lld\n", SINGLECORES);
+    printf("c CG blocks removed during cardinality reduction %lld\n", REMOVEDBLOCKS);
+    printf("c CG first core best %lld\n", FIRSTCOREBEST);
+    printf("c CG decision core best %lld\n", DECCOREBEST);
+    printf("c CG core reduction tie %lld\n", NOCOREBEST);
+    printf("c CG core degree average %.2f\n",
+           (NCORES - UNITCORES) == 0 ? 0 : COREDEGSUM / (double)(NCORES - UNITCORES));
+    printf("c CG core slack average %.2f\n",
+           (NCORES - UNITCORES) == 0 ? 0 : CORESLACKSUM / (double)(NCORES - UNITCORES));
   }
 };
 

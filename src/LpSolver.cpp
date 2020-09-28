@@ -446,7 +446,7 @@ std::pair<LpStatus, CeSuper> LpSolver::checkFeasibility(bool inProcessing) {
 }
 
 void LpSolver::inProcess() {
-  assert(solver.decisionLevel() == 0);
+  solver.backjumpTo(0);
   std::pair<LpStatus, CeSuper> lpResult = checkFeasibility(true);
   LpStatus lpstat = lpResult.first;
   [[maybe_unused]] CeSuper confl = lpResult.second;
@@ -504,7 +504,6 @@ void LpSolver::addConstraint(CeSuper c, bool removable, bool upperbound, bool lo
 
 void LpSolver::addConstraint(CRef cr, bool removable, bool upperbound, bool lowerbound) {
   assert(cr != CRef_Undef);
-  assert(cr != CRef_Unsat);
   addConstraint(solver.ca[cr].toExpanded(solver.cePools), removable, upperbound, lowerbound);
 }
 
