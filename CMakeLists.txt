@@ -2,7 +2,11 @@ cmake_minimum_required(VERSION 3.5)
 project(RoundingSat2)
 
 set(CMAKE_CXX_STANDARD 17)
-find_package(Boost REQUIRED)
+
+# Feel free to decrease the required boost version if you can verify that it works with
+# a smaller version. It is known not to compile with version 1.53.0 and lower.
+find_package(Boost 1.67 REQUIRED)
+include_directories(${Boost_INCLUDE_DIRS})
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake/Modules/")
 
