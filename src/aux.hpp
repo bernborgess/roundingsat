@@ -44,6 +44,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <cstdlib>
 #include "typedefs.hpp"
 
 namespace rs {
