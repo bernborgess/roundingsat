@@ -473,7 +473,6 @@ class Optimization {
         printObjBounds();
         quit::exit_UNSAT(solver, upper_bound);
       }
-      assert(solver.decisionLevel() == 0);
       if (assumps.isEmpty()) {
         upper_time += stats.getDetTime() - current_time;
       } else {
