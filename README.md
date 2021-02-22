@@ -1,6 +1,18 @@
 # RoundingSat
 
-RoundingSat is a pseudo-Boolean SAT solver for optimization and decision problems.
+## The pseudo-Boolean solver powered by proof complexity!
+
+RoundingSat solves decision and optimization problems formulated as 0-1 integer linear programs.
+
+## Features
+
+- Native conflict analysis over 0-1 integer linear constraints, constructing full-blown cutting planes proofs.
+- Highly efficient watched propagation routines.
+- Generation of machine-checkable certificates of optimality and unsatisfiability.
+- Seamless use of multiple precision arithmetic.
+- Optional integration with the SoPlex LP solver.
+
+All of these combine to make RoundingSat the world's fastest pseudo-Boolean solver.
 
 ## Compilation
 
@@ -54,19 +66,13 @@ RoundingSat supports three input formats:
 
 For a description of these input formats, see [here](InputFormats.md).
 
-## Citation
+## Citations
 
-[Elffers and Nordström, 2018] J. Elffers and J. Nordström. Divide and Conquer: Towards Faster Pseudo-Boolean Solving. *IJCAI 2018*, 1291-1299.
+Origin paper with a focus on cutting planes conflict analysis:
+**[EN18]** J. Elffers, J. Nordström. Divide and Conquer: Towards Faster Pseudo-Boolean Solving. *IJCAI 2018*, 1291-1299.
 
-## Debug tests with VeriPB
+Integration with SoPlex:
+**[DGN20]** J. Devriendt, A. Gleixner, J. Nordström. Learn to Relax: Integrating 0-1 Integer Linear Programming with Pseudo-Boolean Conflict-Driven Search. *CPAIOR 2020 / Constraints journal* (accepted).
 
-After compiling a debug version, the following executes debug test runs checking runtime invariants, the solver result, and the generated proofs with VeriPB (https://github.com/StephanGocht/VeriPB).
-
-    cd build_debug
-    make testruns
-
-Equivalently, execute
-
-    tests/run_tests.sh <timeout> <binary>
-
-to test the given RoundingSat binary with runs using a given timeout.
+Watched propagation:
+**[D20]** J. Devriendt. Watched Propagation for 0-1 Integer Linear Constraints. *CP 2020* (accepted)
