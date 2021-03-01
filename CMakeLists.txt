@@ -107,6 +107,7 @@ set(all_files ${source_files} ${header_files})
 
 add_executable(roundingsat ${source_files})
 target_include_directories(roundingsat PRIVATE ${PROJECT_SOURCE_DIR}/src/ ${SOPLEX_INCLUDE_DIRS})
+install(TARGETS roundingsat RUNTIME DESTINATION bin)
 
 IF(soplex)
     target_link_libraries(roundingsat libsoplex)
