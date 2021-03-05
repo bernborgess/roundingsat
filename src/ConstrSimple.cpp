@@ -1,7 +1,8 @@
 /***********************************************************************
 Copyright (c) 2014-2020, Jan Elffers
-Copyright (c) 2019-2020, Jo Devriendt
-Copyright (c) 2020, Stephan Gocht
+Copyright (c) 2019-2021, Jo Devriendt
+Copyright (c) 2020-2021, Stephan Gocht
+Copyright (c) 2014-2021, Jakob Nordström
 
 Parts of the code were copied or adapted from MiniSat.
 
