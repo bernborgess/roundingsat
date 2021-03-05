@@ -1,3 +1,4 @@
+/***********************************************************************
 Copyright (c) 2014-2020, Jan Elffers
 Copyright (c) 2019-2020, Jo Devriendt
 Copyright (c) 2020, Stephan Gocht
@@ -25,3 +26,16 @@ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
 LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+***********************************************************************/
+
+#pragma once
+
+#include <iostream>
+#include <unordered_map>
+#include "gpl_3_0.hpp"
+#include "lgpl_3_0.hpp"
+
+namespace licenses {
+void printLicense(std::string licenseName);
+void printUsed();
+}  // namespace licenses
