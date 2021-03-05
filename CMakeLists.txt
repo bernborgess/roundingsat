@@ -82,6 +82,13 @@ set(source_files
     src/quit.cpp
     src/roundingsat.cpp
     src/run.cpp
+    src/used_licenses/gpl_3_0.cpp
+    src/used_licenses/zib_academic.cpp
+    src/used_licenses/roundingsat.cpp
+    src/used_licenses/MIT.cpp
+    src/used_licenses/licenses.cpp
+    src/used_licenses/boost.cpp
+    src/used_licenses/lgpl_3_0.cpp
 )
 
 set(header_files
@@ -101,6 +108,13 @@ set(header_files
     src/parsing.hpp
     src/quit.hpp
     src/run.hpp
+    src/used_licenses/roundingsat.hpp
+    src/used_licenses/lgpl_3_0.hpp
+    src/used_licenses/boost.hpp
+    src/used_licenses/MIT.hpp
+    src/used_licenses/gpl_3_0.hpp
+    src/used_licenses/zib_academic.hpp
+    src/used_licenses/licenses.hpp
 )
 
 set(all_files ${source_files} ${header_files})

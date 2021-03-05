@@ -32,6 +32,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "aux.hpp"
 #include "quit.hpp"
+#include "used_licenses/licenses.hpp"
 
 namespace rs {
 
@@ -154,6 +155,9 @@ class EnumOption : public Option {
 
 struct Options {
   VoidOption help{"help", "Print this help message"};
+  VoidOption copyright{"copyright", "Print copyright information"};
+  ValOption<std::string> license{"license", "Print the license text of the given license.", "", "/path/to/file",
+                                 [](const std::string&) -> bool { return true; }};
   BoolOption printSol{"print-sol", "Print the solution if found", 0};
   ValOption<int> verbosity{"verbosity", "Verbosity of the output", 1, "0 =< int",
                            [](const int& x) -> bool { return x >= 0; }};
@@ -241,15 +245,15 @@ struct Options {
   BoolOption keepAll{"keepall", "Keep all learned constraints in the database indefinitely", 0};
 
   const std::vector<Option*> options = {
-      &help,           &printSol,      &verbosity,       &proofLog,      &optMode,
-      &lubyBase,       &lubyMult,      &varDecay,        &clauseDecay,   &dbCleanInc,
-      &propCounting,   &propClause,    &propCard,        &propIdx,       &propSup,
-      &lpPivotRatio,   &lpPivotBudget, &lpIntolerance,   &addGomoryCuts, &addLearnedCuts,
-      &gomoryCutLimit, &maxCutCos,     &slackdiv,        &weakenFull,    &weakenNonImplying,
-      &bumpOnlyFalse,  &bumpCanceling, &bumpLits,        &bitsOverflow,  &bitsReduced,
-      &bitsLearned,    &bitsInput,     &cgEncoding,      &cgBoosted,     &cgHybrid,
-      &cgIndCores,     &cgStrat,       &cgSolutionPhase, &cgReduction,   &cgResolveProp,
-      &cgDecisionCore, &cgCoreUpper,   &keepAll,
+      &copyright,     &license,           &help,           &printSol,      &verbosity,
+      &proofLog,      &optMode,           &lubyBase,       &lubyMult,      &varDecay,
+      &clauseDecay,   &dbCleanInc,        &propCounting,   &propClause,    &propCard,
+      &propIdx,       &propSup,           &lpPivotRatio,   &lpPivotBudget, &lpIntolerance,
+      &addGomoryCuts, &addLearnedCuts,    &gomoryCutLimit, &maxCutCos,     &slackdiv,
+      &weakenFull,    &weakenNonImplying, &bumpOnlyFalse,  &bumpCanceling, &bumpLits,
+      &bitsOverflow,  &bitsReduced,       &bitsLearned,    &bitsInput,     &cgEncoding,
+      &cgBoosted,     &cgHybrid,          &cgIndCores,     &cgStrat,       &cgSolutionPhase,
+      &cgReduction,   &cgResolveProp,     &cgDecisionCore, &cgCoreUpper,   &keepAll,
   };
   std::unordered_map<std::string, Option*> name2opt;
 
@@ -278,6 +282,12 @@ struct Options {
 
     if (help) {
       usage(argv[0]);
+      exit(0);
+    } else if (copyright) {
+      licenses::printUsed();
+      exit(0);
+    } else if (license.get() != "") {
+      licenses::printLicense(license.get());
       exit(0);
     }
   }
