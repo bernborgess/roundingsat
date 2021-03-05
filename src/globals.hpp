@@ -1,11 +1,12 @@
 /***********************************************************************
 Copyright (c) 2014-2020, Jan Elffers
-Copyright (c) 2019-2020, Jo Devriendt
-Copyright (c) 2020, Stephan Gocht
+Copyright (c) 2019-2021, Jo Devriendt
+Copyright (c) 2020-2021, Stephan Gocht
+Copyright (c) 2014-2021, Jakob Nordström
 
 Parts of the code were copied or adapted from MiniSat.
 
-MiniSAT -- Copyright (c) 2003-2006, Niklas Een, Niklas Sorensson
+MiniSat -- Copyright (c) 2003-2006, Niklas Een, Niklas Sorensson
            Copyright (c) 2007-2010  Niklas Sorensson
 
 Permission is hereby granted, free of charge, to any person obtaining a

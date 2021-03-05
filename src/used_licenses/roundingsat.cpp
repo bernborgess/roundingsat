@@ -2,11 +2,12 @@
 #include "roundingsat.hpp"
 namespace licenses {
 const char* roundingsat =
-    "Copyright (c) 2014-2021, Jan Elffers\n"
+    "Copyright (c) 2014-2020, Jan Elffers\n"
     "Copyright (c) 2019-2021, Jo Devriendt\n"
     "Copyright (c) 2020-2021, Stephan Gocht\n"
+    "Copyright (c) 2014-2021, Jakob Nordström\n"
     "\n"
-    "Parts of the code were copied or adapted from MiniSat.\n"
+    "Parts of the code were copied or adapted from MiniSAT.\n"
     "\n"
     "MiniSAT -- Copyright (c) 2003-2006, Niklas Een, Niklas Sorensson\n"
     "           Copyright (c) 2007-2010  Niklas Sorensson\n"
