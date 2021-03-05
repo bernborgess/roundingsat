@@ -42,7 +42,7 @@ namespace parsing {
 
 bigint read_number(const std::string& s);
 void opb_read(std::istream& in, Solver& solver, CeArb objective);
-void wcnf_read(std::istream& in, long long top, Solver& solver, CeArb objective);
+void wcnf_read(std::istream& in, BigCoef top, Solver& solver, CeArb objective);
 void cnf_read(std::istream& in, Solver& solver);
 void file_read(std::istream& in, Solver& solver, CeArb objective);
 
