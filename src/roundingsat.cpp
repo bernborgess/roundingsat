@@ -59,9 +59,6 @@ int main(int argc, char** argv) {
   signal(SIGINT, SIGINT_exit);
   signal(SIGTERM, SIGINT_exit);
   signal(SIGXCPU, SIGINT_exit);
-  signal(SIGINT, SIGINT_interrupt);
-  signal(SIGTERM, SIGINT_interrupt);
-  signal(SIGXCPU, SIGINT_interrupt);
 
   rs::options.parseCommandLine(argc, argv);
 
@@ -82,6 +79,10 @@ int main(int argc, char** argv) {
     if (rs::options.verbosity.get() > 0) std::cout << "c No filename given, reading from standard input" << std::endl;
     rs::parsing::file_read(std::cin, rs::run::solver, objective);
   }
+
+  signal(SIGINT, SIGINT_interrupt);
+  signal(SIGTERM, SIGINT_interrupt);
+  signal(SIGXCPU, SIGINT_interrupt);
 
   rs::run::solver.initLP(objective);
 

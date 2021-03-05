@@ -30,6 +30,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ***********************************************************************/
 
 #include "parsing.hpp"
+#include <sstream>
 #include "Solver.hpp"
 
 namespace rs {
@@ -110,7 +111,7 @@ void parsing::opb_read(std::istream& in, Solver& solver, CeArb objective) {
   }
 }
 
-void parsing::wcnf_read(std::istream& in, long long top, Solver& solver, CeArb objective) {
+void parsing::wcnf_read(std::istream& in, BigCoef top, Solver& solver, CeArb objective) {
   assert(objective->isReset());
   CeArb input = solver.cePools.takeArb();
   for (std::string line; getline(in, line);) {
@@ -118,15 +119,18 @@ void parsing::wcnf_read(std::istream& in, long long top, Solver& solver, CeArb o
       continue;
     else {
       std::istringstream is(line);
-      long long weight;
-      is >> weight;
+      std::string sweight;
+      is >> sweight;
+      BigCoef weight = read_number(sweight);
       if (weight == 0) continue;
       input->reset();
       input->addRhs(1);
       Lit l;
       while (is >> l, l) input->addLhs(1, l);
       if (weight < top) {  // soft clause
-        if (weight < 0) quit::exit_ERROR({"Negative clause weight: ", std::to_string(weight)});
+        std::stringstream s;
+        s << "Negative clause weight: " << weight;
+        if (weight < 0) quit::exit_ERROR({s.str()});
         solver.setNbVars(solver.getNbVars() + 1, true);  // increases n to n+1
         objective->addLhs(weight, solver.getNbVars());
         input->addLhs(1, solver.getNbVars());
@@ -170,8 +174,10 @@ void parsing::file_read(std::istream& in, Solver& solver, CeArb objective) {
         is >> val;  // variable count
         solver.setNbVars(val);
         is >> line;  // skip nbConstraints
-        is >> val;   // top
-        wcnf_read(in, val, solver, objective);
+        std::string stop;
+        is >> stop;  // top
+        BigCoef top = read_number(stop);
+        wcnf_read(in, top, solver, objective);
       }
     } else if (line[0] == '*' && line.substr(0, 13) == "* #variable= ") {
       opb_read(in, solver, objective);
