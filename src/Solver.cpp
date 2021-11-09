@@ -32,7 +32,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Solver.hpp"
 #include <cmath>
 #include "Constr.hpp"
-#include "aux.hpp"
+#include "auxiliary.hpp"
 #include "globals.hpp"
 
 namespace rs {
