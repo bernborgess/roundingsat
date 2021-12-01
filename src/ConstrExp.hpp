@@ -174,7 +174,8 @@ struct ConstrExpSuper {
   virtual bool isSortedInDecreasingCoefOrder() const = 0;
   virtual void sort(const std::function<bool(Var, Var)>& comp) = 0;
 
-  virtual ID logAsInput() = 0;
+  virtual ID logAsAssumption() = 0;
+  virtual ID logInput() = 0;
   virtual ID logProofLine() = 0;
   virtual ID logProofLineWithInfo([[maybe_unused]] std::string&& info, [[maybe_unused]] const Stats& sts) = 0;
   virtual void logUnit(const IntVecIt& level, const std::vector<int>& pos, Var v_unit, const Stats& sts) = 0;
@@ -382,7 +383,8 @@ struct ConstrExp final : public ConstrExpSuper {
   bool isSortedInDecreasingCoefOrder() const;
   void sort(const std::function<bool(Var, Var)>& comp);
 
-  ID logAsInput();
+  ID logAsAssumption();
+  ID logInput();
   ID logProofLine();
   ID logProofLineWithInfo([[maybe_unused]] std::string&& info, [[maybe_unused]] const Stats& sts);
   // @pre: reducible to unit over v

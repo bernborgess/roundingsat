@@ -986,9 +986,19 @@ void ConstrExp<SMALL, LARGE>::sort(const std::function<bool(Var, Var)>& comp) {
 }
 
 template <typename SMALL, typename LARGE>
-ID ConstrExp<SMALL, LARGE>::logAsInput() {
+ID ConstrExp<SMALL, LARGE>::logAsAssumption() {
   assert(plogger);
-  toStreamAsOPB(plogger->formula_out);
+  plogger->proof_out << "a ";
+  toStreamAsOPB(plogger->proof_out);
+  plogger->proof_out << "\n";
+  ID id = ++plogger->last_proofID;
+  resetBuffer(id);  // ensure consistent proofBuffer
+  return id;
+}
+
+template <typename SMALL, typename LARGE>
+ID ConstrExp<SMALL, LARGE>::logInput() {
+  assert(plogger);
   plogger->proof_out << "l " << ++plogger->last_formID << "\n";
   ID id = ++plogger->last_proofID;
   resetBuffer(id);  // ensure consistent proofBuffer

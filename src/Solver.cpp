@@ -523,7 +523,13 @@ std::pair<ID, ID> Solver::addInputConstraint(CeSuper ce) {
          ce->orig == Origin::HARDENEDBOUND || ce->orig == Origin::COREGUIDED);
   assert(decisionLevel() == 0);
   ID input = ID_Undef;
-  if (logger) input = ce->logAsInput();
+  if (logger) {
+    if (ce->orig == Origin::FORMULA) {
+      input = ce->logInput();
+    } else {
+      input = ce->logAsAssumption();
+    }
+  }
   ce->postProcess(Level, Pos, true, stats);
   if (ce->isTautology()) {
     return {input, ID_Undef};  // already satisfied.

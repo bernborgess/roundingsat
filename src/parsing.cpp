@@ -185,7 +185,6 @@ void parsing::file_read(std::istream& in, Solver& solver, CeArb objective) {
       quit::exit_ERROR({"No supported format [opb, cnf, wcnf] detected."});
     }
   }
-  if (solver.logger) solver.logger->formula_out << "* INPUT FORMULA ABOVE - AUXILIARY AXIOMS BELOW\n";
 }
 
 }  // namespace rs
