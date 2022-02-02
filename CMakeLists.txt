@@ -103,7 +103,7 @@ set(header_files
     src/IntSet.hpp
     src/Solver.hpp
     src/typedefs.hpp
-    src/aux.hpp
+    src/auxiliary.hpp
     src/globals.hpp
     src/parsing.hpp
     src/quit.hpp

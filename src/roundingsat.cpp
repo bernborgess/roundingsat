@@ -32,7 +32,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <csignal>
 #include <fstream>
 #include <memory>
-#include "aux.hpp"
+#include "auxiliary.hpp"
 #include "globals.hpp"
 #include "parsing.hpp"
 #include "run.hpp"
