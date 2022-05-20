@@ -141,7 +141,7 @@ void Solver::uncheckedEnqueue(Lit p, CRef from) {
   trail.push_back(p);
 }
 
-void Solver::undoOne() {
+void Solver::removeLastAssignment() {
   assert(!trail.empty());
   ++stats.NTRAILPOPS;
   Lit l = trail.back();
@@ -161,7 +161,7 @@ void Solver::undoOne() {
 
 void Solver::backjumpTo(int level) {
   assert(level >= 0);
-  while (decisionLevel() > level) undoOne();
+  while (decisionLevel() > level) removeLastAssignment();
 }
 
 void Solver::decide(Lit l) {
@@ -281,17 +281,16 @@ CeSuper getAnalysisCE(const CeSuper& conflict, int bitsOverflow, ConstrExpPools&
   }
 }
 
-CeSuper Solver::analyze(CeSuper conflict) {
-  if (logger) logger->logComment("Analyze", stats);
-  assert(conflict->hasNegativeSlack(Level));
-  stats.NADDEDLITERALS += conflict->vars.size();
+CeSuper Solver::prepareConflictConstraint(CeSuper conflict) {
   conflict->removeUnitsAndZeroes(Level, Pos);
   conflict->saturateAndFixOverflow(getLevel(), (bool)options.weakenFull, options.bitsOverflow.get(),
                                    options.bitsReduced.get(), 0);
-
   CeSuper confl = getAnalysisCE(conflict, options.bitsOverflow.get(), cePools);
   conflict->reset();
+  return confl;
+}
 
+void Solver::assignActiveSet(CeSuper confl) {
   assert(actSet.isEmpty());  // will hold the literals that need their activity bumped
   for (Var v : confl->vars) {
     if (options.bumpLits)
@@ -299,45 +298,71 @@ CeSuper Solver::analyze(CeSuper conflict) {
     else if (!options.bumpOnlyFalse || isFalse(Level, confl->getLit(v)))
       actSet.add(v);
   }
+}
+
+Constr& Solver::getReasonConstraint(Lit l) {
+  assert(isPropagated(Reason, l));
+  Constr& reasonC = ca[Reason[toVar(l)]];
+  if (!reasonC.isLocked()) {
+    cBumpActivity(reasonC);
+    recomputeLBD(reasonC);
+  }
+
+  trackReasonConstraintStats(reasonC);
+
+  return reasonC;
+}
+
+void Solver::trackReasonConstraintStats(Constr& reasonC) {
+  stats.NENCFORMULA += reasonC.getOrigin() == Origin::FORMULA;
+  stats.NENCLEARNED += reasonC.getOrigin() == Origin::LEARNED;
+  stats.NENCBOUND += (reasonC.getOrigin() == Origin::LOWERBOUND || reasonC.getOrigin() == Origin::UPPERBOUND ||
+                      reasonC.getOrigin() == Origin::HARDENEDBOUND);
+  stats.NENCCOREGUIDED += reasonC.getOrigin() == Origin::COREGUIDED;
+  stats.NLPENCGOMORY += reasonC.getOrigin() == Origin::GOMORY;
+  stats.NLPENCLEARNEDFARKAS += reasonC.getOrigin() == Origin::LEARNEDFARKAS;
+  stats.NLPENCFARKAS += reasonC.getOrigin() == Origin::FARKAS;
+  ++stats.NRESOLVESTEPS;
+}
+
+void Solver::bumpLiteralActivity() {
+  for (Lit l : actSet.getKeys())
+    if (l != 0) vBumpActivity(toVar(l));
+  actSet.clear();
+}
+
+CeSuper Solver::analyze(CeSuper conflict) {
+  assert(conflict->hasNegativeSlack(Level));
+
+  if (logger) logger->logComment("Analyze", stats);
+  stats.NADDEDLITERALS += conflict->vars.size();
+
+  CeSuper confl = prepareConflictConstraint(conflict);
+  assignActiveSet(confl);
+
   while (decisionLevel() > 0) {
     if (asynch_interrupt) throw asynchInterrupt;
     Lit l = trail.back();
     if (confl->hasLit(-l)) {
       assert(confl->hasNegativeSlack(Level));
+
       AssertionStatus status = confl->isAssertingBefore(Level, decisionLevel());
-      if (status == AssertionStatus::ASSERTING)
-        break;
+      // Conflict constraint could now be asserting after removing some assignments.
+      if (status == AssertionStatus::ASSERTING) break;
+      // Constraint is already falsified by before last decision on trail.
       else if (status == AssertionStatus::FALSIFIED) {
         backjumpTo(decisionLevel() - 1);
-        assert(confl->hasNegativeSlack(Level));
         continue;
       }
-      assert(isPropagated(Reason, l));
-      Constr& reasonC = ca[Reason[toVar(l)]];
-      if (!reasonC.isLocked()) {
-        cBumpActivity(reasonC);
-        recomputeLBD(reasonC);
-      }
 
-      stats.NENCFORMULA += reasonC.getOrigin() == Origin::FORMULA;
-      stats.NENCLEARNED += reasonC.getOrigin() == Origin::LEARNED;
-      stats.NENCBOUND += (reasonC.getOrigin() == Origin::LOWERBOUND || reasonC.getOrigin() == Origin::UPPERBOUND ||
-                          reasonC.getOrigin() == Origin::HARDENEDBOUND);
-      stats.NENCCOREGUIDED += reasonC.getOrigin() == Origin::COREGUIDED;
-      stats.NLPENCGOMORY += reasonC.getOrigin() == Origin::GOMORY;
-      stats.NLPENCLEARNEDFARKAS += reasonC.getOrigin() == Origin::LEARNEDFARKAS;
-      stats.NLPENCFARKAS += reasonC.getOrigin() == Origin::FARKAS;
-      ++stats.NRESOLVESTEPS;
-
+      Constr& reasonC = getReasonConstraint(l);
       reasonC.resolveWith(confl, l, &actSet, *this);
     }
-    undoOne();
+    removeLastAssignment();
   }
-  assert(confl->hasNegativeSlack(Level));
-  for (Lit l : actSet.getKeys())
-    if (l != 0) vBumpActivity(toVar(l));
-  actSet.clear();
+  bumpLiteralActivity();
 
+  assert(confl->hasNegativeSlack(Level));
   return confl;
 }
 
@@ -346,14 +371,14 @@ std::vector<CeSuper> Solver::extractCore(CeSuper conflict, const IntSet& assumpt
     assert(assumptions.has(l_assump));
     assert(isFalse(Level, l_assump));
     int pos = Pos[toVar(l_assump)];
-    while ((int)trail.size() > pos) undoOne();
+    while ((int)trail.size() > pos) removeLastAssignment();
     assert(isUnknown(Pos, l_assump));
     decide(l_assump);
   }
 
   // Set all assumptions in front of the trail, all propagations later. This makes it easy to do decision learning.
   // For this, we first copy the trail, then backjump to 0, then rebuild the trail.
-  // Otherwise, reordering the trail messes up the slacks of the watched constraints (see undoOne()).
+  // Otherwise, reordering the trail messes up the slacks of the watched constraints (see removeLastAssignment()).
   std::vector<Lit> decisions;  // holds the decisions
   decisions.reserve(decisionLevel());
   std::vector<Lit> props;  // holds the propagations
@@ -405,7 +430,7 @@ std::vector<CeSuper> Solver::extractCore(CeSuper conflict, const IntSet& assumpt
         resolvesteps = 0;
       }
     }
-    undoOne();
+    removeLastAssignment();
   }
   if (options.cgDecisionCore && resolvesteps > 0) {  // decision core
     result.push_back(core->clone(cePools));

@@ -80,7 +80,7 @@ class Solver {
 
   ConstraintAllocator ca;
   IntSet tmpSet;
-  IntSet actSet;
+  IntSet actSet;  // Set of literals that need their activity bumped after conflict analysis.
   OrderHeap order_heap;
 
   std::vector<CRef> constraints;
@@ -163,7 +163,7 @@ class Solver {
   // Trail manipulation
 
   void uncheckedEnqueue(Lit p, CRef from);
-  void undoOne();
+  void removeLastAssignment();
   void backjumpTo(int level);
   void decide(Lit l);
   void propagate(Lit l, CRef reason);
@@ -179,6 +179,16 @@ class Solver {
   // Conflict analysis
 
   void recomputeLBD(Constr& C);
+  CeSuper prepareConflictConstraint(CeSuper conflict);
+  /**
+   * @brief Get initial set of literals that need their activity bumped after conflict analysis.
+   *
+   * @param confl Conflict side constraint.
+   */
+  void assignActiveSet(CeSuper confl);
+  Constr& getReasonConstraint(Lit l);
+  void trackReasonConstraintStats(Constr& reasonC);
+  void bumpLiteralActivity();
   CeSuper analyze(CeSuper confl);
   std::vector<CeSuper> extractCore(CeSuper confl, const IntSet& assumptions, Lit l_assump = 0);
 

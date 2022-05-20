@@ -693,7 +693,7 @@ AssertionStatus ConstrExp<SMALL, LARGE>::isAssertingBefore(const IntVecIt& level
   for (int i = 0; i < (int)vars.size(); ++i) {
     Var v = vars[i];
     Lit l = coefs[v] < 0 ? -v : v;
-    if (level[-l] < lvl) continue;  // falsified lit
+    if (level[-l] < lvl) continue;  // falsified lit does not contribute to slack
     SMALL c = aux::abs(coefs[v]);
     if (level[l] >= lvl) largestCoef = std::max(largestCoef, c);  // unknown lit
     slack += c;

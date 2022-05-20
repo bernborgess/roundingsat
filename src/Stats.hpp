@@ -52,7 +52,8 @@ struct Stats {
   double STARTTIME = 0;
   long long NORIGVARS = 0, NAUXVARS = 0;
   long long NCONSFORMULA = 0, NCONSLEARNED = 0, NCONSBOUND = 0, NCONSCOREGUIDED = 0;
-  long long NENCFORMULA = 0, NENCLEARNED = 0, NENCBOUND = 0, NENCCOREGUIDED;
+  long long NENCFORMULA = 0, NENCLEARNED = 0, NENCBOUND = 0,
+            NENCCOREGUIDED;  // Number of times a reason constraint of this type was encountered.
 
   long long NLPADDEDROWS = 0, NLPDELETEDROWS = 0;
   long long NLPPIVOTSINTERNAL = 0, NLPPIVOTSROOT = 0, NLPNOPIVOT = 0, NLPRESETBASIS = 0;
@@ -60,7 +61,8 @@ struct Stats {
   long long NLPCALLS = 0, NLPOPTIMAL = 0, NLPINFEAS = 0, NLPFARKAS = 0;
   long long NLPCYCLING = 0, NLPNOPRIMAL = 0, NLPNOFARKAS = 0, NLPSINGULAR = 0, NLPOTHER = 0;
   long long NLPGOMORYCUTS = 0, NLPLEARNEDCUTS = 0, NLPLEARNEDFARKAS = 0, NLPDELETEDCUTS = 0;
-  long long NLPENCGOMORY = 0, NLPENCFARKAS = 0, NLPENCLEARNEDFARKAS = 0;
+  long long NLPENCGOMORY = 0, NLPENCFARKAS = 0,
+            NLPENCLEARNEDFARKAS = 0;  // Number of times a reason constraint of this type was encountered.
 
   long long UNITCORES = 0, SINGLECORES = 0, REMOVEDBLOCKS = 0, FIRSTCOREBEST = 0, DECCOREBEST = 0, NOCOREBEST = 0,
             COREDEGSUM = 0, CORESLACKSUM = 0;
