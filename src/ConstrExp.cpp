@@ -398,7 +398,11 @@ void ConstrExp<SMALL, LARGE>::logIfUnit(Lit l, const SMALL& c, const IntVecIt& l
     proofBuffer << plogger->unitIDs[pos[toVar(l)]] << " " << proofMult(c) << "+ ";
 }
 
-// @post: preserves order of vars
+/**
+ * @brief Remove literals in reason with coeff 0 and weaken away literals that are unit constraints in our database.
+ *
+ * @post: preserves order of vars
+ */
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::removeUnitsAndZeroes(const IntVecIt& level, const std::vector<int>& pos,
                                                    bool doSaturation) {
@@ -458,11 +462,19 @@ bool ConstrExp<SMALL, LARGE>::hasNoZeroes() const {
   return true;
 }
 
-// @post: preserves order of vars
+/**
+ * @brief Saturate the constraint.
+ *
+ * @tparam SMALL Coefficient type.
+ * @tparam LARGE Degree type.
+ * @param vs Vector of variable in the constraint.
+ * @param check If true, check if constraint is already saturated and return directly if this is the case.
+ *
+ * @post preserves order of vars
+ */
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::saturate(const std::vector<Var>& vs, bool check) {
   if (check && getLargestCoef() <= degree) return;
-  assert(getLargestCoef() > degree);
   if (plogger && !isSaturated()) proofBuffer << "s ";  // log saturation only if it modifies the constraint
   if (degree <= 0) {  // NOTE: does not call reset(0), as we do not want to reset the buffer
     for (Var v : vars) remove(v);
@@ -482,6 +494,13 @@ void ConstrExp<SMALL, LARGE>::saturate(const std::vector<Var>& vs, bool check) {
   assert(isSaturated());
 }
 
+/**
+ * @brief Saturate the constraint.
+ *
+ * @tparam SMALL Coefficient type.
+ * @tparam LARGE Degree type.
+ * @param check If true, check if constraint is already saturated and return if this is the case.
+ */
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::saturate(bool check) {
   saturate(vars, check);
@@ -499,14 +518,15 @@ void ConstrExp<SMALL, LARGE>::invert() {
   degree = calcDegree();
 }
 
-/*
- * Fixes overflow
- * @post: saturated
- * @post: nothing else if bitOverflow == 0
- * @post: the largest coefficient is less than 2^bitOverflow
- * @post: the degree and rhs are less than 2^bitOverflow * INF
- * @post: if overflow happened, all division until 2^bitReduce happened
- * @post: the constraint remains conflicting or propagating on asserting
+/**
+ * @brief Saturate after resolution step and prevent overflow.
+ *
+ * @post saturated
+ * @post nothing else if bitOverflow == 0
+ * @post the largest coefficient is less than 2^bitOverflow
+ * @post the degree and rhs are less than 2^bitOverflow * INF
+ * @post if overflow happened, all division until 2^bitReduce happened
+ * @post the constraint remains conflicting or propagating on asserting
  */
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening, int bitOverflow,
@@ -530,7 +550,7 @@ void ConstrExp<SMALL, LARGE>::saturateAndFixOverflow(const IntVecIt& level, bool
     cutoff = aux::pow(cutoff, bitReduce) - 1;
     LARGE div = aux::ceildiv<LARGE>(maxVal, cutoff);
     assert(aux::ceildiv<LARGE>(maxVal, div) <= cutoff);
-    weakenNonDivisibleNonFalsifieds(level, div, fullWeakening, asserting);
+    weakenNonDivisibleNonFalsified(level, div, fullWeakening, asserting);
     divideRoundUp(div);
     saturate();
   }
@@ -596,6 +616,13 @@ void ConstrExp<SMALL, LARGE>::divide(const LARGE& d) {
   degree = aux::ceildiv_safe(degree, d);
 }
 
+/**
+ * @brief Divides the current constraint by `d` and rounds up the coefficients and degree.
+ *
+ * @tparam SMALL Coefficient type.
+ * @tparam LARGE Degree type.
+ * @param d Divisor for the division.
+ */
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::divideRoundUp(const LARGE& d) {
   assert(d > 0);
@@ -616,16 +643,21 @@ void ConstrExp<SMALL, LARGE>::divideRoundUp(const LARGE& d) {
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::weakenDivideRound(const IntVecIt& level, Lit l, bool slackdiv, bool fullWeakening) {
   assert(getCoef(l) > 0);
+  assert(getCoef(l) > getSlack(level));
+
   LARGE div = slackdiv ? getSlack(level) + 1 : getCoef(l);
   if (div <= 1) return;
-  weakenNonDivisibleNonFalsifieds(level, div, fullWeakening, 0);
+  weakenNonDivisibleNonFalsified(level, div, fullWeakening, 0);
   divideRoundUp(div);
   saturate();
+
+  assert(getCoef(l) > 0);
+  assert(getSlack(level) <= 0);
 }
 
 template <typename SMALL, typename LARGE>
-void ConstrExp<SMALL, LARGE>::weakenNonDivisibleNonFalsifieds(const IntVecIt& level, const LARGE& div,
-                                                              bool fullWeakening, Lit asserting) {
+void ConstrExp<SMALL, LARGE>::weakenNonDivisibleNonFalsified(const IntVecIt& level, const LARGE& div,
+                                                             bool fullWeakening, Lit asserting) {
   assert(div > 0);
   if (div == 1) return;
   if (fullWeakening) {
@@ -757,8 +789,13 @@ void ConstrExp<SMALL, LARGE>::weakenNonImplied(const IntVecIt& level, const LARG
   // TODO: always saturate?
 }
 
-// @post: preserves order after removeZeroes()
-// TODO: return modified slack?
+/**
+ * @brief Weaken literals that are falsified and have a small enough coefficient at the current level.
+ *
+ * @post: preserves order after removeZeroes()
+ *
+ * TODO: return modified slack?
+ */
 template <typename SMALL, typename LARGE>
 bool ConstrExp<SMALL, LARGE>::weakenNonImplying(const IntVecIt& level, const SMALL& propCoef, const LARGE& slack,
                                                 Stats& sts) {
@@ -1097,16 +1134,11 @@ void ConstrExp<SMALL, LARGE>::resolveWith(const Clause& c, Lit l, IntSet* actSet
   assert(getCoef(-l) > 0);
   stats.NADDEDLITERALS += c.size();
 
+  // Add used variables to active set.
   if (actSet != nullptr) {
     for (unsigned int i = 0; i < c.size(); ++i) {
       Lit l = c.data[i];
-      if (options.bumpLits) {
-        actSet->add(l);
-      } else {
-        Var v = toVar(l);
-        if (!options.bumpOnlyFalse || isFalse(level, l)) actSet->add(v);
-        if (options.bumpCanceling && getLit(v) == -l) actSet->add(-v);
-      }
+      addUsedLitsToActiveSet(actSet, l, level);
     }
   }
 
@@ -1143,21 +1175,27 @@ void ConstrExp<SMALL, LARGE>::resolveWith(const Clause& c, Lit l, IntSet* actSet
 }
 
 template <typename SMALL, typename LARGE>
+void ConstrExp<SMALL, LARGE>::addUsedLitsToActiveSet(IntSet* actSet, Lit l, const IntVecIt& level) {
+  if (options.bumpLits) {
+    actSet->add(l);
+  } else {
+    Var v = toVar(l);
+    if (!options.bumpOnlyFalse || isFalse(level, l)) actSet->add(v);
+    if (options.bumpCanceling && getLit(v) == -l) actSet->add(-v);
+  }
+}
+
+template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::resolveWith(const Cardinality& c, Lit l, IntSet* actSet, const IntVecIt& level,
                                           const std::vector<int>& pos) {
   assert(getCoef(-l) > 0);
   stats.NADDEDLITERALS += c.size();
 
+  // Add used variables to active set.
   if (actSet != nullptr) {
     for (unsigned int i = 0; i < c.size(); ++i) {
       Lit l = c.data[i];
-      if (options.bumpLits) {
-        actSet->add(l);
-      } else {
-        Var v = toVar(l);
-        if (!options.bumpOnlyFalse || isFalse(level, l)) actSet->add(v);
-        if (options.bumpCanceling && getLit(v) == -l) actSet->add(-v);
-      }
+      addUsedLitsToActiveSet(actSet, l, level);
     }
   }
 

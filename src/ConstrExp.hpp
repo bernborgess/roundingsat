@@ -342,8 +342,33 @@ struct ConstrExp final : public ConstrExpSuper {
   void multiply(const SMALL& m);
   void divide(const LARGE& d);
   void divideRoundUp(const LARGE& d);
+
+  /**
+   * @brief Initial RoundingSAT refinement function. Choose a divisor and make all coefficient of non-falsified literals
+   * divisible by the divisor.
+   *
+   * @tparam SMALL Coefficient type.
+   * @tparam LARGE Degree type.
+   * @param level Data structure stating in which decision level and to which value variables are assigned.
+   * @param l Literal to resolve over.
+   * @param slackdiv If true, the divisor is reason constraint slack + 1. If false, divide by the literal coefficient in
+   * the reason constraint.
+   * @param fullWeakening If true, weaken literals completely. If false, weaken literals to biggest dividable
+   * coefficient.
+   */
   void weakenDivideRound(const IntVecIt& level, Lit l, bool slackdiv, bool fullWeakening);
-  void weakenNonDivisibleNonFalsifieds(const IntVecIt& level, const LARGE& div, bool fullWeakening, Lit asserting);
+
+  /**
+   * @brief Weaken the constraint such that each coefficient of the non falsified literal in the constraint are
+   * divisible by `div`.
+   *
+   * @param level Data structure stating in which decision level and to which value variables are assigned.
+   * @param div Divisor to divide the constraint by in the resolution step.
+   * @param fullWeakening If true, weaken literals completely. If false, weaken literals to biggest dividable
+   * coefficient.
+   * @param asserting The literal to resolve over in the resolution step.
+   */
+  void weakenNonDivisibleNonFalsified(const IntVecIt& level, const LARGE& div, bool fullWeakening, Lit asserting);
   void applyMIR(const LARGE& d, std::function<Lit(Var)> toLit);
 
   bool divideByGCD();
@@ -401,38 +426,58 @@ struct ConstrExp final : public ConstrExpSuper {
   void resolveWith(const Cardinality& c, Lit l, IntSet* actSet, const IntVecIt& Level, const std::vector<int>& Pos);
 
  private:
+  void addUsedLitsToActiveSet(IntSet* actSet, Lit l, const IntVecIt& level);
+
+  /**
+   * @brief Refine the reason constraint such that the slack of the resolvent with the conflict constraint over `l` is
+   * negative.
+   *
+   * @tparam CF Coefficient type.
+   * @tparam DG Degree type.
+   * @param reason Reason constraint.
+   * @param l Literal to resolve over.
+   * @param level Data structure stating in which decision level and to which value variables are assigned.
+   * @param Pos Index vector over variables where the variable was assigned on the trail.
+   */
   template <typename CF, typename DG>
-  void genericResolve(CePtr<ConstrExp<CF, DG>> reason, Lit l, IntSet* actSet, const IntVecIt& Level,
-                      const std::vector<int>& Pos) {
-    assert(getCoef(-l) > 0);
-    stats.NADDEDLITERALS += reason->vars.size();
-    reason->removeUnitsAndZeroes(Level, Pos);
-    if (options.weakenNonImplying) reason->weakenNonImplying(Level, reason->getCoef(l), reason->getSlack(Level), stats);
-    reason->saturateAndFixOverflow(Level, (bool)options.weakenFull, options.bitsOverflow.get(),
+  void refineConstrToNegativeSlackResolvent(CePtr<ConstrExp<CF, DG>> reason, Lit l, const IntVecIt& level,
+                                            const std::vector<int>& Pos) {
+    reason->removeUnitsAndZeroes(level, Pos);
+    if (options.weakenNonImplying) reason->weakenNonImplying(level, reason->getCoef(l), reason->getSlack(level), stats);
+    reason->saturateAndFixOverflow(level, (bool)options.weakenFull, options.bitsOverflow.get(),
                                    options.bitsReduced.get(), l);
-    assert(reason->getCoef(l) > 0);
-    assert(reason->getCoef(l) > reason->getSlack(Level));
-    reason->weakenDivideRound(Level, l, (bool)options.slackdiv, (bool)options.weakenFull);
-    assert(reason->getCoef(l) > 0);
-    assert(reason->getSlack(Level) <= 0);
-    if (actSet != nullptr) {
-      for (Var v : reason->vars) {
-        Lit l = reason->getLit(v);
-        if (options.bumpLits) {
-          actSet->add(l);
-        } else {
-          if (!options.bumpOnlyFalse || isFalse(Level, l)) actSet->add(v);
-          if (options.bumpCanceling && getLit(v) == -l) actSet->add(-v);
-        }
-      }
-    }
+
+    reason->weakenDivideRound(level, l, (bool)options.slackdiv, (bool)options.weakenFull);
+  }
+
+  template <typename CF, typename DG>
+  void generalizedResolution(CePtr<ConstrExp<CF, DG>> reason, Lit l) {
     SMALL reason_coef_l = static_cast<SMALL>(reason->getCoef(l));  // NOTE: SMALL >= CF
     SMALL confl_coef_l = getCoef(-l);
     SMALL gcd_coef_l = aux::gcd(reason_coef_l, confl_coef_l);
     addUp(reason, confl_coef_l / gcd_coef_l, reason_coef_l / gcd_coef_l);
-    saturateAndFixOverflow(Level, (bool)options.weakenFull, options.bitsOverflow.get(), options.bitsReduced.get(), 0);
+  }
+
+  template <typename CF, typename DG>
+  void genericResolve(CePtr<ConstrExp<CF, DG>> reason, Lit l, IntSet* actSet, const IntVecIt& level,
+                      const std::vector<int>& Pos) {
+    assert(getCoef(-l) > 0);
+    stats.NADDEDLITERALS += reason->vars.size();
+
+    refineConstrToNegativeSlackResolvent(reason, l, level, Pos);
+
+    // Add used variables to active set.
+    if (actSet != nullptr) {
+      for (Var v : reason->vars) {
+        Lit l = reason->getLit(v);
+        addUsedLitsToActiveSet(actSet, l, level);
+      }
+    }
+
+    generalizedResolution(reason, l);
+    saturateAndFixOverflow(level, (bool)options.weakenFull, options.bitsOverflow.get(), options.bitsReduced.get(), 0);
     assert(getCoef(-l) == 0);
-    assert(hasNegativeSlack(Level));
+    assert(hasNegativeSlack(level));
   }
 
   template <typename S, typename L>
