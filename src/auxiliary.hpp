@@ -29,6 +29,8 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ***********************************************************************/
 
+// NOTE: This file may not be called auxiliary.hpp, because this is a forbiden file name on windows.
+
 #pragma once
 
 #define EXPANDED(x) STR(x)

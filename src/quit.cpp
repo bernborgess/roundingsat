@@ -38,7 +38,7 @@ namespace rs {
 
 void quit::printSol(const std::vector<Lit>& sol) {
   printf("v");
-  for (Var v = 1; v < (Var)sol.size() - stats.NAUXVARS; ++v) printf(sol[v] > 0 ? " x%d" : " -x%d", v);
+  for (Var v = 1; v < (Var)sol.size(); ++v) printf(sol[v] > 0 ? " x%d" : " -x%d", v);
   printf("\n");
 }
 

@@ -63,6 +63,7 @@ echo ""
 
 for j in "${arr_dec[@]}"; do
     formula="$(cut -d'*' -f1 <<<$j)"
+    type="$(cut -d'/' -f1 <<<$j)"
     logfile="$logfolder/$formula"
     mkdir -p `dirname $logfile`
     echo -n "" > $logfile.proof
@@ -81,7 +82,15 @@ for j in "${arr_dec[@]}"; do
     fi
     echo "verifying $logfile"
     wc -l $logfile.proof
-    veripb $logfile.formula $logfile.proof -d --arbitraryPrecision
+    if [ $type = "cnf" ]; then
+        cmd="veripb --cnf $formula $logfile.proof -d"
+        echo $cmd
+        eval $cmd
+    else
+        cmd="veripb $formula $logfile.proof -d"
+        echo $cmd
+        eval $cmd
+    fi
     errors=`expr $? + $errors`
     echo $errors
     tested=`expr 1 + $tested`
@@ -94,6 +103,7 @@ echo ""
 
 for j in "${arr_dec[@]}"; do
     formula="$(cut -d'*' -f1 <<<$j)"
+    type="$(cut -d'/' -f1 <<<$j)"
     logfile="$logfolder/$formula"
     mkdir -p `dirname $logfile`
     echo -n "" > $logfile.proof
@@ -112,7 +122,11 @@ for j in "${arr_dec[@]}"; do
     fi
     echo "verifying $logfile"
     wc -l $logfile.proof
-    veripb $logfile.formula $logfile.proof -d --arbitraryPrecision
+    if [ $type = "cnf" ]; then
+        veripb --cnf $formula $logfile.proof -d
+    else
+        veripb $formula $logfile.proof -d
+    fi
     errors=`expr $? + $errors`
     echo $errors
     tested=`expr 1 + $tested`
@@ -176,6 +190,7 @@ for idx in "${!arr_modes[@]}"; do
     echo ""
     for j in "${arr_opt[@]}"; do
         formula="$(cut -d'*' -f1 <<<$j)"
+        type="$(cut -d'/' -f1 <<<$j)"
         logfile="$logfolder/$formula"
         mkdir -p `dirname $logfile`
         echo -n "" > $logfile.proof
@@ -194,7 +209,9 @@ for idx in "${!arr_modes[@]}"; do
         fi
         echo "verifying $logfile"
         wc -l $logfile.proof
-        veripb $logfile.formula $logfile.proof -d --arbitraryPrecision
+        if [ $type = "opb" ]; then
+          veripb $formula $logfile.proof -d
+        fi
         errors=`expr $? + $errors`
         echo $errors
         tested=`expr 1 + $tested`
@@ -207,6 +224,7 @@ echo "########## no proofs ##########"
 echo ""
 for j in "${arr_opt[@]}"; do
     formula="$(cut -d'*' -f1 <<<$j)"
+    type="$(cut -d'/' -f1 <<<$j)"
     logfile="$logfolder/$formula"
     mkdir -p `dirname $logfile`
     echo -n "" > $logfile.proof
