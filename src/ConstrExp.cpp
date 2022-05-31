@@ -398,11 +398,6 @@ void ConstrExp<SMALL, LARGE>::logIfUnit(Lit l, const SMALL& c, const IntVecIt& l
     proofBuffer << plogger->unitIDs[pos[toVar(l)]] << " " << proofMult(c) << "+ ";
 }
 
-/**
- * @brief Remove literals in reason with coeff 0 and weaken away literals that are unit constraints in our database.
- *
- * @post: preserves order of vars
- */
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::removeUnitsAndZeroes(const IntVecIt& level, const std::vector<int>& pos,
                                                    bool doSaturation) {
@@ -462,16 +457,6 @@ bool ConstrExp<SMALL, LARGE>::hasNoZeroes() const {
   return true;
 }
 
-/**
- * @brief Saturate the constraint.
- *
- * @tparam SMALL Coefficient type.
- * @tparam LARGE Degree type.
- * @param vs Vector of variable in the constraint.
- * @param check If true, check if constraint is already saturated and return directly if this is the case.
- *
- * @post preserves order of vars
- */
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::saturate(const std::vector<Var>& vs, bool check) {
   if (check && getLargestCoef() <= degree) return;
@@ -494,13 +479,6 @@ void ConstrExp<SMALL, LARGE>::saturate(const std::vector<Var>& vs, bool check) {
   assert(isSaturated());
 }
 
-/**
- * @brief Saturate the constraint.
- *
- * @tparam SMALL Coefficient type.
- * @tparam LARGE Degree type.
- * @param check If true, check if constraint is already saturated and return if this is the case.
- */
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::saturate(bool check) {
   saturate(vars, check);
@@ -518,16 +496,6 @@ void ConstrExp<SMALL, LARGE>::invert() {
   degree = calcDegree();
 }
 
-/**
- * @brief Saturate after resolution step and prevent overflow.
- *
- * @post saturated
- * @post nothing else if bitOverflow == 0
- * @post the largest coefficient is less than 2^bitOverflow
- * @post the degree and rhs are less than 2^bitOverflow * INF
- * @post if overflow happened, all division until 2^bitReduce happened
- * @post the constraint remains conflicting or propagating on asserting
- */
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening, int bitOverflow,
                                                      int bitReduce, Lit asserting) {
@@ -616,13 +584,6 @@ void ConstrExp<SMALL, LARGE>::divide(const LARGE& d) {
   degree = aux::ceildiv_safe(degree, d);
 }
 
-/**
- * @brief Divides the current constraint by `d` and rounds up the coefficients and degree.
- *
- * @tparam SMALL Coefficient type.
- * @tparam LARGE Degree type.
- * @param d Divisor for the division.
- */
 template <typename SMALL, typename LARGE>
 void ConstrExp<SMALL, LARGE>::divideRoundUp(const LARGE& d) {
   assert(d > 0);
@@ -789,13 +750,6 @@ void ConstrExp<SMALL, LARGE>::weakenNonImplied(const IntVecIt& level, const LARG
   // TODO: always saturate?
 }
 
-/**
- * @brief Weaken literals that are falsified and have a small enough coefficient at the current level.
- *
- * @post: preserves order after removeZeroes()
- *
- * TODO: return modified slack?
- */
 template <typename SMALL, typename LARGE>
 bool ConstrExp<SMALL, LARGE>::weakenNonImplying(const IntVecIt& level, const SMALL& propCoef, const LARGE& slack,
                                                 Stats& sts) {

@@ -281,25 +281,46 @@ struct ConstrExp final : public ConstrExpSuper {
   bool isInconsistency() const;
   bool isSatisfied(const IntVecIt& level) const;
 
-  // @post: preserves order of vars
+  /**
+   * @brief Remove literals in reason with coeff 0 and weaken away literals that are unit constraints in our database.
+   *
+   * @post: preserves order of vars
+   */
   void removeUnitsAndZeroes(const IntVecIt& level, const std::vector<int>& pos, bool doSaturation = true);
   bool hasNoUnits(const IntVecIt& level) const;
   // @post: mutates order of vars
   void removeZeroes();
   bool hasNoZeroes() const;
 
-  // @post: preserves order of vars
+  /**
+   * @brief Saturate the constraint.
+   *
+   * @tparam SMALL Coefficient type.
+   * @tparam LARGE Degree type.
+   * @param vs Vector of variable in the constraint.
+   * @param check If true, check if constraint is already saturated and return directly if this is the case.
+   *
+   * @post preserves order of vars
+   */
   void saturate(const std::vector<Var>& vs, bool check = true);
+  /**
+   * @brief Saturate the constraint.
+   *
+   * @tparam SMALL Coefficient type.
+   * @tparam LARGE Degree type.
+   * @param check If true, check if constraint is already saturated and return if this is the case.
+   */
   void saturate(bool check = true);
   bool isSaturated() const;
-  /*
-   * Fixes overflow
-   * @post: saturated
-   * @post: nothing else if bitOverflow == 0
-   * @post: the largest coefficient is less than 2^bitOverflow
-   * @post: the degree and rhs are less than 2^bitOverflow * INF
-   * @post: if overflow happened, all division until 2^bitReduce happened
-   * @post: the constraint remains conflicting or propagating on asserting
+  /**
+   * @brief Saturate after resolution step and prevent overflow.
+   *
+   * @post saturated
+   * @post nothing else if bitOverflow == 0
+   * @post the largest coefficient is less than 2^bitOverflow
+   * @post the degree and rhs are less than 2^bitOverflow * INF
+   * @post if overflow happened, all division until 2^bitReduce happened
+   * @post the constraint remains conflicting or propagating on asserting
    */
   void saturateAndFixOverflow(const IntVecIt& level, bool fullWeakening, int bitOverflow, int bitReduce, Lit asserting);
   /*
@@ -342,6 +363,13 @@ struct ConstrExp final : public ConstrExpSuper {
   void invert();
   void multiply(const SMALL& m);
   void divide(const LARGE& d);
+  /**
+   * @brief Divides the current constraint by `d` and rounds up the coefficients and degree.
+   *
+   * @tparam SMALL Coefficient type.
+   * @tparam LARGE Degree type.
+   * @param d Divisor for the division.
+   */
   void divideRoundUp(const LARGE& d);
 
   /**
@@ -380,7 +408,13 @@ struct ConstrExp final : public ConstrExpSuper {
   int getAssertionLevel(const IntVecIt& level, const std::vector<int>& pos) const;
   // @post: preserves order after removeZeroes()
   void weakenNonImplied(const IntVecIt& level, const LARGE& slack, Stats& sts);
-  // @post: preserves order after removeZeroes()
+  /**
+   * @brief Weaken literals that are falsified and have a small enough coefficient at the current level.
+   *
+   * @post: preserves order after removeZeroes()
+   *
+   * @todo: return modified slack?
+   */
   bool weakenNonImplying(const IntVecIt& level, const SMALL& propCoef, const LARGE& slack, Stats& sts);
   // @post: preserves order after removeZeroes()
   void heuristicWeakening(const IntVecIt& level, const std::vector<int>& pos, Stats& sts);
