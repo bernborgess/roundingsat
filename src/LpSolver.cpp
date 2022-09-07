@@ -173,7 +173,9 @@ CeSuper LpSolver::createLinearCombinationFarkas(soplex::DVectorReal& mults) {
   }
   out->removeUnitsAndZeroes(solver.getLevel(), solver.getPos());
   assert(out->hasNoZeroes());
-  out->weakenSmalls(out->absCoeffSum() / static_cast<bigint>((double)out->vars.size() / options.lpIntolerance.get()));
+  if (out->vars.size() != 0) {
+    out->weakenSmalls(out->absCoeffSum() / static_cast<bigint>((double)out->vars.size() / options.lpIntolerance.get()));
+  }
   out->saturateAndFixOverflow(solver.getLevel(), (bool)options.weakenFull, options.bitsOverflow.get(),
                               options.bitsReduced.get(), 0);
   return out;

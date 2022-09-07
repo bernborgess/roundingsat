@@ -1,5 +1,6 @@
 # editor
 .idea/*
+.vscode/*
 
 # soplex
-/soplex-5.0.1*
+/soplex*

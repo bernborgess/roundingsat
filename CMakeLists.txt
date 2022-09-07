@@ -10,7 +10,7 @@ include_directories(${Boost_INCLUDE_DIRS})
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake/Modules/")
 
-if (NOT CMAKE_BUILD_TYPE)
+if(NOT CMAKE_BUILD_TYPE)
     message(WARNING "Please use -DCMAKE_BUILD_TYPE=[build_type] where [build_type] is one of: Debug, Release, RelWithDebInfo and MinSizeRel")
 endif()
 
@@ -27,7 +27,7 @@ set(soplex_pkg "${PROJECT_SOURCE_DIR}/soplex-5.0.1.tgz"
     CACHE STRING "SoPlex package, download at https://soplex.zib.de/download.php?fname=soplex-5.0.1.tgz")
 
 set(gmp "OFF"
-        CACHE STRING "Use GMP instead of Boost's builtin multiple precision integer.")
+    CACHE STRING "Use GMP instead of Boost's builtin multiple precision integer.")
 
 set(testruns_timeout 1
     CACHE STRING "Timeout of individual test runs.")
@@ -59,6 +59,7 @@ execute_process(
     OUTPUT_VARIABLE GIT_BRANCH
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
+
 # Get the latest abbreviated commit hash of the working branch
 execute_process(
     COMMAND git log -1 --format=%h
@@ -134,6 +135,7 @@ IF(gmp)
 endif()
 
 FIND_PROGRAM(CLANG_FORMAT "clang-format")
+
 IF(CLANG_FORMAT)
     add_custom_target(
         format
