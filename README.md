@@ -29,6 +29,26 @@ For a debug build:
 
 For more builds, similar build directories can be created.
 
+If the compilation does not work, you can compile a Docker image to run RoundingSAT as a Docker container.
+
+## Run as Docker container
+
+We also provide a Dockerfile for creating a RoundingSAT Docker image.
+
+Compiling the Docker image:
+
+1. Make sure that you have [Docker installed](https://docs.docker.com/engine/install/).
+2. Run the following command to build the Docker image:
+```bash
+docker build -t roundingsat .
+```
+
+Running the Docker image:
+
+```bash
+docker run -v /path/to/instance:/instance roundingsat /instance/filename.opb
+```
+
 ## Dependencies
 
 - C++17 (i.e., a reasonably recent compiler)
