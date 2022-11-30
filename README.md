@@ -31,22 +31,32 @@ For more builds, similar build directories can be created.
 
 If the compilation does not work, you can compile a Docker image to run RoundingSAT as a Docker container.
 
-## Run as Docker container
+## Run inside a Docker container
 
-We also provide a Dockerfile for creating a RoundingSAT Docker image.
+You can pull the a compiled Docker image from [Docker Hub](https://hub.docker.com/r/aoer/roundingsat).
 
-Compiling the Docker image:
+We also provide a `Dockerfile` for creating the RoundingSAT Docker image.
+
+### Running the Docker image:
+
+If you pulled the [image from Docker Hub](https://docs.docker.com/engine/install/) run:
+```bash
+docker run -v /path/to/instance:/instance aoer/roundingsat /instance/filename.opb
+```
+
+If you compiled the the image yourself:
+```bash
+docker run -v /path/to/instance:/instance roundingsat /instance/filename.opb
+```
+
+The `-v` option mounts the host machines directory `/path/to/instance` at the directory `/instance`.
+
+### Compiling the Docker image:
 
 1. Make sure that you have [Docker installed](https://docs.docker.com/engine/install/).
 2. Run the following command to build the Docker image:
 ```bash
 docker build -t roundingsat .
-```
-
-Running the Docker image:
-
-```bash
-docker run -v /path/to/instance:/instance roundingsat /instance/filename.opb
 ```
 
 ## Dependencies
