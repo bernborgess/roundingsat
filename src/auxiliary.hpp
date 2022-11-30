@@ -321,6 +321,26 @@ bool fitsIn([[maybe_unused]] const S& x) {
   return fits<T>(bigint(x));
 }
 
+#ifdef __APPLE__
+template <>
+inline int128 abs(const int128& x) {
+  return x < 0 ? -x : x;
+}
+template <>
+inline int128 gcd(const int128& x, const int128& y) {
+  return static_cast<int128>(
+      boost::multiprecision::gcd(boost::multiprecision::int128_t(x), boost::multiprecision::int128_t(y)));
+}
+template <>
+inline unsigned msb(const int128& x) {
+  return boost::multiprecision::msb(boost::multiprecision::uint128_t(x));
+}
+template <>
+inline int128 pow(const int128& x, unsigned y) {
+  return static_cast<int128>(boost::multiprecision::pow(boost::multiprecision::int128_t(x), y));
+}
+#endif
+
 }  // namespace aux
 
 }  // namespace rs
