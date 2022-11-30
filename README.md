@@ -41,12 +41,12 @@ We also provide a `Dockerfile` for creating the RoundingSAT Docker image.
 
 If you pulled the [image from Docker Hub](https://docs.docker.com/engine/install/) run:
 ```bash
-docker run -v /path/to/instance:/instance aoer/roundingsat /instance/filename.opb
+docker run -v /path/to/instance:/instance aoer/roundingsat [options] /instance/filename.opb
 ```
 
 If you compiled the the image yourself:
 ```bash
-docker run -v /path/to/instance:/instance roundingsat /instance/filename.opb
+docker run -v /path/to/instance:/instance roundingsat [options] /instance/filename.opb
 ```
 
 The `-v` option mounts the host machines directory `/path/to/instance` at the directory `/instance`.
