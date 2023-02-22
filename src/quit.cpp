@@ -57,7 +57,6 @@ void quit::exit_SAT(const Solver& solver) {
   if (options.verbosity.get() > 0) stats.print();
   puts("s SATISFIABLE");
   if (options.printSol) printSol(solver.lastSol);
-  exit(10);
 }
 
 template <typename LARGE>
@@ -67,11 +66,10 @@ void quit::exit_UNSAT(const Solver& solver, const LARGE& bestObjVal) {
   if (solver.foundSolution()) {
     std::cout << "o " << bestObjVal << std::endl;
     std::cout << "s OPTIMUM FOUND" << std::endl;
-    if (options.printSol) printSol(solver.lastSol);
-    exit(30);
+    if (options.printSol)
+      printSol(solver.lastSol);
   } else {
     puts("s UNSATISFIABLE");
-    exit(20);
   }
 }
 template void quit::exit_UNSAT<int>(const Solver& solver, const int& bestObjVal);
@@ -87,7 +85,6 @@ void quit::exit_INDETERMINATE(const Solver& solver) {
   if (solver.logger) solver.logger->flush();
   if (options.verbosity.get() > 0) stats.print();
   puts("s UNKNOWN");
-  exit(0);
 }
 
 void quit::exit_ERROR(const std::initializer_list<std::string>& messages) {
