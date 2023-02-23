@@ -120,10 +120,14 @@ void run::decide() {
   while (true) {
     SolveState reply = aux::timeCall<SolveState>([&] { return solver.solve().state; }, stats.SOLVETIME);
     assert(reply != SolveState::INCONSISTENT);
-    if (reply == SolveState::SAT)
+    if (reply == SolveState::SAT) {
       quit::exit_SAT(solver);
-    else if (reply == SolveState::UNSAT)
+      return;
+    }
+    else if (reply == SolveState::UNSAT) {
       quit::exit_UNSAT(solver);
+      return;
+    }
   }
 }
 
