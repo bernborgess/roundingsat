@@ -128,6 +128,10 @@ void run::decide() {
       quit::exit_UNSAT(solver);
       return;
     }
+    if(options.time_limit.get() != -1.0 && stats.getTime() > options.time_limit.get() ) {
+      quit::exit_INDETERMINATE(solver);
+      return;
+    }
   }
 }
 

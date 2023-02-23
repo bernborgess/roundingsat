@@ -443,6 +443,10 @@ class Optimization {
     CoefLimStatus coefLimFlag = CoefLimStatus::REFINE;
     while (true) {
       size_t current_time = stats.getDetTime();
+      if(options.time_limit.get() != -1.0 && stats.getTime() > options.time_limit.get() ) {
+        std::cout << "time limit reached\n";
+        return;
+      }
       if (reply != SolveState::INPROCESSED && reply != SolveState::RESTARTED) printObjBounds();
 
       // NOTE: only if assumptions are empty will they be refilled

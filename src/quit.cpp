@@ -84,7 +84,10 @@ void quit::exit_INDETERMINATE(const Solver& solver) {
   if (solver.foundSolution()) exit_SAT(solver);
   if (solver.logger) solver.logger->flush();
   if (options.verbosity.get() > 0) stats.print();
-  puts("s UNKNOWN");
+  if(options.time_limit.get() != -1.0 && stats.getTime() > options.time_limit.get() )
+    puts("s TIMELIMIT");
+  else
+    puts("s UNKNOWN");
 }
 
 void quit::exit_ERROR(const std::initializer_list<std::string>& messages) {
