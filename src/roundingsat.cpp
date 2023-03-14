@@ -70,15 +70,19 @@ int main(int argc, char** argv) {
 
   rs::run::solver.init();
   rs::CeArb objective = rs::run::solver.cePools.takeArb();
+  bool infeasible_or_error = false;
 
   if (!rs::options.formulaName.empty()) {
     std::ifstream fin(rs::options.formulaName);
     if (!fin) rs::quit::exit_ERROR({"Could not open ", rs::options.formulaName});
-    rs::parsing::file_read(fin, rs::run::solver, objective);
+    infeasible_or_error = rs::parsing::file_read(fin, rs::run::solver, objective);
   } else {
     if (rs::options.verbosity.get() > 0) std::cout << "c No filename given, reading from standard input" << std::endl;
-    rs::parsing::file_read(std::cin, rs::run::solver, objective);
+    infeasible_or_error = rs::parsing::file_read(std::cin, rs::run::solver, objective);
   }
+
+  if(infeasible_or_error)
+    return 0;
 
   signal(SIGINT, SIGINT_interrupt);
   signal(SIGTERM, SIGINT_interrupt);
