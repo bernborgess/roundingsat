@@ -33,6 +33,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include <string>
 #include "typedefs.hpp"
+#include <boost/iostreams/filtering_stream.hpp>
 
 namespace rs {
 
@@ -44,7 +45,7 @@ bigint read_number(const std::string& s);
 bool opb_read(std::istream& in, Solver& solver, CeArb objective);
 bool wcnf_read(std::istream& in, BigCoef top, Solver& solver, CeArb objective);
 bool cnf_read(std::istream& in, Solver& solver);
-bool file_read(std::istream& in, Solver& solver, CeArb objective);
+bool file_read(boost::iostreams::filtering_istream& in, Solver& solver, CeArb objective);
 
 }  // namespace parsing
 

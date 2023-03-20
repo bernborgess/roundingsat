@@ -2,11 +2,25 @@ cmake_minimum_required(VERSION 3.5)
 project(RoundingSat2)
 
 set(CMAKE_CXX_STANDARD 17)
+INCLUDE(CheckCXXSourceCompiles)
 
 # Feel free to decrease the required boost version if you can verify that it works with
 # a smaller version. It is known not to compile with version 1.53.0 and lower.
-find_package(Boost 1.67 REQUIRED)
+find_package(Boost 1.67 REQUIRED OPTIONAL_COMPONENTS iostreams )
 include_directories(${Boost_INCLUDE_DIRS})
+
+if(Boost_IOSTREAMS_FOUND)
+    set(CMAKE_REQUIRED_INCLUDES ${Boost_INCLUDE_DIRS})
+    set(CMAKE_REQUIRED_LIBRARIES ${Boost_LIBRARIES})
+    check_cxx_source_compiles(
+            "#include <boost/iostreams/filter/gzip.hpp>
+       int main() { auto decomp = boost::iostreams::gzip_decompressor(); (void)decomp; return 0; }"
+            IOSTREAMS_WITH_ZLIB )
+    check_cxx_source_compiles(
+            "#include <boost/iostreams/filter/bzip2.hpp>
+       int main() { auto decomp = boost::iostreams::bzip2_decompressor(); (void)decomp; return 0; }"
+            IOSTREAMS_WITH_BZIP2 )
+endif()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake/Modules/")
 
@@ -122,6 +136,8 @@ set(all_files ${source_files} ${header_files})
 
 add_executable(roundingsat ${source_files})
 target_include_directories(roundingsat PRIVATE ${PROJECT_SOURCE_DIR}/src/ ${SOPLEX_INCLUDE_DIRS})
+target_link_libraries(roundingsat ${Boost_LIBRARIES})
+
 install(TARGETS roundingsat RUNTIME DESTINATION bin)
 
 IF(soplex)

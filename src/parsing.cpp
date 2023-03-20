@@ -32,6 +32,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "parsing.hpp"
 #include <sstream>
 #include "Solver.hpp"
+#include <boost/iostreams/filtering_stream.hpp>
+
 
 namespace rs {
 
@@ -49,6 +51,7 @@ bigint parsing::read_number(const std::string& s) {
 }
 
 bool parsing::opb_read(std::istream& in, Solver& solver, CeArb objective) {
+
   assert(objective->isReset());
   CeArb input = solver.cePools.takeArb();
   [[maybe_unused]] bool first_constraint = true;
@@ -178,7 +181,7 @@ bool parsing::cnf_read(std::istream& in, Solver& solver) {
   return false;
 }
 
-bool parsing::file_read(std::istream& in, Solver& solver, CeArb objective) {
+bool parsing::file_read(boost::iostreams::filtering_istream& in, Solver& solver, CeArb objective) {
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == 'c') continue;
     if (line[0] == 'p') {
