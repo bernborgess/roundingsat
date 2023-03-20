@@ -81,8 +81,6 @@ int main(int argc, char** argv) {
     std::ifstream fin(rs::options.formulaName, std::ifstream::in);
     boost::iostreams::filtering_istream in;
 
-    if (!in) rs::quit::exit_ERROR({"Could not open ", rs::options.formulaName});
-
     if( boost::algorithm::ends_with( rs::options.formulaName, ".gz" ) )
       in.push( boost::iostreams::gzip_decompressor() );
     if( boost::algorithm::ends_with( rs::options.formulaName, ".bz2" ) )
