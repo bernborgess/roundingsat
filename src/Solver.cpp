@@ -870,6 +870,7 @@ SolveAnswer Solver::solve() {
         assert((int)trail.size() == getNbVars());
         assert(checkSAT());
         lastSol.clear();
+        // We want to keep track of the full solution for e.g. branching heuristics based on last found solution
         lastSol.resize(getNbVars() + 1);
         lastSol[0] = 0;
         for (Var v = 1; v <= getNbVars(); ++v) lastSol[v] = isTrue(Level, v) ? v : -v;
