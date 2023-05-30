@@ -198,6 +198,17 @@ struct ConstrExpSuper {
 template <typename CE>
 class ConstrExpPool;
 
+template <typename T>
+struct proofMult {
+  const T& m;
+  proofMult(const T& mult) : m(mult) {}
+};
+template <typename T>
+std::ostream& operator<<(std::ostream& os, const proofMult<T>& mult) {
+  if (mult.m != 1) os << mult.m << " * ";
+  return os;
+}
+
 template <typename SMALL, typename LARGE>  // LARGE should be able to fit sums of SMALL
 struct ConstrExp final : public ConstrExpSuper {
  private:
@@ -219,12 +230,6 @@ struct ConstrExp final : public ConstrExpSuper {
   LARGE calcRhs() const;
   bool testConstraint() const;
   bool falsified(const IntVecIt& level, Var v) const;
-  template <typename T>
-  std::string proofMult(const T& mult) {
-    std::stringstream ss;
-    if (mult != 1) ss << mult << " * ";
-    return ss.str();
-  }
   void logIfUnit(Lit l, const SMALL& c, const IntVecIt& level, const std::vector<int>& pos);
 
  public:
