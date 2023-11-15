@@ -32,6 +32,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "parsing.hpp"
 #include <sstream>
 #include "Solver.hpp"
+#include <boost/iostreams/filtering_stream.hpp>
+
 
 namespace rs {
 
@@ -48,7 +50,8 @@ bigint parsing::read_number(const std::string& s) {
   return negate ? -answer : answer;
 }
 
-void parsing::opb_read(std::istream& in, Solver& solver, CeArb objective) {
+bool parsing::opb_read(std::istream& in, Solver& solver, CeArb objective) {
+
   assert(objective->isReset());
   CeArb input = solver.cePools.takeArb();
   [[maybe_unused]] bool first_constraint = true;
@@ -102,16 +105,25 @@ void parsing::opb_read(std::istream& in, Solver& solver, CeArb objective) {
       input->copyTo(objective);
     else {
       input->addRhs(read_number(line0.substr(line0.find("=") + 1)));
-      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT(solver);
+      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat)
+      {
+        quit::exit_UNSAT(solver);
+        return true;
+      }
       if (line0.find(" = ") != std::string::npos) {  // Handle equality case with second constraint
         input->invert();
-        if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT(solver);
+        if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat)
+        {
+          quit::exit_UNSAT(solver);
+          return true;
+        }
       }
     }
   }
+  return false;
 }
 
-void parsing::wcnf_read(std::istream& in, BigCoef top, Solver& solver, CeArb objective) {
+bool parsing::wcnf_read(std::istream& in, BigCoef top, Solver& solver, CeArb objective) {
   assert(objective->isReset());
   CeArb input = solver.cePools.takeArb();
   for (std::string line; getline(in, line);) {
@@ -135,12 +147,17 @@ void parsing::wcnf_read(std::istream& in, BigCoef top, Solver& solver, CeArb obj
         objective->addLhs(weight, solver.getNbVars());
         input->addLhs(1, solver.getNbVars());
       }  // else hard clause
-      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT(solver);
+      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat)
+      {
+        quit::exit_UNSAT(solver);
+        return true;
+      }
     }
   }
+  return false;
 }
 
-void parsing::cnf_read(std::istream& in, Solver& solver) {
+bool parsing::cnf_read(std::istream& in, Solver& solver) {
   Ce32 input = solver.cePools.take32();
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == 'c')
@@ -154,12 +171,17 @@ void parsing::cnf_read(std::istream& in, Solver& solver) {
         solver.setNbVars(std::abs(l), true);
         input->addLhs(1, l);
       }
-      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) quit::exit_UNSAT(solver);
+      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat)
+      {
+        quit::exit_UNSAT(solver);
+        return true;
+      }
     }
   }
+  return false;
 }
 
-void parsing::file_read(std::istream& in, Solver& solver, CeArb objective) {
+bool parsing::file_read(boost::iostreams::filtering_istream& in, Solver& solver, CeArb objective) {
   for (std::string line; getline(in, line);) {
     if (line.empty() || line[0] == 'c') continue;
     if (line[0] == 'p') {
@@ -168,7 +190,7 @@ void parsing::file_read(std::istream& in, Solver& solver, CeArb objective) {
       std::string type;
       is >> type;
       if (type == "cnf") {
-        cnf_read(in, solver);
+        return cnf_read(in, solver);
       } else if (type == "wcnf") {
         long long val;
         is >> val;  // variable count
@@ -177,14 +199,16 @@ void parsing::file_read(std::istream& in, Solver& solver, CeArb objective) {
         std::string stop;
         is >> stop;  // top
         BigCoef top = read_number(stop);
-        wcnf_read(in, top, solver, objective);
+        return wcnf_read(in, top, solver, objective);
       }
     } else if (line[0] == '*' && line.substr(0, 13) == "* #variable= ") {
-      opb_read(in, solver, objective);
+      return opb_read(in, solver, objective);
     } else {
       quit::exit_ERROR({"No supported format [opb, cnf, wcnf] detected."});
+      return true;
     }
   }
+  return true;
 }
 
 }  // namespace rs

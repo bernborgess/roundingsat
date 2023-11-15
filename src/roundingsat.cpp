@@ -36,6 +36,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "globals.hpp"
 #include "parsing.hpp"
 #include "run.hpp"
+#include <boost/algorithm/string/predicate.hpp>
+#include <boost/dynamic_bitset.hpp>
+#include <boost/iostreams/filtering_stream.hpp>
+#include <boost/iostreams/filter/bzip2.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
 
 namespace rs {
 
@@ -70,15 +75,26 @@ int main(int argc, char** argv) {
 
   rs::run::solver.init();
   rs::CeArb objective = rs::run::solver.cePools.takeArb();
+  bool infeasible_or_error = false;
 
   if (!rs::options.formulaName.empty()) {
-    std::ifstream fin(rs::options.formulaName);
-    if (!fin) rs::quit::exit_ERROR({"Could not open ", rs::options.formulaName});
-    rs::parsing::file_read(fin, rs::run::solver, objective);
-  } else {
-    if (rs::options.verbosity.get() > 0) std::cout << "c No filename given, reading from standard input" << std::endl;
-    rs::parsing::file_read(std::cin, rs::run::solver, objective);
+    std::ifstream fin(rs::options.formulaName, std::ifstream::in);
+    boost::iostreams::filtering_istream in;
+
+    if( boost::algorithm::ends_with( rs::options.formulaName, ".gz" ) )
+      in.push( boost::iostreams::gzip_decompressor() );
+    if( boost::algorithm::ends_with( rs::options.formulaName, ".bz2" ) )
+      in.push( boost::iostreams::bzip2_decompressor() );
+    in.push( fin );
+    infeasible_or_error = rs::parsing::file_read(in, rs::run::solver, objective);
   }
+//  else {
+//    if (rs::options.verbosity.get() > 0) std::cout << "c No filename given, reading from standard input" << std::endl;
+//    infeasible_or_error = rs::parsing::file_read(std::cin, rs::run::solver, objective);
+//  }
+
+  if(infeasible_or_error)
+    return 0;
 
   signal(SIGINT, SIGINT_interrupt);
   signal(SIGTERM, SIGINT_interrupt);
