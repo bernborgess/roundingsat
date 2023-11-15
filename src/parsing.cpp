@@ -30,10 +30,9 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ***********************************************************************/
 
 #include "parsing.hpp"
+#include <boost/iostreams/filtering_stream.hpp>
 #include <sstream>
 #include "Solver.hpp"
-#include <boost/iostreams/filtering_stream.hpp>
-
 
 namespace rs {
 
@@ -51,7 +50,6 @@ bigint parsing::read_number(const std::string& s) {
 }
 
 bool parsing::opb_read(std::istream& in, Solver& solver, CeArb objective) {
-
   assert(objective->isReset());
   CeArb input = solver.cePools.takeArb();
   [[maybe_unused]] bool first_constraint = true;
@@ -105,15 +103,13 @@ bool parsing::opb_read(std::istream& in, Solver& solver, CeArb objective) {
       input->copyTo(objective);
     else {
       input->addRhs(read_number(line0.substr(line0.find("=") + 1)));
-      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat)
-      {
+      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) {
         quit::exit_UNSAT(solver);
         return true;
       }
       if (line0.find(" = ") != std::string::npos) {  // Handle equality case with second constraint
         input->invert();
-        if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat)
-        {
+        if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) {
           quit::exit_UNSAT(solver);
           return true;
         }
@@ -147,8 +143,7 @@ bool parsing::wcnf_read(std::istream& in, BigCoef top, Solver& solver, CeArb obj
         objective->addLhs(weight, solver.getNbVars());
         input->addLhs(1, solver.getNbVars());
       }  // else hard clause
-      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat)
-      {
+      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) {
         quit::exit_UNSAT(solver);
         return true;
       }
@@ -171,8 +166,7 @@ bool parsing::cnf_read(std::istream& in, Solver& solver) {
         solver.setNbVars(std::abs(l), true);
         input->addLhs(1, l);
       }
-      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat)
-      {
+      if (solver.addConstraint(input, Origin::FORMULA).second == ID_Unsat) {
         quit::exit_UNSAT(solver);
         return true;
       }

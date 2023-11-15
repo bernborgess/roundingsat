@@ -773,7 +773,8 @@ SolveAnswer Solver::solve() {
   assumptions_lim.reserve((int)assumptions.size() + 1);
   bool runLP = false;
   while (true) {
-    if (asynch_interrupt || (options.time_limit.get() != -1.0 && stats.getTime() > options.time_limit.get())) throw asynchInterrupt;
+    if (asynch_interrupt || (options.time_limit.get() != -1.0 && stats.getTime() > options.time_limit.get()))
+      throw asynchInterrupt;
     CeSuper confl = aux::timeCall<CeSuper>([&] { return runPropagation(runLP); }, stats.PROPTIME);
     runLP = !confl;
     if (confl) {

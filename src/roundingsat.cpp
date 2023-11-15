@@ -29,6 +29,11 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ***********************************************************************/
 
+#include <boost/algorithm/string/predicate.hpp>
+#include <boost/dynamic_bitset.hpp>
+#include <boost/iostreams/filter/bzip2.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
+#include <boost/iostreams/filtering_stream.hpp>
 #include <csignal>
 #include <fstream>
 #include <memory>
@@ -36,11 +41,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "globals.hpp"
 #include "parsing.hpp"
 #include "run.hpp"
-#include <boost/algorithm/string/predicate.hpp>
-#include <boost/dynamic_bitset.hpp>
-#include <boost/iostreams/filtering_stream.hpp>
-#include <boost/iostreams/filter/bzip2.hpp>
-#include <boost/iostreams/filter/gzip.hpp>
 
 namespace rs {
 
@@ -81,20 +81,17 @@ int main(int argc, char** argv) {
     std::ifstream fin(rs::options.formulaName, std::ifstream::in);
     boost::iostreams::filtering_istream in;
 
-    if( boost::algorithm::ends_with( rs::options.formulaName, ".gz" ) )
-      in.push( boost::iostreams::gzip_decompressor() );
-    if( boost::algorithm::ends_with( rs::options.formulaName, ".bz2" ) )
-      in.push( boost::iostreams::bzip2_decompressor() );
-    in.push( fin );
+    if (boost::algorithm::ends_with(rs::options.formulaName, ".gz")) in.push(boost::iostreams::gzip_decompressor());
+    if (boost::algorithm::ends_with(rs::options.formulaName, ".bz2")) in.push(boost::iostreams::bzip2_decompressor());
+    in.push(fin);
     infeasible_or_error = rs::parsing::file_read(in, rs::run::solver, objective);
   }
-//  else {
-//    if (rs::options.verbosity.get() > 0) std::cout << "c No filename given, reading from standard input" << std::endl;
-//    infeasible_or_error = rs::parsing::file_read(std::cin, rs::run::solver, objective);
-//  }
+  //  else {
+  //    if (rs::options.verbosity.get() > 0) std::cout << "c No filename given, reading from standard input" <<
+  //    std::endl; infeasible_or_error = rs::parsing::file_read(std::cin, rs::run::solver, objective);
+  //  }
 
-  if(infeasible_or_error)
-    return 0;
+  if (infeasible_or_error) return 0;
 
   signal(SIGINT, SIGINT_interrupt);
   signal(SIGTERM, SIGINT_interrupt);

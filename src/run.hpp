@@ -161,14 +161,12 @@ class Optimization {
     std::pair<ID, ID> res = solver.addConstraint(aux, Origin::LOWERBOUND);
     lastLowerBoundUnprocessed = res.first;
     lastLowerBound = res.second;
-    if (lastLowerBound == ID_Unsat)
-    {
+    if (lastLowerBound == ID_Unsat) {
       quit::exit_UNSAT(solver, upper_bound);
       return true;
     }
     return false;
   }
-
 
   std::pair<Ce32, int> reduceToCardinality(const CeSuper& core) {
     int bestNbBlocksRemoved = 0;
@@ -261,8 +259,8 @@ class Optimization {
       // only violated unit assumptions were derived
       ++stats.UNITCORES;
       assert(lower_bound > prev_lower);
-      if(checkLazyVariables()) return true;
-      if(addLowerBound()) return true;
+      if (checkLazyVariables()) return true;
+      if (addLowerBound()) return true;
       if (!options.cgIndCores) assumps.clear();
       return false;
     }
@@ -336,20 +334,17 @@ class Optimization {
       reformObj->addUp(bestCardCore, mult);
       assert(lower_bound == -reformObj->getDegree());
       // add channeling constraints
-      if (solver.addConstraint(bestCardCore, Origin::COREGUIDED).second == ID_Unsat)
-      {
+      if (solver.addConstraint(bestCardCore, Origin::COREGUIDED).second == ID_Unsat) {
         quit::exit_UNSAT(solver, upper_bound);
         return true;
       }
       bestCardCore->invert();
-      if (solver.addConstraint(bestCardCore, Origin::COREGUIDED).second == ID_Unsat)
-      {
+      if (solver.addConstraint(bestCardCore, Origin::COREGUIDED).second == ID_Unsat) {
         quit::exit_UNSAT(solver, upper_bound);
         return true;
       }
       for (Var v = oldN + 1; v < newN; ++v) {  // add symmetry breaking constraints
-        if (solver.addConstraint(ConstrSimple32({{1, v}, {1, -v - 1}}, 1), Origin::COREGUIDED).second == ID_Unsat)
-        {
+        if (solver.addConstraint(ConstrSimple32({{1, v}, {1, -v - 1}}, 1), Origin::COREGUIDED).second == ID_Unsat) {
           quit::exit_UNSAT(solver, upper_bound);
           return true;
         }
@@ -370,8 +365,8 @@ class Optimization {
       lazyVars.back().lv->addAtLeastConstraint(reified);
       lazyVars.back().lv->addAtMostConstraint(reified);
     }
-    if(checkLazyVariables()) return true;
-    if(addLowerBound()) return true;
+    if (checkLazyVariables()) return true;
+    if (addLowerBound()) return true;
     if (!options.cgIndCores) assumps.clear();
     return false;
   }
@@ -390,8 +385,7 @@ class Optimization {
     std::pair<ID, ID> res = solver.addConstraint(aux, Origin::UPPERBOUND);
     lastUpperBoundUnprocessed = res.first;
     lastUpperBound = res.second;
-    if (lastUpperBound == ID_Unsat)
-    {
+    if (lastUpperBound == ID_Unsat) {
       quit::exit_UNSAT(solver, upper_bound);
       return true;
     }
@@ -433,7 +427,6 @@ class Optimization {
     return false;
   }
 
-
   void optimize() {
     size_t upper_time = 0, lower_time = 0;
     SolveState reply = SolveState::SAT;
@@ -443,7 +436,7 @@ class Optimization {
     CoefLimStatus coefLimFlag = CoefLimStatus::REFINE;
     while (true) {
       size_t current_time = stats.getDetTime();
-      if(options.time_limit.get() != -1.0 && stats.getTime() > options.time_limit.get() ) {
+      if (options.time_limit.get() != -1.0 && stats.getTime() > options.time_limit.get()) {
         std::cout << "time limit reached\n";
         return;
       }
@@ -516,14 +509,14 @@ class Optimization {
         assumps.clear();
         assert(solver.foundSolution());
         ++stats.NSOLS;
-        if(handleNewSolution(out.solution)) return;
-        if(harden()) return;
+        if (handleNewSolution(out.solution)) return;
+        if (harden()) return;
         if (coefLimFlag == CoefLimStatus::ENCOUNTEREDSAT) coefLimFlag = CoefLimStatus::REFINE;
       } else if (reply == SolveState::INCONSISTENT) {
         assert(!options.optMode.is("linear"));
         ++stats.NCORES;
-        if(handleInconsistency(out.cores)) return;
-        if(harden()) return;
+        if (handleInconsistency(out.cores)) return;
+        if (harden()) return;
         coefLimFlag = CoefLimStatus::START;
       } else {
         assert(reply == SolveState::INPROCESSED);  // keep looping

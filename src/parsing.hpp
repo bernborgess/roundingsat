@@ -31,9 +31,9 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
+#include <boost/iostreams/filtering_stream.hpp>
 #include <string>
 #include "typedefs.hpp"
-#include <boost/iostreams/filtering_stream.hpp>
 
 namespace rs {
 

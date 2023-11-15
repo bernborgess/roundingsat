@@ -123,12 +123,11 @@ void run::decide() {
     if (reply == SolveState::SAT) {
       quit::exit_SAT(solver);
       return;
-    }
-    else if (reply == SolveState::UNSAT) {
+    } else if (reply == SolveState::UNSAT) {
       quit::exit_UNSAT(solver);
       return;
     }
-    if(options.time_limit.get() != -1.0 && stats.getTime() > options.time_limit.get() ) {
+    if (options.time_limit.get() != -1.0 && stats.getTime() > options.time_limit.get()) {
       quit::exit_INDETERMINATE(solver);
       return;
     }
