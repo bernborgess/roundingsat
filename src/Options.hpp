@@ -244,7 +244,7 @@ struct Options {
                             "Extract a second decision core, choose the best resulting cardinality core", 1};
   BoolOption cgCoreUpper{"cg-coreupper", "Exploit upper bound on cardinality cores", 1};
   BoolOption keepAll{"keepall", "Keep all learned constraints in the database indefinitely", 0};
-  ValOption<double> time_limit{"time limit", "aborting solving after specified time in seconds", 5000,
+  ValOption<double> time_limit{"time limit", "aborting solving after specified time in seconds", -1,
                                "-1 off or 0 <= float", [](double x) -> bool { return 0 <= x || x == -1; }};
 
   const std::vector<Option*> options = {
