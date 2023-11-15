@@ -1015,7 +1015,7 @@ ID ConstrExp<SMALL, LARGE>::logProofLine() {
     id = std::stol(buffer);
   }
 #if !NDEBUG
-  plogger->proof_out << "e " << id << " ";
+  plogger->proof_out << "e " << id << " : ";
   toStreamAsOPB(plogger->proof_out);
 #endif
   return id;
