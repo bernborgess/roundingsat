@@ -29,10 +29,15 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ***********************************************************************/
 
+#include "Config.hpp"
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/dynamic_bitset.hpp>
+#ifdef IOSTREAMS_WITH_BZIP2
 #include <boost/iostreams/filter/bzip2.hpp>
+#endif
+#ifdef IOSTREAMS_WITH_ZLIB
 #include <boost/iostreams/filter/gzip.hpp>
+#endif
 #include <boost/iostreams/filtering_stream.hpp>
 #include <csignal>
 #include <fstream>
@@ -41,7 +46,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "globals.hpp"
 #include "parsing.hpp"
 #include "run.hpp"
-
 namespace rs {
 
 bool asynch_interrupt;
@@ -80,9 +84,14 @@ int main(int argc, char** argv) {
   if (!rs::options.formulaName.empty()) {
     std::ifstream fin(rs::options.formulaName, std::ifstream::in);
     boost::iostreams::filtering_istream in;
-
-    if (boost::algorithm::ends_with(rs::options.formulaName, ".gz")) in.push(boost::iostreams::gzip_decompressor());
-    if (boost::algorithm::ends_with(rs::options.formulaName, ".bz2")) in.push(boost::iostreams::bzip2_decompressor());
+#ifdef IOSTREAMS_WITH_ZLIB
+    if (boost::algorithm::ends_with(rs::options.formulaName, ".gz"))
+      in.push(boost::iostreams::gzip_decompressor());
+#endif
+#ifdef IOSTREAMS_WITH_BZIP2
+    if (boost::algorithm::ends_with(rs::options.formulaName, ".bz2"))
+      in.push(boost::iostreams::bzip2_decompressor());
+#endif
     in.push(fin);
     infeasible_or_error = rs::parsing::file_read(in, rs::run::solver, objective);
   }

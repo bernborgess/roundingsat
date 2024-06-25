@@ -4,3 +4,4 @@
 
 # soplex
 /soplex*
+/src/CMakeConfig.hpp
