@@ -22,6 +22,8 @@ if(Boost_IOSTREAMS_FOUND)
             IOSTREAMS_WITH_BZIP2 )
 endif()
 
+configure_file("${PROJECT_SOURCE_DIR}/src/CMakeConfig.hpp.in" "${PROJECT_SOURCE_DIR}/src/CMakeConfig.hpp")
+
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake/Modules/")
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -108,6 +110,7 @@ set(source_files
 
 set(header_files
     src/Constr.hpp
+    src/Config.hpp
     src/ConstrExp.hpp
     src/ConstrSimple.hpp
     src/SolverStructs.hpp
