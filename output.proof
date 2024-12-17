@@ -1,0 +1,47 @@
+pseudo-Boolean proof version 1.0
+u >= 0 ;
+l 1
+* 1 Attach
+e 2 : +2 x1 +1 x2 +2 ~x7 +1 ~x8 >= 3 ;
+l 2
+* 1 Attach
+e 3 : +2 ~x1 +1 ~x2 +2 x7 +1 x8 >= 3 ;
+l 3
+* 1 Attach
+e 4 : +1 ~x1 +1 x3 >= 1 ;
+l 4
+* 1 Attach
+e 5 : +1 ~x2 +1 x4 >= 1 ;
+l 5
+* 1 Attach
+e 6 : +1 ~x1 +1 x5 >= 1 ;
+l 6
+* 1 Attach
+e 7 : +1 ~x2 +1 x6 >= 1 ;
+l 7
+* 1 Attach
+e 8 : +1 x1 +1 ~x3 +1 ~x5 >= 1 ;
+l 8
+* 1 Attach
+e 9 : +1 x2 +1 ~x4 +1 ~x6 >= 1 ;
+l 9
+* 1 Attach
+e 10 : +1 ~x3 >= 1 ;
+* 2 Unit
+e 10 : +1 ~x3 >= 1 ;
+* 4 Unit
+p 4 10 + 0
+e 11 : +1 ~x1 >= 1 ;
+* 7 Unit
+p 2 11 2 * + ~x2 + x8 + 2 d 0
+e 12 : +1 ~x7 >= 1 ;
+l 10
+* 12 Attach
+e 13 : +1 x4 >= 1 ;
+* 13 Unit
+e 13 : +1 x4 >= 1 ;
+l 11
+* 15 Inconsistency
+p 14 12 + 0
+e 15 : >= 1 ;
+c 15 0
